@@ -1,10 +1,14 @@
+# =====================
 # OS / Editor
+# =====================
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
+# =====================
 # Python
+# =====================
 venv/
 .venv/
 __pycache__/
@@ -14,27 +18,26 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# Env files
+# =====================
+# Environment variables
+# =====================
 .env
 .env.*
 !.env.example
 
-# Node
+# =====================
+# Node / Frontend
+# =====================
 node_modules/
 dist/
 build/
+.vite/
+
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
-# Vite
-.vite/
-
-
-## 4) Subir a GitHub
-
-### A. Inicializar git (en la raíz)
-```bash
-git init
-git add .
-git commit -m "Initial commit - Futbol MVP (api + web)"
+# =====================
+# Misc
+# =====================
+*.log
