@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API_BASE =
-  (import.meta.env.VITE_API_BASE_URL || "").trim() || "http://192.168.0.57:8000";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").trim(); // default: same-origin
 
 // -------- Actor helpers --------
 function getActorId() {
@@ -63,7 +62,6 @@ async function apiFetch(path, { method = "GET", body, actorOverride } = {}) {
 
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    mode: "cors",
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),
       "X-Actor-User-Id": actor,
@@ -94,7 +92,6 @@ async function apiFetch(path, { method = "GET", body, actorOverride } = {}) {
 async function apiFetchPublic(path, { method = "GET", body } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    mode: "cors",
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
