@@ -193,9 +193,10 @@ function StatPill({ label, value, tone = "neutral" }) {
   );
 }
 
-function CourtCard({ court, courts, busy, onRegisterSelf, onCancel, onMove }) {
+function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel, onMove }) {
   const pct = court.capacity > 0 ? Math.round((court.occupied / court.capacity) * 100) : 0;
   const fullnessTone = pct >= 100 ? "bad" : pct >= 80 ? "warn" : "good";
+  const canRegister = eventStatus === "OPEN" && court.is_open;
 
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl shadow-black/10">
@@ -205,12 +206,14 @@ function CourtCard({ court, courts, busy, onRegisterSelf, onCancel, onMove }) {
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatPill label="Ocupación" value={`${court.occupied}/${court.capacity}`} tone={fullnessTone} />
             <StatPill label="Disponibles" value={court.available} tone={court.available > 0 ? "good" : "bad"} />
-            {!court.is_open ? <StatPill label="Estado" value="Cerrada" tone="bad" /> : null}
+            {!court.is_open && (
+              <StatPill label="Estado" value={court.occupied >= court.capacity ? "Llena" : "Cerrada"} tone="bad" />
+            )}
           </div>
         </div>
 
         <button
-          disabled={busy || !court.is_open}
+          disabled={busy || !canRegister}
           onClick={() => onRegisterSelf(court.court_id)}
           className={cn(
             "shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold",
@@ -308,6 +311,11 @@ function CourtCard({ court, courts, busy, onRegisterSelf, onCancel, onMove }) {
 }
 
 // =========================
+// EXPORTS FOR ADMIN PANEL
+// =========================
+export { cn, apiFetch, Banner, StatPill };
+
+// =========================
 // APP
 // =========================
 export default function App() {
@@ -316,7 +324,7 @@ export default function App() {
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
   const [fullName, setFullName] = useState("");
-  
+
   const [actorUserId, setActorUserId] = useState(getActorId());
   const [actorDraft, setActorDraft] = useState(getActorId());
   const [data, setData] = useState(null);
@@ -327,6 +335,7 @@ export default function App() {
 
   const [selectedCourtId, setSelectedCourtId] = useState("");
   const [guestName, setGuestName] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const canUse = useMemo(() => actorUserId.trim().length > 0, [actorUserId]);
 
@@ -417,6 +426,23 @@ export default function App() {
   useEffect(() => {
     if (canUse) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canUse]);
+
+  // Fetch is_admin status
+  useEffect(() => {
+    async function checkAdmin() {
+      if (!canUse) {
+        setIsAdmin(false);
+        return;
+      }
+      try {
+        const me = await apiFetch('/me');
+        setIsAdmin(me.is_admin || false);
+      } catch {
+        setIsAdmin(false);
+      }
+    }
+    checkAdmin();
   }, [canUse]);
 
   async function onSaveActor() {
@@ -705,6 +731,17 @@ export default function App() {
               value={`${totalOcc}/${totalCap}`}
               tone={totalOcc >= totalCap && totalCap > 0 ? "warn" : "neutral"}
             />
+            {isAdmin && (
+              <a
+                href="/admin"
+                className={cn(
+                  "rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-300",
+                  "hover:bg-amber-500/30"
+                )}
+              >
+                Panel Admin
+              </a>
+            )}
             <button
               onClick={load}
               disabled={busy}
@@ -745,11 +782,21 @@ export default function App() {
                   <div className="mt-1 text-sm text-white/60">Empieza: {fmtStart(event.starts_at)}</div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatPill label="Estado" value={event.status} tone={event.status === "OPEN" ? "good" : "warn"} />
+                  <StatPill
+                    label="Estado"
+                    value={event.status === "OPEN" ? "Abierto" : event.status === "CLOSED" ? "Cerrado" : event.status}
+                    tone={event.status === "OPEN" ? "good" : "warn"}
+                  />
                   <StatPill label="Canchas" value={courts.length} />
                 </div>
               </div>
             </div>
+
+            {event.status === "CLOSED" && (
+              <div className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                Este evento esta cerrado para nuevas inscripciones. Contacta al administrador para cambios.
+              </div>
+            )}
 
             <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
               {courts.map((c) => (
@@ -758,6 +805,7 @@ export default function App() {
                   court={c}
                   courts={courts}
                   busy={busy}
+                  eventStatus={event.status}
                   onRegisterSelf={registerSelf}
                   onCancel={cancelReg}
                   onMove={moveReg}
@@ -765,64 +813,66 @@ export default function App() {
               ))}
             </div>
 
-            <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/10">
-              <div>
-                <div className="text-base font-semibold">Anotar invitado</div>
-                <div className="mt-1 text-sm text-white/60">Máximo 5 invitados por actor. Sin sobrecupo.</div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div className="md:col-span-1">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-white/50">Nombre</label>
-                  <input
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    placeholder="Ej: Franco"
-                    className={cn(
-                      "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
-                      "placeholder:text-white/30",
-                      "focus:outline-none focus:ring-2 focus:ring-white/20"
-                    )}
-                  />
+            {event.status === "OPEN" && (
+              <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/10">
+                <div>
+                  <div className="text-base font-semibold">Anotar invitado</div>
+                  <div className="mt-1 text-sm text-white/60">Máximo 5 invitados por actor. Sin sobrecupo.</div>
                 </div>
 
-                <div className="md:col-span-1">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-white/50">Cancha</label>
-                  <select
-                    value={selectedCourtId}
-                    onChange={(e) => setSelectedCourtId(e.target.value)}
-                    className={cn(
-                      "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
-                      "focus:outline-none focus:ring-2 focus:ring-white/20"
-                    )}
-                  >
-                    {courts.map((c) => (
-                      <option key={c.court_id} value={c.court_id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="md:col-span-1">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-white/50">Nombre</label>
+                    <input
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      placeholder="Ej: Franco"
+                      className={cn(
+                        "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
+                        "placeholder:text-white/30",
+                        "focus:outline-none focus:ring-2 focus:ring-white/20"
+                      )}
+                    />
+                  </div>
+
+                  <div className="md:col-span-1">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-white/50">Cancha</label>
+                    <select
+                      value={selectedCourtId}
+                      onChange={(e) => setSelectedCourtId(e.target.value)}
+                      className={cn(
+                        "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
+                        "focus:outline-none focus:ring-2 focus:ring-white/20"
+                      )}
+                    >
+                      {courts.map((c) => (
+                        <option key={c.court_id} value={c.court_id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-1 md:flex md:items-end">
+                    <button
+                      disabled={busy || guestName.trim().length < 2}
+                      onClick={registerGuest}
+                      className={cn(
+                        "w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black",
+                        "hover:bg-white/90",
+                        "disabled:cursor-not-allowed disabled:opacity-40"
+                      )}
+                    >
+                      Confirmar invitado
+                    </button>
+                  </div>
                 </div>
 
-                <div className="md:col-span-1 md:flex md:items-end">
-                  <button
-                    disabled={busy || guestName.trim().length < 2}
-                    onClick={registerGuest}
-                    className={cn(
-                      "w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black",
-                      "hover:bg-white/90",
-                      "disabled:cursor-not-allowed disabled:opacity-40"
-                    )}
-                  >
-                    Confirmar invitado
-                  </button>
+                <div className="mt-3 text-xs text-white/45">
+                  Nota: mover/baja se muestran, pero el backend bloquea si no sos Admin/Capitán.
                 </div>
               </div>
-
-              <div className="mt-3 text-xs text-white/45">
-                Nota: mover/baja se muestran, pero el backend bloquea si no sos Admin/Capitán.
-              </div>
-            </div>
+            )}
           </>
         )}
 
