@@ -594,6 +594,120 @@ def close_court(
     }
 
 
+@router.get("/events/{event_id}/detail")
+def get_event_detail(
+    event_id: str,
+    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+):
+    """
+    Devuelve el detalle completo de un evento: evento + canchas + jugadores + waitlist.
+    Solo admin/super_admin. Mismo formato que /events/active pero para cualquier evento.
+    """
+    with engine.connect() as conn:
+        require_admin(conn, actor_user_id)
+
+        event = conn.execute(text("""
+            SELECT id, title, starts_at, location_name, status, close_at
+            FROM public.events
+            WHERE id = :event_id
+        """), {"event_id": event_id}).mappings().first()
+
+        if not event:
+            raise HTTPException(status_code=404, detail="Evento no encontrado.")
+
+        courts = conn.execute(text("""
+            SELECT id, name, capacity, is_open, sort_order
+            FROM public.event_courts
+            WHERE event_id = :event_id
+            ORDER BY sort_order ASC
+        """), {"event_id": event_id}).mappings().all()
+
+        confirmed = conn.execute(text("""
+            SELECT
+              r.id AS registration_id,
+              r.court_id,
+              r.registration_type,
+              r.status,
+              r.created_at,
+              r.created_by_user_id,
+              r.user_id,
+              r.guest_name,
+              u.full_name AS user_full_name
+            FROM public.event_registrations r
+            LEFT JOIN public.users u ON u.id = r.user_id
+            WHERE r.event_id = :event_id
+              AND r.status = 'CONFIRMED'
+              AND r.court_id IS NOT NULL
+            ORDER BY r.created_at ASC
+        """), {"event_id": event_id}).mappings().all()
+
+        waitlist = conn.execute(text("""
+            SELECT
+              r.id AS registration_id,
+              r.registration_type,
+              r.status,
+              r.created_at,
+              r.created_by_user_id,
+              r.user_id,
+              r.guest_name,
+              u.full_name AS user_full_name
+            FROM public.event_registrations r
+            LEFT JOIN public.users u ON u.id = r.user_id
+            WHERE r.event_id = :event_id
+              AND r.status = 'WAITLIST'
+              AND r.court_id IS NULL
+            ORDER BY r.created_at ASC
+        """), {"event_id": event_id}).mappings().all()
+
+        confirmed_by_court = {}
+        for r in confirmed:
+            confirmed_by_court.setdefault(r["court_id"], []).append({
+                "registration_id": str(r["registration_id"]),
+                "type": r["registration_type"],
+                "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
+                "created_at": str(r["created_at"]),
+                "created_by_user_id": str(r["created_by_user_id"]),
+            })
+
+        courts_payload = []
+        for c in courts:
+            players = confirmed_by_court.get(c["id"], [])
+            occupied = len(players)
+            capacity = c["capacity"]
+            available = max(capacity - occupied, 0)
+
+            courts_payload.append({
+                "court_id": str(c["id"]),
+                "name": c["name"],
+                "capacity": capacity,
+                "occupied": occupied,
+                "available": available,
+                "is_open": c["is_open"],
+                "players": players,
+            })
+
+        waitlist_payload = [{
+            "registration_id": str(r["registration_id"]),
+            "type": r["registration_type"],
+            "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
+            "created_at": str(r["created_at"]),
+            "created_by_user_id": str(r["created_by_user_id"]),
+        } for r in waitlist]
+
+        return {
+            "event": {
+                "id": str(event["id"]),
+                "title": event["title"],
+                "starts_at": str(event["starts_at"]),
+                "location_name": event["location_name"],
+                "status": event["status"],
+                "close_at": str(event["close_at"]) if event["close_at"] else None,
+            },
+            "courts": courts_payload,
+            "waitlist": waitlist_payload,
+        }
+
+
 @router.get("/events")
 def list_events(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),

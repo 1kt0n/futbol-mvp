@@ -37,6 +37,7 @@ export default function AdminPanel() {
   const [userRole, setUserRole] = useState(null) // 'admin' | 'captain' | null
 
   // Estado para Eventos
+  const [eventsList, setEventsList] = useState([])
   const [activeEvent, setActiveEvent] = useState(null)
   const [showCreateEvent, setShowCreateEvent] = useState(false)
   const [showCreateCourt, setShowCreateCourt] = useState(false)
@@ -81,13 +82,36 @@ export default function AdminPanel() {
     checkAccess()
   }, [])
 
-  // Load evento activo
-  async function loadActiveEvent() {
+  // Load lista de eventos (admin)
+  async function loadEvents() {
     setBusy(true)
     try {
-      const data = await apiFetch('/events/active')
+      const data = await apiFetch('/admin/events')
+      setEventsList(data.events || [])
+      // Si no hay evento seleccionado, seleccionar el primero
+      if (!selectedEventId && data.events?.length > 0) {
+        const firstId = data.events[0].id
+        setSelectedEventId(firstId)
+        await loadEventDetail(firstId)
+      } else if (selectedEventId) {
+        await loadEventDetail(selectedEventId)
+      } else {
+        setActiveEvent(null)
+      }
+    } catch (err) {
+      setErr(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Load detalle de un evento específico
+  async function loadEventDetail(eventId) {
+    setBusy(true)
+    try {
+      const data = await apiFetch(`/admin/events/${eventId}/detail`)
       setActiveEvent(data)
-      if (data.event) setSelectedEventId(data.event.id)
+      setSelectedEventId(eventId)
     } catch (err) {
       setErr(err.message)
     } finally {
@@ -126,7 +150,7 @@ export default function AdminPanel() {
   }
 
   useEffect(() => {
-    if (tab === 'eventos' && userRole) loadActiveEvent()
+    if (tab === 'eventos' && userRole) loadEvents()
     if (tab === 'usuarios' && userRole === 'admin') loadUsers()
     if (tab === 'auditoria' && userRole === 'admin') loadAudit()
     // eslint-disable-next-line
@@ -147,7 +171,7 @@ export default function AdminPanel() {
       })
       setToast('Evento creado exitosamente')
       setShowCreateEvent(false)
-      await loadActiveEvent()
+      await loadEvents()
     } catch (err) {
       setErr(err.message)
     } finally {
@@ -166,7 +190,7 @@ export default function AdminPanel() {
           await apiFetch(`/admin/events/${eventId}/close`, { method: 'POST' })
           setToast('Evento cerrado')
           setConfirmModal(null)
-          await loadActiveEvent()
+          await loadEvents()
         } catch (err) {
           setErr(err.message)
         } finally {
@@ -187,7 +211,7 @@ export default function AdminPanel() {
           await apiFetch(`/admin/events/${eventId}/open`, { method: 'POST' })
           setToast('Evento reabierto')
           setConfirmModal(null)
-          await loadActiveEvent()
+          await loadEvents()
         } catch (err) {
           setErr(err.message)
         } finally {
@@ -208,7 +232,7 @@ export default function AdminPanel() {
           await apiFetch(`/admin/events/${eventId}/finalize`, { method: 'POST' })
           setToast('Evento finalizado')
           setConfirmModal(null)
-          await loadActiveEvent()
+          await loadEvents()
         } catch (err) {
           setErr(err.message)
         } finally {
@@ -224,7 +248,7 @@ export default function AdminPanel() {
     try {
       await apiFetch(`/admin/events/${eventId}/courts/${courtId}/open`, { method: 'POST' })
       setToast('Cancha abierta')
-      await loadActiveEvent()
+      await loadEvents()
     } catch (err) {
       setErr(err.message)
     } finally {
@@ -243,7 +267,7 @@ export default function AdminPanel() {
           await apiFetch(`/admin/events/${eventId}/courts/${courtId}/close`, { method: 'POST' })
           setToast('Cancha cerrada')
           setConfirmModal(null)
-          await loadActiveEvent()
+          await loadEvents()
         } catch (err) {
           setErr(err.message)
         } finally {
@@ -263,7 +287,7 @@ export default function AdminPanel() {
       })
       setToast('Cancha creada')
       setShowCreateCourt(false)
-      await loadActiveEvent()
+      await loadEvents()
     } catch (err) {
       setErr(err.message)
     } finally {
@@ -431,6 +455,9 @@ export default function AdminPanel() {
         <div className="mt-6">
           {tab === 'eventos' && (
             <EventosTab
+              eventsList={eventsList}
+              selectedEventId={selectedEventId}
+              onSelectEvent={(id) => loadEventDetail(id)}
               activeEvent={activeEvent}
               busy={busy}
               userRole={userRole}
@@ -441,7 +468,7 @@ export default function AdminPanel() {
               onOpenCourt={handleOpenCourt}
               onCloseCourt={handleCloseCourt}
               onCreateCourt={() => setShowCreateCourt(true)}
-              onRefresh={loadActiveEvent}
+              onRefresh={loadEvents}
             />
           )}
 
@@ -554,7 +581,7 @@ export default function AdminPanel() {
 
 // ==================== TAB COMPONENTS ====================
 
-function EventosTab({ activeEvent, busy, userRole, onCreateEvent, onCloseEvent, onReopenEvent, onFinalizeEvent, onOpenCourt, onCloseCourt, onCreateCourt, onRefresh }) {
+function EventosTab({ eventsList, selectedEventId, onSelectEvent, activeEvent, busy, userRole, onCreateEvent, onCloseEvent, onReopenEvent, onFinalizeEvent, onOpenCourt, onCloseCourt, onCreateCourt, onRefresh }) {
   const event = activeEvent?.event
   const courts = activeEvent?.courts || []
   const waitlist = activeEvent?.waitlist || []
@@ -636,10 +663,41 @@ function EventosTab({ activeEvent, busy, userRole, onCreateEvent, onCloseEvent, 
         </div>
       )}
 
-      {/* Evento activo */}
+      {/* Selector de eventos */}
+      {eventsList.length > 0 && (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <h3 className="text-sm font-semibold text-white/60 mb-3">Eventos ({eventsList.length})</h3>
+          <div className="flex gap-2 flex-wrap">
+            {eventsList.map(ev => (
+              <button
+                key={ev.id}
+                onClick={() => onSelectEvent(ev.id)}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-sm font-semibold transition-colors border",
+                  selectedEventId === ev.id
+                    ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-300"
+                    : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+                )}
+              >
+                {ev.title}
+                <span className={cn(
+                  "ml-2 px-2 py-0.5 rounded-full text-xs",
+                  ev.status === 'OPEN' ? "bg-emerald-500/20 text-emerald-300" :
+                  ev.status === 'CLOSED' ? "bg-rose-500/20 text-rose-300" :
+                  "bg-zinc-500/20 text-zinc-300"
+                )}>
+                  {ev.status === 'OPEN' ? 'Abierto' : ev.status === 'CLOSED' ? 'Cerrado' : 'Finalizado'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Evento seleccionado - detalle */}
       {!event ? (
-        <Banner kind="info" title="Sin evento activo">
-          No hay un evento activo en este momento.
+        <Banner kind="info" title="Sin evento seleccionado">
+          {eventsList.length === 0 ? 'No hay eventos creados.' : 'Seleccioná un evento para ver su detalle.'}
         </Banner>
       ) : (
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
