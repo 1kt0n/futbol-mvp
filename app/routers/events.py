@@ -125,20 +125,62 @@ def check_and_auto_close_court(event_id: str, court_id: str, actor_user_id: str)
 # Endpoints
 # =========================
 
-@router.get("/events/active")
-def get_active_event(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+@router.get("/events/open")
+def list_open_events(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
     """
-    Devuelve el evento activo (OPEN o CLOSED), sus canchas, jugadores confirmados y waitlist.
-    No incluye eventos FINALIZED.
+    Devuelve la lista de todos los eventos OPEN o CLOSED (sin FINALIZED).
+    Solo metadata básica, sin detalle de canchas/jugadores.
     """
     with engine.connect() as conn:
-        event = conn.execute(text("""
+        rows = conn.execute(text("""
             select id, title, starts_at, location_name, status, close_at
             from public.events
             where status IN ('OPEN', 'CLOSED')
-            order by starts_at asc
-            limit 1
-        """)).mappings().first()
+            order by starts_at desc
+        """)).mappings().all()
+
+        return {
+            "events": [
+                {
+                    "id": str(r["id"]),
+                    "title": r["title"],
+                    "starts_at": str(r["starts_at"]),
+                    "location_name": r["location_name"],
+                    "status": r["status"],
+                    "close_at": str(r["close_at"]) if r["close_at"] else None,
+                }
+                for r in rows
+            ]
+        }
+
+
+@router.get("/events/active")
+def get_active_event(
+    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    event_id: str | None = None,
+):
+    """
+    Devuelve un evento activo (OPEN o CLOSED), sus canchas, jugadores confirmados y waitlist.
+    Si se pasa event_id, devuelve ese evento específico.
+    Si no, devuelve el más reciente (por starts_at DESC).
+    No incluye eventos FINALIZED.
+    """
+    with engine.connect() as conn:
+        if event_id:
+            event = conn.execute(text("""
+                select id, title, starts_at, location_name, status, close_at
+                from public.events
+                where id = :event_id
+                  and status IN ('OPEN', 'CLOSED')
+            """), {"event_id": event_id}).mappings().first()
+        else:
+            event = conn.execute(text("""
+                select id, title, starts_at, location_name, status, close_at
+                from public.events
+                where status IN ('OPEN', 'CLOSED')
+                order by starts_at desc
+                limit 1
+            """)).mappings().first()
 
         if not event:
             return {"event": None, "courts": [], "waitlist": []}

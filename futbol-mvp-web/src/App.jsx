@@ -334,6 +334,10 @@ export default function App() {
   const [guestName, setGuestName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
 
+  // Multi-event support
+  const [openEvents, setOpenEvents] = useState([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
+
   const canUse = useMemo(() => actorUserId.trim().length > 0, [actorUserId]);
 
 
@@ -406,18 +410,55 @@ export default function App() {
     }
   }
 
-  async function load() {
+  async function loadEventsList() {
+    try {
+      const res = await apiFetch(`/events/open`);
+      const evts = res.events || [];
+      setOpenEvents(evts);
+      return evts;
+    } catch {
+      setOpenEvents([]);
+      return [];
+    }
+  }
+
+  async function loadEventDetail(eventId) {
     setErr("");
     setBusy(true);
     try {
-      const d = await apiFetch(`/events/active`);
+      const d = await apiFetch(`/events/active${eventId ? `?event_id=${eventId}` : ""}`);
       setData(d);
+      if (d?.event?.id) setSelectedEventId(d.event.id);
       if (!selectedCourtId && d?.courts?.[0]?.court_id) setSelectedCourtId(d.courts[0].court_id);
     } catch (e) {
       setErr(e.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function load(eventId) {
+    setErr("");
+    setBusy(true);
+    try {
+      const evts = await loadEventsList();
+      const targetId = eventId || selectedEventId || (evts.length > 0 ? evts[0].id : null);
+      if (targetId) {
+        await loadEventDetail(targetId);
+      } else {
+        setData(null);
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function selectEvent(eventId) {
+    setSelectedEventId(eventId);
+    setSelectedCourtId("");
+    loadEventDetail(eventId);
   }
 
   useEffect(() => {
@@ -764,6 +805,34 @@ export default function App() {
             {err}
           </Banner>
         ) : null}
+
+        {openEvents.length > 1 && (
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">Eventos disponibles</div>
+            <div className="flex flex-wrap gap-2">
+              {openEvents.map((ev) => (
+                <button
+                  key={ev.id}
+                  onClick={() => selectEvent(ev.id)}
+                  className={cn(
+                    "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
+                    ev.id === selectedEventId
+                      ? "bg-white text-black"
+                      : "border border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                  )}
+                >
+                  {ev.title}
+                  <span className={cn(
+                    "ml-2 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                    ev.status === "OPEN" ? "bg-emerald-400/20 text-emerald-300" : "bg-amber-400/20 text-amber-300"
+                  )}>
+                    {ev.status === "OPEN" ? "Abierto" : "Cerrado"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {!event ? (
           <Banner kind="info" title="Sin evento abierto">
