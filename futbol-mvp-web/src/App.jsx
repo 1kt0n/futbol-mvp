@@ -247,19 +247,19 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
             court.players.map((p) => (
               <div
                 key={p.registration_id}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/10 px-3 py-2"
+                className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-black/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
               >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="grid h-9 w-9 place-items-center rounded-2xl bg-white/10 text-xs font-bold text-white">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-2xl bg-white/10 text-xs font-bold text-white">
                     {initials(p.name)}
                   </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-white">{p.name}</div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">{p.name}</div>
                     <div className="text-xs text-white/50">{p.type === "USER" ? "Jugador" : "Invitado"}</div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pl-12 sm:pl-0">
                   <select
                     disabled={busy}
                     defaultValue=""
@@ -269,7 +269,7 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
                       e.target.value = "";
                     }}
                     className={cn(
-                      "rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white",
+                      "flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white sm:flex-initial",
                       "focus:outline-none focus:ring-2 focus:ring-white/20",
                       "disabled:opacity-40"
                     )}
@@ -442,7 +442,9 @@ export default function App() {
     setBusy(true);
     try {
       const evts = await loadEventsList();
-      const targetId = eventId || selectedEventId || (evts.length > 0 ? evts[0].id : null);
+      // Use passed eventId, or current event from data, or selectedEventId state, or first from list
+      const currentEventId = data?.event?.id;
+      const targetId = eventId || currentEventId || selectedEventId || (evts.length > 0 ? evts[0].id : null);
       if (targetId) {
         await loadEventDetail(targetId);
       } else {
