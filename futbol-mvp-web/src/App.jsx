@@ -437,14 +437,23 @@ export default function App() {
     }
   }
 
-  async function load(eventId) {
+  async function load(eventIdOverride) {
     setErr("");
     setBusy(true);
     try {
       const evts = await loadEventsList();
-      // Use passed eventId, or current event from data, or selectedEventId state, or first from list
-      const currentEventId = data?.event?.id;
-      const targetId = eventId || currentEventId || selectedEventId || (evts.length > 0 ? evts[0].id : null);
+      // Determine which event to load:
+      // 1. Explicit override passed to function
+      // 2. First event from fresh list (most common case on refresh)
+      // 3. Fall back to nothing
+      let targetId = null;
+      if (typeof eventIdOverride === "string" && eventIdOverride) {
+        targetId = eventIdOverride;
+      } else if (evts.length > 0) {
+        // Check if current selectedEventId is still in the list
+        const currentStillExists = selectedEventId && evts.some(e => e.id === selectedEventId);
+        targetId = currentStillExists ? selectedEventId : evts[0].id;
+      }
       if (targetId) {
         await loadEventDetail(targetId);
       } else {
