@@ -204,7 +204,8 @@ def get_active_event(
               r.created_by_user_id,
               r.user_id,
               r.guest_name,
-              u.full_name as user_full_name
+              u.full_name as user_full_name,
+              u.avatar_url as user_avatar_url
             from public.event_registrations r
             left join public.users u on u.id = r.user_id
             where r.event_id = :event_id
@@ -222,7 +223,8 @@ def get_active_event(
               r.created_by_user_id,
               r.user_id,
               r.guest_name,
-              u.full_name as user_full_name
+              u.full_name as user_full_name,
+              u.avatar_url as user_avatar_url
             from public.event_registrations r
             left join public.users u on u.id = r.user_id
             where r.event_id = :event_id
@@ -237,6 +239,7 @@ def get_active_event(
                 "registration_id": str(r["registration_id"]),
                 "type": r["registration_type"],
                 "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
+                "avatar_url": r["user_avatar_url"] if r["registration_type"] == "USER" else None,
                 "created_at": str(r["created_at"]),
                 "created_by_user_id": str(r["created_by_user_id"]),
             })
@@ -262,6 +265,7 @@ def get_active_event(
             "registration_id": str(r["registration_id"]),
             "type": r["registration_type"],
             "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
+            "avatar_url": r["user_avatar_url"] if r["registration_type"] == "USER" else None,
             "created_at": str(r["created_at"]),
             "created_by_user_id": str(r["created_by_user_id"]),
         } for r in waitlist]
