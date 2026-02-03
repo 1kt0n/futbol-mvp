@@ -333,6 +333,7 @@ export default function App() {
   const [selectedCourtId, setSelectedCourtId] = useState("");
   const [guestName, setGuestName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   // Multi-event support
   const [openEvents, setOpenEvents] = useState([]);
@@ -477,21 +478,24 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canUse]);
 
-  // Fetch is_admin status
+  // Fetch current user info (admin status, avatar, etc.)
   useEffect(() => {
-    async function checkAdmin() {
+    async function fetchCurrentUser() {
       if (!canUse) {
         setIsAdmin(false);
+        setCurrentUser(null);
         return;
       }
       try {
         const me = await apiFetch('/me');
         setIsAdmin(me.is_admin || false);
+        setCurrentUser(me.user || null);
       } catch {
         setIsAdmin(false);
+        setCurrentUser(null);
       }
     }
-    checkAdmin();
+    fetchCurrentUser();
   }, [canUse]);
 
   async function onSaveActor() {
@@ -783,12 +787,36 @@ export default function App() {
             {isAdmin && (
               <a
                 href="/admin"
+                target="_blank"
+                rel="noopener noreferrer"
                 className={cn(
                   "rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-300",
                   "hover:bg-amber-500/30"
                 )}
               >
                 Panel Admin
+              </a>
+            )}
+            {currentUser && (
+              <a
+                href="/profile"
+                title="Mi Perfil"
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-1 hover:bg-white/10"
+              >
+                {currentUser.avatar_url ? (
+                  <img
+                    src={currentUser.avatar_url}
+                    alt="Avatar"
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="grid h-8 w-8 place-items-center rounded-full bg-white/10 text-xs font-bold text-white">
+                    {initials(currentUser.full_name)}
+                  </div>
+                )}
+                <span className="hidden text-sm font-medium text-white/80 sm:inline">
+                  {currentUser.nickname || currentUser.full_name?.split(" ")[0] || "Perfil"}
+                </span>
               </a>
             )}
             <button

@@ -1,14 +1,25 @@
 import secrets
-from fastapi import APIRouter, HTTPException, Header
+import re
+import io
+from fastapi import APIRouter, HTTPException, Header, UploadFile, File
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+from PIL import Image
 
-from app.settings import engine
-from app.schemas import PinRegisterRequest, PinLoginRequest
+from app.settings import engine, supabase_client, AVATAR_BUCKET, AVATAR_MAX_SIZE, SUPABASE_URL
+from app.schemas import PinRegisterRequest, PinLoginRequest, UpdateProfileRequest
 from app.utils.security import hash_pin, assert_pin
 from app.utils.phone import normalize_phone
 
 router = APIRouter()
+
+
+def validate_email(email: str) -> bool:
+    """Validación básica de email."""
+    if not email:
+        return True
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
 
 
 @router.post("/auth/pin/register")
@@ -174,7 +185,7 @@ def me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
     """
     with engine.connect() as conn:
         user = conn.execute(text("""
-            select id, full_name, email, is_active
+            select id, full_name, email, phone_e164, nickname, avatar_url, is_active
             from public.users
             where id = :id
             limit 1
@@ -201,7 +212,165 @@ def me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
                 "id": str(user["id"]),
                 "full_name": user["full_name"],
                 "email": user["email"],
+                "phone": user["phone_e164"],
+                "nickname": user["nickname"],
+                "avatar_url": user["avatar_url"],
             },
             "roles": roles,
             "is_admin": is_admin,
         }
+
+
+@router.patch("/me")
+def update_profile(
+    body: UpdateProfileRequest,
+    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+):
+    """
+    Actualiza datos del perfil del usuario autenticado.
+    """
+    # Validar email si se provee
+    if body.email and not validate_email(body.email):
+        raise HTTPException(status_code=400, detail="Email inválido.")
+
+    # Construir campos a actualizar
+    updates = []
+    params = {"id": actor_user_id}
+
+    if body.full_name is not None:
+        updates.append("full_name = :full_name")
+        params["full_name"] = body.full_name.strip()
+
+    if body.nickname is not None:
+        updates.append("nickname = :nickname")
+        params["nickname"] = body.nickname.strip() if body.nickname else None
+
+    if body.email is not None:
+        updates.append("email = :email")
+        params["email"] = body.email.strip().lower() if body.email else None
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No hay campos para actualizar.")
+
+    updates.append("updated_at = now()")
+
+    with engine.begin() as conn:
+        # Verificar que el usuario existe
+        exists = conn.execute(text("""
+            select 1 from public.users where id = :id
+        """), {"id": actor_user_id}).first()
+
+        if not exists:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+        # Actualizar
+        conn.execute(text(f"""
+            update public.users
+            set {", ".join(updates)}
+            where id = :id
+        """), params)
+
+    # Devolver usuario actualizado
+    return me(actor_user_id)
+
+
+@router.post("/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+):
+    """
+    Sube un avatar para el usuario. Convierte a WebP optimizado.
+    """
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Servicio de storage no configurado.")
+
+    # Validar tipo de archivo
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="El archivo debe ser una imagen.")
+
+    # Leer y validar tamaño
+    content = await file.read()
+    if len(content) > AVATAR_MAX_SIZE:
+        raise HTTPException(status_code=400, detail="La imagen excede el límite de 2MB.")
+
+    try:
+        # Abrir imagen y convertir a WebP
+        img = Image.open(io.BytesIO(content))
+
+        # Convertir a RGB si es necesario (para WebP)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+
+        # Redimensionar si es muy grande (max 512x512)
+        max_size = 512
+        if img.width > max_size or img.height > max_size:
+            img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+
+        # Guardar como WebP
+        output = io.BytesIO()
+        img.save(output, format="WEBP", quality=85)
+        output.seek(0)
+        webp_content = output.getvalue()
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error procesando imagen: {str(e)}")
+
+    # Subir a Supabase Storage
+    file_path = f"{actor_user_id}/avatar.webp"
+
+    try:
+        # Intentar eliminar el anterior si existe
+        try:
+            supabase_client.storage.from_(AVATAR_BUCKET).remove([file_path])
+        except Exception:
+            pass
+
+        # Subir nuevo
+        supabase_client.storage.from_(AVATAR_BUCKET).upload(
+            file_path,
+            webp_content,
+            file_options={"content-type": "image/webp", "upsert": "true"}
+        )
+
+        # Construir URL pública
+        avatar_url = f"{SUPABASE_URL}/storage/v1/object/public/{AVATAR_BUCKET}/{file_path}"
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error subiendo avatar: {str(e)}")
+
+    # Guardar URL en DB
+    with engine.begin() as conn:
+        conn.execute(text("""
+            update public.users
+            set avatar_url = :avatar_url, updated_at = now()
+            where id = :id
+        """), {"avatar_url": avatar_url, "id": actor_user_id})
+
+    return {"avatar_url": avatar_url, "message": "Avatar actualizado."}
+
+
+@router.delete("/me/avatar")
+def delete_avatar(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+    """
+    Elimina el avatar del usuario.
+    """
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Servicio de storage no configurado.")
+
+    file_path = f"{actor_user_id}/avatar.webp"
+
+    try:
+        supabase_client.storage.from_(AVATAR_BUCKET).remove([file_path])
+    except Exception:
+        pass  # Ignorar si no existe
+
+    # Limpiar URL en DB
+    with engine.begin() as conn:
+        conn.execute(text("""
+            update public.users
+            set avatar_url = null, updated_at = now()
+            where id = :id
+        """), {"id": actor_user_id})
+
+    return {"message": "Avatar eliminado."}

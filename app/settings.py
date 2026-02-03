@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from supabase import create_client, Client
 
 load_dotenv()
 
@@ -20,3 +21,14 @@ else:
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
+
+# Supabase Storage client
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+
+supabase_client: Client | None = None
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+AVATAR_BUCKET = "avatars"
+AVATAR_MAX_SIZE = 2 * 1024 * 1024  # 2MB

@@ -65,3 +65,10 @@ class ResetPinRequest(BaseModel):
 
 class UpdateUserRolesRequest(BaseModel):
     roles: list[str] = Field(..., description="Lista de códigos de roles: ['admin', 'super_admin']")
+
+
+# ========== PROFILE ==========
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = Field(None, min_length=2, max_length=120)
+    nickname: str | None = Field(None, max_length=30)
+    email: str | None = Field(None, max_length=120)
