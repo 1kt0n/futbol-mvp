@@ -5,6 +5,7 @@ const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
   ""
 ).trim(); // default: same-origin
+const BRAND_LOGO_URL = "/tercer-tiempo-logo.png";
 
 // -------- Actor helpers --------
 function getActorId() {
@@ -674,12 +675,16 @@ export default function App() {
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/20">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-lg font-semibold">Fútbol MVP</div>
+                <div className="text-lg font-semibold">Tercer Tiempo FC (Canchas)</div>
                 <div className="mt-1 text-sm text-white/60">
                   Entrá con tu celular y un PIN (4 o 6 dígitos).
                 </div>
               </div>
-              <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-lg">⚽</div>
+              <img
+                src={BRAND_LOGO_URL}
+                alt="Tercer Tiempo FC"
+                className="h-10 w-10 rounded-2xl bg-white/10 object-cover p-1"
+              />
             </div>
 
             {/* Tabs */}
@@ -818,7 +823,7 @@ export default function App() {
           </div>
 
           <div className="mt-6 text-center text-xs text-white/30">
-            Work in progress • Futbol MVP
+            Work in progress • Tercer Tiempo FC (Canchas)
           </div>
         </div>
       </div>
@@ -836,9 +841,13 @@ export default function App() {
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-3xl bg-white/10 text-xl">⚽</div>
+            <img
+              src={BRAND_LOGO_URL}
+              alt="Tercer Tiempo FC"
+              className="h-12 w-12 rounded-3xl bg-white/10 object-cover p-1"
+            />
             <div>
-              <div className="text-xl font-semibold">Fútbol MVP</div>
+              <div className="text-xl font-semibold">Tercer Tiempo FC (Canchas)</div>
               <div className="mt-0.5 break-all text-xs text-white/60 sm:text-sm">
                 Actor: <code className="text-white/80">{actorUserId}</code>
               </div>
