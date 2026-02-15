@@ -92,7 +92,7 @@ function Toast({ toast, onClose }) {
   if (!toast) return null;
   const bg = toast.kind === "error" ? "bg-red-500/90" : "bg-emerald-500/90";
   return (
-    <div className={cn("fixed right-4 top-4 z-50 rounded-xl px-4 py-3 text-white shadow-lg", bg)}>
+    <div className={cn("fixed left-4 right-4 top-4 z-50 rounded-xl px-4 py-3 text-white shadow-lg sm:left-auto sm:right-4", bg)}>
       <div className="font-semibold">{toast.title}</div>
       {toast.text && <div className="text-sm opacity-90">{toast.text}</div>}
       <button onClick={onClose} className="absolute right-2 top-1 text-white/70 hover:text-white">
@@ -324,7 +324,7 @@ export default function RatingsPending() {
       <Toast toast={toast} onClose={() => setToast(null)} />
 
       <div className="mx-auto max-w-2xl">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">Votos pendientes</h1>
             {pendingData && (
@@ -335,7 +335,7 @@ export default function RatingsPending() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {items.length > 0 && (
               <button
                 onClick={() => setShowListView((v) => !v)}
@@ -550,7 +550,7 @@ export default function RatingsPending() {
                 />
               </div>
 
-              <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <button
                   onClick={goToPrev}
                   disabled={saving || pendingTargets.length <= 1}

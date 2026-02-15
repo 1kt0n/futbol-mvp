@@ -380,7 +380,7 @@ export default function AdminPanel() {
     <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
       <div className="mx-auto max-w-7xl px-4 py-6">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold">Panel de Administración</h1>
             <p className="text-white/60 mt-1">
@@ -390,18 +390,18 @@ export default function AdminPanel() {
           </div>
           <a
             href="/"
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
+            className="self-start rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
           >
             ← Volver
           </a>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-white/10">
+        <div className="mb-6 flex gap-2 overflow-x-auto border-b border-white/10 pb-1">
           <button
             onClick={() => setTab('eventos')}
             className={cn(
-              "px-4 py-3 rounded-t-lg font-semibold transition-colors",
+              "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
               tab === 'eventos'
                 ? "bg-white/10 border-b-2 border-emerald-400 text-white"
                 : "text-white/60 hover:bg-white/5 hover:text-white"
@@ -414,7 +414,7 @@ export default function AdminPanel() {
               <button
                 onClick={() => setTab('usuarios')}
                 className={cn(
-                  "px-4 py-3 rounded-t-lg font-semibold transition-colors",
+                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
                   tab === 'usuarios'
                     ? "bg-white/10 border-b-2 border-emerald-400 text-white"
                     : "text-white/60 hover:bg-white/5 hover:text-white"
@@ -425,7 +425,7 @@ export default function AdminPanel() {
               <button
                 onClick={() => setTab('auditoria')}
                 className={cn(
-                  "px-4 py-3 rounded-t-lg font-semibold transition-colors",
+                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
                   tab === 'auditoria'
                     ? "bg-white/10 border-b-2 border-emerald-400 text-white"
                     : "text-white/60 hover:bg-white/5 hover:text-white"
@@ -436,7 +436,7 @@ export default function AdminPanel() {
               <button
                 onClick={() => setTab('notificaciones')}
                 className={cn(
-                  "px-4 py-3 rounded-t-lg font-semibold transition-colors",
+                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
                   tab === 'notificaciones'
                     ? "bg-white/10 border-b-2 border-emerald-400 text-white"
                     : "text-white/60 hover:bg-white/5 hover:text-white"
@@ -457,7 +457,7 @@ export default function AdminPanel() {
 
         {/* Toast */}
         {toast && (
-          <div className="fixed bottom-6 right-6 bg-emerald-500 text-white px-6 py-3 rounded-2xl shadow-xl z-50 animate-fade-in">
+          <div className="fixed bottom-4 left-4 right-4 z-50 rounded-2xl bg-emerald-500 px-6 py-3 text-center text-white shadow-xl animate-fade-in sm:left-auto sm:right-6 sm:text-left">
             {toast}
           </div>
         )}
@@ -572,7 +572,7 @@ export default function AdminPanel() {
         >
           <div className="space-y-4">
             <p className="text-white/80">{confirmModal?.message}</p>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 onClick={confirmModal?.onConfirm}
                 disabled={busy}
@@ -716,7 +716,7 @@ function EventosTab({ eventsList, selectedEventId, onSelectEvent, activeEvent, b
         </Banner>
       ) : (
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-          <div className="flex items-start justify-between mb-4">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-2xl font-bold">{event.title}</h2>
               <p className="text-white/60 mt-1">{event.location_name}</p>
@@ -824,7 +824,7 @@ function UsuariosTab({ users, searchQuery, setSearchQuery, busy, onSearch, onCre
   return (
     <div className="space-y-6">
       {/* Búsqueda y acciones */}
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <input
           type="text"
           value={searchQuery}
@@ -849,8 +849,8 @@ function UsuariosTab({ users, searchQuery, setSearchQuery, busy, onSearch, onCre
       </div>
 
       {/* Tabla de usuarios */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-        <table className="w-full">
+      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
+        <table className="w-full min-w-[760px]">
           <thead className="border-b border-white/10 bg-black/20">
             <tr>
               <th className="text-left p-4 font-semibold">Nombre</th>
@@ -879,7 +879,7 @@ function UsuariosTab({ users, searchQuery, setSearchQuery, busy, onSearch, onCre
                   {user.roles.length > 0 ? user.roles.join(', ') : 'Sin roles'}
                 </td>
                 <td className="p-4">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <button
                       onClick={() => onResetPin(user)}
                       className="text-xs px-3 py-1 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10"
@@ -1130,7 +1130,7 @@ function NotificationsTab() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="submit"
                 disabled={submitting || !formData.title.trim() || !formData.message.trim()}
@@ -1247,7 +1247,7 @@ function NotificationsTab() {
             <div className="text-sm font-semibold text-white">{confirmTarget?.title}</div>
             <div className="mt-1 text-xs text-white/70">{confirmTarget?.message}</div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button
               onClick={() => handleDeactivate(confirmTarget?.id)}
               disabled={!confirmTarget || !!deactivatingId}
@@ -1272,7 +1272,7 @@ function AuditoriaTab({ logs, filters, setFilters, busy, onRefresh }) {
   return (
     <div className="space-y-6">
       {/* Filtros */}
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <input
           type="text"
           value={filters.action}
@@ -1290,8 +1290,8 @@ function AuditoriaTab({ logs, filters, setFilters, busy, onRefresh }) {
       </div>
 
       {/* Tabla de logs */}
-      <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
+        <table className="w-full min-w-[760px] text-sm">
           <thead className="border-b border-white/10 bg-black/20">
             <tr>
               <th className="text-left p-3 font-semibold">Fecha</th>

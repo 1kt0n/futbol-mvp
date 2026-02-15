@@ -839,7 +839,7 @@ export default function App() {
             <div className="grid h-12 w-12 place-items-center rounded-3xl bg-white/10 text-xl">⚽</div>
             <div>
               <div className="text-xl font-semibold">Fútbol MVP</div>
-              <div className="mt-0.5 text-sm text-white/60">
+              <div className="mt-0.5 break-all text-xs text-white/60 sm:text-sm">
                 Actor: <code className="text-white/80">{actorUserId}</code>
               </div>
             </div>
@@ -879,7 +879,7 @@ export default function App() {
               </button>
 
               {notificationsOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-80 rounded-2xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/30 backdrop-blur">
+                <div className="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/30 backdrop-blur sm:w-80">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="text-sm font-semibold text-white">Notificaciones</div>
                     <button

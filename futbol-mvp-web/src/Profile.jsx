@@ -71,7 +71,7 @@ function Toast({ toast, onClose }) {
   if (!toast) return null;
   const bg = toast.kind === "error" ? "bg-red-500/90" : "bg-emerald-500/90";
   return (
-    <div className={cn("fixed top-4 right-4 z-50 rounded-xl px-4 py-3 text-white shadow-lg", bg)}>
+    <div className={cn("fixed left-4 right-4 top-4 z-50 rounded-xl px-4 py-3 text-white shadow-lg sm:left-auto sm:right-4", bg)}>
       <div className="font-semibold">{toast.title}</div>
       {toast.text && <div className="text-sm opacity-90">{toast.text}</div>}
       <button onClick={onClose} className="absolute top-1 right-2 text-white/70 hover:text-white">×</button>
@@ -235,11 +235,11 @@ export default function Profile() {
 
       <div className="mx-auto max-w-lg">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-white">Mi Perfil</h1>
           <button
             onClick={() => navigate("/")}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+            className="self-start rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
           >
             ← Volver
           </button>
@@ -393,7 +393,7 @@ export default function Profile() {
         {/* Pending Ratings Card */}
         {pendingCount > 0 && (
           <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-amber-50">Pendientes de votación</div>
                 <div className="mt-1 text-xs text-amber-50/70">
@@ -403,7 +403,7 @@ export default function Profile() {
               <a
                 href="/ratings/pending-ui"
                 className={cn(
-                  "rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-black",
+                  "self-start rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-black",
                   "hover:bg-amber-400"
                 )}
               >
