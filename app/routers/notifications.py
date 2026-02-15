@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Header, HTTPException, Query
 from sqlalchemy import text
 
@@ -8,6 +10,7 @@ from app.routers.ratings import get_pending_ratings
 
 router = APIRouter()
 admin_router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _fmt_ts(value):
@@ -236,17 +239,29 @@ def create_notification(
             "actor_user_id": actor_user_id,
         }).mappings().first()
 
-        conn.execute(text("""
-            INSERT INTO public.event_audit_log (
-                event_id, actor_user_id, action, metadata
-            )
-            VALUES (
-                NULL, :actor_user_id, 'CREATE_NOTIFICATION', CAST(:metadata AS jsonb)
-            )
-        """), {
-            "actor_user_id": actor_user_id,
-            "metadata": f'{{"notification_id":"{row["id"]}","expires_in_days":{body.expires_in_days}}}',
-        })
+    # Auditoria best-effort: no debe romper la creacion de notificaciones.
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO public.event_audit_log (
+                    event_id, actor_user_id, action, metadata
+                )
+                VALUES (
+                    NULL,
+                    :actor_user_id,
+                    'CREATE_NOTIFICATION',
+                    jsonb_build_object(
+                        'notification_id', :notification_id,
+                        'expires_in_days', :expires_in_days
+                    )
+                )
+            """), {
+                "actor_user_id": actor_user_id,
+                "notification_id": str(row["id"]),
+                "expires_in_days": body.expires_in_days,
+            })
+    except Exception:
+        logger.exception("Failed to write CREATE_NOTIFICATION audit log.")
 
     return {
         "id": str(row["id"]),
@@ -282,16 +297,24 @@ def deactivate_notification(
         if not row:
             raise HTTPException(status_code=404, detail="Notificacion no encontrada o ya desactivada.")
 
-        conn.execute(text("""
-            INSERT INTO public.event_audit_log (
-                event_id, actor_user_id, action, metadata
-            )
-            VALUES (
-                NULL, :actor_user_id, 'DEACTIVATE_NOTIFICATION', CAST(:metadata AS jsonb)
-            )
-        """), {
-            "actor_user_id": actor_user_id,
-            "metadata": f'{{"notification_id":"{notification_id}"}}',
-        })
+    # Auditoria best-effort: no debe romper la desactivacion.
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO public.event_audit_log (
+                    event_id, actor_user_id, action, metadata
+                )
+                VALUES (
+                    NULL,
+                    :actor_user_id,
+                    'DEACTIVATE_NOTIFICATION',
+                    jsonb_build_object('notification_id', :notification_id)
+                )
+            """), {
+                "actor_user_id": actor_user_id,
+                "notification_id": notification_id,
+            })
+    except Exception:
+        logger.exception("Failed to write DEACTIVATE_NOTIFICATION audit log.")
 
     return {"notification_id": notification_id, "message": "Notificacion desactivada."}
