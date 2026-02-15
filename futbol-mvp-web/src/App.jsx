@@ -977,7 +977,7 @@ export default function App() {
         {pendingRatingsCount > 0 && (
           <Banner kind="warn" title="Votos pendientes">
             Tenés {pendingRatingsCount} voto{pendingRatingsCount !== 1 ? "s" : ""} pendiente{pendingRatingsCount !== 1 ? "s" : ""}.{" "}
-            <a href="/ratings/pending" className="underline font-semibold">Votar ahora</a>
+            <a href="/ratings/pending-ui" className="underline font-semibold">Votar ahora</a>
           </Banner>
         )}
 

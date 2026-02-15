@@ -14,7 +14,7 @@ createRoot(document.getElementById('root')).render(
         <Route path="/" element={<App />} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/profile" element={<Profile />} />
-        <Route path="/ratings/pending" element={<RatingsPending />} />
+        <Route path="/ratings/pending-ui" element={<RatingsPending />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>,

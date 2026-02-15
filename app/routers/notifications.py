@@ -77,7 +77,7 @@ def get_notifications(
                 if pending_ratings_count == 1
                 else f"Tenes {pending_ratings_count} votos pendientes."
             ),
-            "action_url": "/ratings/pending",
+            "action_url": "/ratings/pending-ui",
             "dismissible": False,
             "created_at": None,
             "expires_at": None,

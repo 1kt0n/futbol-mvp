@@ -401,7 +401,7 @@ export default function Profile() {
                 </div>
               </div>
               <a
-                href="/ratings/pending"
+                href="/ratings/pending-ui"
                 className={cn(
                   "rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-black",
                   "hover:bg-amber-400"
