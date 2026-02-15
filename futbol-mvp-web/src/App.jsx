@@ -879,7 +879,7 @@ export default function App() {
               </button>
 
               {notificationsOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/30 backdrop-blur sm:w-80">
+                <div className="fixed left-3 right-3 top-24 z-50 max-h-[72vh] overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/30 backdrop-blur sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 sm:max-h-none">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="text-sm font-semibold text-white">Notificaciones</div>
                     <button
@@ -895,7 +895,7 @@ export default function App() {
                       No hay notificaciones.
                     </div>
                   ) : (
-                    <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                    <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1 sm:max-h-80">
                       {notifications.map((n) => (
                         <div key={n.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
                           <div className="text-sm font-semibold text-white">{n.title}</div>
