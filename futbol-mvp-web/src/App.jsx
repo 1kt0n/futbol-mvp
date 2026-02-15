@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").trim(); // default: same-origin
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  ""
+).trim(); // default: same-origin
 
 // -------- Actor helpers --------
 function getActorId() {
@@ -347,6 +351,13 @@ export default function App() {
   const [openEvents, setOpenEvents] = useState([]);
   const [selectedEventId, setSelectedEventId] = useState("");
 
+  // Pending ratings
+  const [pendingRatingsCount, setPendingRatingsCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationsUnread, setNotificationsUnread] = useState(0);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationBusyId, setNotificationBusyId] = useState(null);
+
   const canUse = useMemo(() => actorUserId.trim().length > 0, [actorUserId]);
 
 
@@ -468,6 +479,7 @@ export default function App() {
       } else {
         setData(null);
       }
+      await refreshNotifications();
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -505,6 +517,53 @@ export default function App() {
     }
     fetchCurrentUser();
   }, [canUse]);
+
+  // Fetch notifications (informative + pending ratings)
+  useEffect(() => {
+    async function fetchNotifications() {
+      if (!canUse) {
+        setNotifications([]);
+        setNotificationsUnread(0);
+        setPendingRatingsCount(0);
+        return;
+      }
+      try {
+        const res = await apiFetch("/notifications");
+        setNotifications(res.items || []);
+        setNotificationsUnread(res.unread_count || 0);
+        setPendingRatingsCount(res.pending_ratings_count || 0);
+      } catch {
+        setNotifications([]);
+        setNotificationsUnread(0);
+        setPendingRatingsCount(0);
+      }
+    }
+    fetchNotifications();
+  }, [canUse]);
+
+  async function refreshNotifications() {
+    if (!canUse) return;
+    try {
+      const res = await apiFetch("/notifications");
+      setNotifications(res.items || []);
+      setNotificationsUnread(res.unread_count || 0);
+      setPendingRatingsCount(res.pending_ratings_count || 0);
+    } catch {
+      // no-op
+    }
+  }
+
+  async function dismissNotification(notificationId) {
+    setNotificationBusyId(notificationId);
+    try {
+      await apiFetch(`/notifications/${notificationId}/dismiss`, { method: "POST" });
+      await refreshNotifications();
+    } catch (e) {
+      setErr(e.message || "No se pudo descartar la notificacion.");
+    } finally {
+      setNotificationBusyId(null);
+    }
+  }
 
   async function onSaveActor() {
     const candidate = actorDraft.trim();
@@ -805,6 +864,68 @@ export default function App() {
                 Panel Admin
               </a>
             )}
+                        <div className="relative">
+              <button
+                onClick={() => setNotificationsOpen((v) => !v)}
+                title="Notificaciones"
+                className="relative rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white hover:bg-white/10"
+              >
+                <span className="text-lg">{"\u{1F514}"}</span>
+                {notificationsUnread > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                    {notificationsUnread}
+                  </span>
+                )}
+              </button>
+
+              {notificationsOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-80 rounded-2xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/30 backdrop-blur">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="text-sm font-semibold text-white">Notificaciones</div>
+                    <button
+                      onClick={() => setNotificationsOpen(false)}
+                      className="rounded-lg px-2 py-1 text-xs text-white/60 hover:bg-white/10 hover:text-white"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+
+                  {notifications.length === 0 ? (
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-white/60">
+                      No hay notificaciones.
+                    </div>
+                  ) : (
+                    <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                      {notifications.map((n) => (
+                        <div key={n.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                          <div className="text-sm font-semibold text-white">{n.title}</div>
+                          <div className="mt-1 text-xs text-white/70">{n.message}</div>
+                          <div className="mt-2 flex items-center gap-2">
+                            {n.action_url && (
+                              <a
+                                href={n.action_url}
+                                className="rounded-lg border border-amber-400/30 bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/30"
+                              >
+                                Abrir
+                              </a>
+                            )}
+                            {n.dismissible && (
+                              <button
+                                onClick={() => dismissNotification(n.id)}
+                                disabled={notificationBusyId === n.id}
+                                className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10 disabled:opacity-40"
+                              >
+                                {notificationBusyId === n.id ? "..." : "Descartar"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             {currentUser && (
               <a
                 href="/profile"
@@ -852,6 +973,13 @@ export default function App() {
             {err}
           </Banner>
         ) : null}
+
+        {pendingRatingsCount > 0 && (
+          <Banner kind="warn" title="Votos pendientes">
+            Tenés {pendingRatingsCount} voto{pendingRatingsCount !== 1 ? "s" : ""} pendiente{pendingRatingsCount !== 1 ? "s" : ""}.{" "}
+            <a href="/ratings/pending" className="underline font-semibold">Votar ahora</a>
+          </Banner>
+        )}
 
         {openEvents.length > 1 && (
           <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -994,3 +1122,4 @@ export default function App() {
     </div>
   );
 }
+

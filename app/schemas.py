@@ -72,3 +72,29 @@ class UpdateProfileRequest(BaseModel):
     full_name: str | None = Field(None, min_length=2, max_length=120)
     nickname: str | None = Field(None, max_length=30)
     email: str | None = Field(None, max_length=120)
+
+
+# ========== RATINGS ==========
+class SingleRating(BaseModel):
+    target_user_id: str = Field(..., description="UUID del jugador a calificar")
+    rating: float = Field(..., ge=1.0, le=5.0, description="Calificación 1.0-5.0, step 0.5")
+    comment: str | None = Field(None, max_length=500)
+
+
+class SaveRatingsRequest(BaseModel):
+    event_id: str = Field(..., description="UUID del evento")
+    court_id: str = Field(..., description="UUID de la cancha")
+    ratings: list[SingleRating] = Field(..., min_length=1, max_length=50)
+
+
+# ========== NOTIFICATIONS ==========
+class CreateNotificationRequest(BaseModel):
+    title: str = Field(..., min_length=3, max_length=140)
+    message: str = Field(..., min_length=5, max_length=1200)
+    action_url: str | None = Field(None, max_length=500)
+    expires_in_days: int = Field(
+        default=7,
+        ge=1,
+        le=30,
+        description="Cantidad de dias de vigencia de la notificacion.",
+    )

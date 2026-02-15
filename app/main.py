@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.settings import CORS_ORIGINS, engine
-from app.routers import auth, events, admin_events, admin_users, admin_audit
+from app.routers import auth, events, admin_events, admin_users, admin_audit, ratings, notifications
 
 # =========================
 # FastAPI App
@@ -65,6 +65,9 @@ app.include_router(events.router, tags=["Events"])
 app.include_router(admin_events.router, prefix="/admin", tags=["Admin - Events"])
 app.include_router(admin_users.router, prefix="/admin", tags=["Admin - Users"])
 app.include_router(admin_audit.router, prefix="/admin", tags=["Admin - Audit"])
+app.include_router(ratings.router, tags=["Ratings"])
+app.include_router(notifications.router, tags=["Notifications"])
+app.include_router(notifications.admin_router, prefix="/admin", tags=["Admin - Notifications"])
 
 # =========================
 # Serve Frontend (production)

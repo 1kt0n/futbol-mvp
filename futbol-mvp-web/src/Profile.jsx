@@ -1,7 +1,11 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").trim();
+const API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  ""
+).trim();
 
 function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
@@ -102,6 +106,12 @@ export default function Profile() {
   const [user, setUser] = useState(null);
   const [roles, setRoles] = useState([]);
 
+  // Rating data
+  const [userRating, setUserRating] = useState(null);
+  const [userComments, setUserComments] = useState([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [commentsTotal, setCommentsTotal] = useState(0);
+
   // Form state
   const [fullName, setFullName] = useState("");
   const [nickname, setNickname] = useState("");
@@ -117,6 +127,22 @@ export default function Profile() {
         setFullName(data.user.full_name || "");
         setNickname(data.user.nickname || "");
         setEmail(data.user.email || "");
+
+        // Load rating data
+        try {
+          const userId = data.user.id || getActorId();
+          const [ratingRes, commentsRes, pendingRes] = await Promise.all([
+            apiFetch(`/users/${userId}/rating`),
+            apiFetch(`/users/${userId}/ratings/comments?page=1&page_size=10`),
+            apiFetch("/ratings/pending"),
+          ]);
+          setUserRating(ratingRes);
+          setUserComments(commentsRes.items || []);
+          setCommentsTotal(commentsRes.total || 0);
+          setPendingCount(pendingRes.total_pending || 0);
+        } catch {
+          // Rating data is optional, don't fail the whole profile
+        }
       } catch (e) {
         setToast({ kind: "error", title: "Error", text: e.message });
         if (e.message.includes("No autenticado")) {
@@ -363,6 +389,93 @@ export default function Profile() {
             {saving ? "Guardando..." : "Guardar cambios"}
           </button>
         </form>
+
+        {/* Pending Ratings Card */}
+        {pendingCount > 0 && (
+          <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold text-amber-50">Pendientes de votación</div>
+                <div className="mt-1 text-xs text-amber-50/70">
+                  Tenés {pendingCount} voto{pendingCount !== 1 ? "s" : ""} pendiente{pendingCount !== 1 ? "s" : ""}.
+                </div>
+              </div>
+              <a
+                href="/ratings/pending"
+                className={cn(
+                  "rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-black",
+                  "hover:bg-amber-400"
+                )}
+              >
+                Votar ahora
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* Rating Card */}
+        {userRating && userRating.total_votes > 0 && (
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
+            <div className="text-xs font-semibold uppercase tracking-wide text-white/50 mb-3">
+              Mi Calificación
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-4xl font-bold text-amber-300">
+                {userRating.avg_rating.toFixed(1)}
+              </div>
+              <div>
+                <div className="text-sm text-amber-300">
+                  {Array.from({ length: 5 }, (_, i) => (
+                    <span key={i}>{i < Math.round(userRating.avg_rating) ? "\u2605" : "\u2606"}</span>
+                  ))}
+                </div>
+                <div className="text-xs text-white/50 mt-1">
+                  {userRating.total_votes} calificacion{userRating.total_votes !== 1 ? "es" : ""}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Comments Section */}
+        {userComments.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
+            <div className="text-xs font-semibold uppercase tracking-wide text-white/50 mb-3">
+              Comentarios recibidos ({commentsTotal})
+            </div>
+            <div className="space-y-3">
+              {userComments.map((c, i) => (
+                <div key={i} className="rounded-xl border border-white/10 bg-black/10 p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    {c.author.avatar_url ? (
+                      <img
+                        src={c.author.avatar_url}
+                        alt={c.author.full_name}
+                        className="h-7 w-7 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-[10px] font-bold text-white">
+                        {initials(c.author.full_name)}
+                      </div>
+                    )}
+                    <div className="text-sm font-semibold text-white">
+                      {c.author.nickname || c.author.full_name}
+                    </div>
+                    <div className="text-xs text-amber-300">
+                      {Array.from({ length: 5 }, (_, j) => (
+                        <span key={j}>{j < Math.round(c.rating) ? "\u2605" : "\u2606"}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-sm text-white/70">{c.comment}</div>
+                  <div className="mt-1 text-xs text-white/40">
+                    {c.event_title} — {c.court_name}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

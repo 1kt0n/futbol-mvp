@@ -104,7 +104,7 @@ def open_event(event_id: str, actor_user_id: str = Header(..., alias="X-Actor-Us
     with engine.begin() as conn:
         conn.execute(text("""
             UPDATE public.events
-            SET status = 'OPEN', updated_at = now()
+            SET status = 'OPEN', finalized_at = NULL, updated_at = now()
             WHERE id = :event_id
         """), {"event_id": event_id})
 
@@ -190,7 +190,7 @@ def finalize_event(event_id: str, actor_user_id: str = Header(..., alias="X-Acto
     with engine.begin() as conn:
         conn.execute(text("""
             UPDATE public.events
-            SET status = 'FINALIZED', updated_at = now()
+            SET status = 'FINALIZED', finalized_at = now(), updated_at = now()
             WHERE id = :event_id
         """), {"event_id": event_id})
 

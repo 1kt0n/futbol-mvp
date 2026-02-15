@@ -5,6 +5,7 @@ import './index.css'
 import App from './App.jsx'
 import AdminPanel from './AdminPanel.jsx'
 import Profile from './Profile.jsx'
+import RatingsPending from './RatingsPending.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -13,6 +14,7 @@ createRoot(document.getElementById('root')).render(
         <Route path="/" element={<App />} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/ratings/pending" element={<RatingsPending />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>,

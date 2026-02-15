@@ -68,13 +68,13 @@ export default function AdminPanel() {
           setUserRole('admin')
         } else {
           // Chequear si es capitán
-          const event = await apiFetch('/events/active')
+          await apiFetch('/events/active')
           // Simplificado: si hay evento activo y el usuario está asignado como capitán en alguna cancha
           // (esto requeriría que /events/active incluya info de capitanes por cancha)
           setUserRole('captain')
           setTab('eventos')
         }
-      } catch (err) {
+      } catch {
         setErr('Acceso denegado. Requiere permisos de administrador.')
         setTimeout(() => window.location.href = '/', 2000)
       }
@@ -431,7 +431,18 @@ export default function AdminPanel() {
                     : "text-white/60 hover:bg-white/5 hover:text-white"
                 )}
               >
-                Auditoría
+                Auditoria
+              </button>
+              <button
+                onClick={() => setTab('notificaciones')}
+                className={cn(
+                  "px-4 py-3 rounded-t-lg font-semibold transition-colors",
+                  tab === 'notificaciones'
+                    ? "bg-white/10 border-b-2 border-emerald-400 text-white"
+                    : "text-white/60 hover:bg-white/5 hover:text-white"
+                )}
+              >
+                Notificaciones
               </button>
             </>
           )}
@@ -500,6 +511,10 @@ export default function AdminPanel() {
               busy={busy}
               onRefresh={loadAudit}
             />
+          )}
+
+          {tab === 'notificaciones' && userRole === 'admin' && (
+            <NotificationsTab />
           )}
         </div>
 
@@ -899,6 +914,360 @@ function UsuariosTab({ users, searchQuery, setSearchQuery, busy, onSearch, onCre
   )
 }
 
+function NotificationsTab() {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [deactivatingId, setDeactivatingId] = useState(null)
+  const [localErr, setLocalErr] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [expanded, setExpanded] = useState({})
+  const [confirmTarget, setConfirmTarget] = useState(null)
+
+  const [formData, setFormData] = useState({
+    title: '',
+    message: '',
+    action_url: '',
+    expires_in_days: 7,
+  })
+
+  useEffect(() => {
+    loadNotifications()
+  }, [])
+
+  useEffect(() => {
+    if (!successMsg) return
+    const t = setTimeout(() => setSuccessMsg(''), 2600)
+    return () => clearTimeout(t)
+  }, [successMsg])
+
+  function statusOf(item) {
+    if (!item.is_active) return 'DISABLED'
+    if (item.expires_at && new Date(item.expires_at).getTime() <= Date.now()) return 'EXPIRED'
+    return 'ACTIVE'
+  }
+
+  function statusChip(status) {
+    if (status === 'ACTIVE') {
+      return <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-300">ACTIVA</span>
+    }
+    if (status === 'EXPIRED') {
+      return <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-300">EXPIRADA</span>
+    }
+    return <span className="rounded-full border border-zinc-500/30 bg-zinc-500/10 px-2 py-1 text-[10px] font-semibold text-zinc-300">DESACTIVADA</span>
+  }
+
+  function normalizeDays(value) {
+    const n = parseInt(value, 10)
+    if (Number.isNaN(n)) return 7
+    return Math.min(30, Math.max(1, n))
+  }
+
+  function formatDate(value) {
+    if (!value) return '-'
+    return new Date(value).toLocaleString()
+  }
+
+  async function loadNotifications() {
+    setLoading(true)
+    setLocalErr('')
+    try {
+      const data = await apiFetch('/admin/notifications?include_inactive=true&limit=200')
+      setItems(data.items || [])
+    } catch (err) {
+      setLocalErr(err.message || 'No se pudo cargar notificaciones.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault()
+    setLocalErr('')
+    setSuccessMsg('')
+
+    const title = formData.title.trim()
+    const message = formData.message.trim()
+    if (!title || !message) return
+
+    setSubmitting(true)
+    try {
+      await apiFetch('/admin/notifications', {
+        method: 'POST',
+        body: {
+          title,
+          message,
+          action_url: formData.action_url.trim() ? formData.action_url.trim() : null,
+          expires_in_days: normalizeDays(formData.expires_in_days),
+        },
+      })
+
+      setSuccessMsg('Notificacion creada')
+      setFormData((prev) => ({
+        ...prev,
+        title: '',
+        message: '',
+        action_url: '',
+      }))
+      await loadNotifications()
+    } catch (err) {
+      setLocalErr(err.message || 'No se pudo crear la notificacion.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleDeactivate(notificationId) {
+    setDeactivatingId(notificationId)
+    setLocalErr('')
+    setSuccessMsg('')
+    try {
+      await apiFetch(`/admin/notifications/${notificationId}`, { method: 'DELETE' })
+      setSuccessMsg('Notificacion desactivada')
+      setConfirmTarget(null)
+      await loadNotifications()
+    } catch (err) {
+      setLocalErr(err.message || 'No se pudo desactivar la notificacion.')
+    } finally {
+      setDeactivatingId(null)
+    }
+  }
+
+  const filteredItems = items.filter((item) => {
+    if (statusFilter === 'all') return true
+    return statusOf(item).toLowerCase() === statusFilter
+  })
+
+  const previewDays = normalizeDays(formData.expires_in_days)
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        Esta tab administra solo notificaciones informativas globales.
+        Las de votos pendientes son dinamicas y se generan automaticamente.
+      </div>
+
+      {localErr && (
+        <Banner kind="error" title="Error" onClose={() => setLocalErr('')}>
+          {localErr}
+        </Banner>
+      )}
+
+      {successMsg && (
+        <Banner kind="success" title="Listo" onClose={() => setSuccessMsg('')}>
+          {successMsg}
+        </Banner>
+      )}
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+          <h3 className="text-lg font-semibold">Crear Notificacion</h3>
+          <p className="mt-1 text-sm text-white/60">Se mostrara en la campana de todos los usuarios.</p>
+
+          <form onSubmit={handleCreate} className="mt-4 space-y-4">
+            <div>
+              <label className="block text-sm font-semibold mb-2">Titulo</label>
+              <input
+                type="text"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                required
+                maxLength={140}
+                className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">Mensaje</label>
+              <textarea
+                value={formData.message}
+                onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                required
+                maxLength={1200}
+                rows={4}
+                className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">Action URL (opcional)</label>
+              <input
+                type="url"
+                value={formData.action_url}
+                onChange={(e) => setFormData({ ...formData, action_url: e.target.value })}
+                placeholder="https://..."
+                maxLength={500}
+                className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold mb-2">Expira en (dias)</label>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={formData.expires_in_days}
+                onChange={(e) => setFormData({ ...formData, expires_in_days: e.target.value })}
+                className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+              />
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Preview</div>
+              <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-3">
+                <div className="text-sm font-semibold text-white">{formData.title.trim() || 'Titulo de ejemplo'}</div>
+                <div className="mt-1 text-xs text-white/70">{formData.message.trim() || 'Mensaje de ejemplo para la campana.'}</div>
+                <div className="mt-2 flex items-center gap-2">
+                  {formData.action_url.trim() && (
+                    <span className="rounded-lg border border-amber-400/30 bg-amber-500/20 px-2 py-1 text-[11px] font-semibold text-amber-200">
+                      Abrir
+                    </span>
+                  )}
+                  <span className="text-[11px] text-white/50">Expira en {previewDays} dias</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="submit"
+                disabled={submitting || !formData.title.trim() || !formData.message.trim()}
+                className="rounded-xl bg-emerald-500 px-4 py-3 font-semibold hover:bg-emerald-600 disabled:opacity-40"
+              >
+                {submitting ? 'Creando...' : 'Crear'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ title: '', message: '', action_url: '', expires_in_days: 7 })}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 font-semibold hover:bg-white/10"
+              >
+                Limpiar
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-lg font-semibold">Historial</h3>
+            <div className="flex items-center gap-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+              >
+                <option value="all">Todas</option>
+                <option value="active">Activas</option>
+                <option value="expired">Expiradas</option>
+                <option value="disabled">Desactivadas</option>
+              </select>
+              <button
+                onClick={loadNotifications}
+                disabled={loading}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10 disabled:opacity-40"
+              >
+                {loading ? 'Cargando...' : 'Actualizar'}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {!loading && filteredItems.length === 0 && (
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-6 text-center text-sm text-white/50">
+                No hay notificaciones en este filtro.
+              </div>
+            )}
+
+            {filteredItems.map((item) => {
+              const status = statusOf(item)
+              const isExpanded = !!expanded[item.id]
+              const longMessage = (item.message || '').length > 120
+              const messagePreview = isExpanded || !longMessage ? item.message : `${item.message.slice(0, 120)}...`
+
+              return (
+                <div key={item.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{item.title}</div>
+                      <div className="mt-1 text-xs text-white/70">{messagePreview}</div>
+                      {longMessage && (
+                        <button
+                          onClick={() => setExpanded((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
+                          className="mt-1 text-[11px] font-semibold text-amber-300 hover:text-amber-200"
+                        >
+                          {isExpanded ? 'Ver menos' : 'Ver mas'}
+                        </button>
+                      )}
+                    </div>
+                    {statusChip(status)}
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/50">
+                    <span>Creada: {formatDate(item.created_at)}</span>
+                    <span>Expira: {formatDate(item.expires_at)}</span>
+                    {item.action_url && (
+                      <a href={item.action_url} target="_blank" rel="noreferrer" className="text-amber-300 hover:text-amber-200">
+                        Link
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="mt-3">
+                    {item.is_active ? (
+                      <button
+                        onClick={() => setConfirmTarget(item)}
+                        disabled={deactivatingId === item.id}
+                        className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 disabled:opacity-40"
+                      >
+                        {deactivatingId === item.id ? 'Desactivando...' : 'Desactivar'}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-white/40">Sin acciones</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <Modal
+        isOpen={!!confirmTarget}
+        onClose={() => setConfirmTarget(null)}
+        title="Desactivar notificacion"
+      >
+        <div className="space-y-4">
+          <p className="text-white/80">
+            ¿Seguro que queres desactivar esta notificacion?
+          </p>
+          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <div className="text-sm font-semibold text-white">{confirmTarget?.title}</div>
+            <div className="mt-1 text-xs text-white/70">{confirmTarget?.message}</div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleDeactivate(confirmTarget?.id)}
+              disabled={!confirmTarget || !!deactivatingId}
+              className="flex-1 rounded-xl bg-rose-500 px-4 py-3 font-semibold hover:bg-rose-600 disabled:opacity-40"
+            >
+              Confirmar
+            </button>
+            <button
+              onClick={() => setConfirmTarget(null)}
+              className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 font-semibold hover:bg-white/10"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
 function AuditoriaTab({ logs, filters, setFilters, busy, onRefresh }) {
   return (
     <div className="space-y-6">
@@ -1013,7 +1382,7 @@ function CreateEventForm({ onSubmit, busy }) {
   )
 }
 
-function CreateCourtForm({ eventId, onSubmit, busy }) {
+function CreateCourtForm({ onSubmit, busy }) {
   const [formData, setFormData] = useState({
     name: '',
     capacity: 10,
@@ -1274,3 +1643,6 @@ function EditRolesForm({ user, onSubmit, busy }) {
     </form>
   )
 }
+
+
+
