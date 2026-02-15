@@ -185,7 +185,16 @@ def me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
     """
     with engine.connect() as conn:
         user = conn.execute(text("""
-            select id, full_name, email, phone_e164, nickname, avatar_url, is_active
+            select
+              id,
+              full_name,
+              email,
+              phone_e164,
+              nickname,
+              avatar_url,
+              is_active,
+              ranking_opt_in,
+              player_level
             from public.users
             where id = :id
             limit 1
@@ -215,6 +224,8 @@ def me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
                 "phone": user["phone_e164"],
                 "nickname": user["nickname"],
                 "avatar_url": user["avatar_url"],
+                "ranking_opt_in": bool(user.get("ranking_opt_in")),
+                "player_level": user.get("player_level") or "RECREATIVO",
             },
             "roles": roles,
             "is_admin": is_admin,
@@ -248,6 +259,14 @@ def update_profile(
     if body.email is not None:
         updates.append("email = :email")
         params["email"] = body.email.strip().lower() if body.email else None
+
+    if body.ranking_opt_in is not None:
+        updates.append("ranking_opt_in = :ranking_opt_in")
+        params["ranking_opt_in"] = bool(body.ranking_opt_in)
+
+    if body.player_level is not None:
+        updates.append("player_level = :player_level")
+        params["player_level"] = body.player_level
 
     if not updates:
         raise HTTPException(status_code=400, detail="No hay campos para actualizar.")

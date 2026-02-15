@@ -7,6 +7,15 @@ const API_BASE = (
   ""
 ).trim();
 
+const ATTRIBUTE_OPTIONS = [
+  { value: "EQUIPO", label: "Juego en equipo" },
+  { value: "VISION", label: "Vision" },
+  { value: "INTENSIDAD", label: "Intensidad" },
+  { value: "DEFENSA", label: "Defensa" },
+  { value: "ATAQUE", label: "Ataque" },
+  { value: "FAIRPLAY", label: "Fair Play" },
+];
+
 function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
 }
@@ -76,7 +85,7 @@ function StarRating({ value, onChange, disabled }) {
                 disabled && "cursor-not-allowed opacity-60"
               )}
             >
-              {filled ? "\u2605" : half ? "\u2BEA" : "\u2606"}
+              {filled ? "?" : half ? "?" : "?"}
             </span>
           </div>
         );
@@ -84,6 +93,39 @@ function StarRating({ value, onChange, disabled }) {
       {(hover ?? value) ? (
         <span className="ml-2 text-sm font-semibold text-amber-300">{(hover ?? value).toFixed(1)}</span>
       ) : null}
+    </div>
+  );
+}
+
+function AttributeSelector({ selected, onToggle, disabled }) {
+  return (
+    <div className="mt-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">
+        Elegi 2 atributos
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {ATTRIBUTE_OPTIONS.map((opt) => {
+          const active = selected.includes(opt.value);
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onToggle(opt.value)}
+              disabled={disabled}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+                active
+                  ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-100"
+                  : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10",
+                disabled && "cursor-not-allowed opacity-50"
+              )}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-xs text-white/50">{selected.length}/2 seleccionados</div>
     </div>
   );
 }
@@ -185,10 +227,10 @@ export default function RatingsPending() {
           if (t.existing_vote) {
             state[item.court_id][t.user_id] = {
               rating: t.existing_vote.rating,
-              comment: t.existing_vote.comment || "",
+              attributes: t.existing_vote.attributes || [],
             };
           } else {
-            state[item.court_id][t.user_id] = { rating: null, comment: "" };
+            state[item.court_id][t.user_id] = { rating: null, attributes: [] };
           }
         }
       }
@@ -237,18 +279,33 @@ export default function RatingsPending() {
     }));
   }
 
-  function updateComment(courtId, targetId, comment) {
-    setFormState((prev) => ({
-      ...prev,
-      [courtId]: {
-        ...prev[courtId],
-        [targetId]: { ...prev[courtId]?.[targetId], comment },
-      },
-    }));
+  function toggleAttribute(courtId, targetId, attribute) {
+    setFormState((prev) => {
+      const draft = prev?.[courtId]?.[targetId] || { rating: null, attributes: [] };
+      const attrs = draft.attributes || [];
+      const has = attrs.includes(attribute);
+      let nextAttrs = attrs;
+
+      if (has) {
+        nextAttrs = attrs.filter((a) => a !== attribute);
+      } else if (attrs.length < 2) {
+        nextAttrs = [...attrs, attribute];
+      } else {
+        nextAttrs = attrs;
+      }
+
+      return {
+        ...prev,
+        [courtId]: {
+          ...prev[courtId],
+          [targetId]: { ...draft, attributes: nextAttrs },
+        },
+      };
+    });
   }
 
   function getDraftVote(courtId, targetId) {
-    return formState?.[courtId]?.[targetId] || { rating: null, comment: "" };
+    return formState?.[courtId]?.[targetId] || { rating: null, attributes: [] };
   }
 
   async function saveSingleVote(entry) {
@@ -260,6 +317,10 @@ export default function RatingsPending() {
     }
     if (vote.rating == null) {
       setToast({ kind: "error", title: "Falta puntaje", text: "Elegi una puntuacion para guardar." });
+      return;
+    }
+    if ((vote.attributes || []).length !== 2) {
+      setToast({ kind: "error", title: "Faltan atributos", text: "Debes seleccionar exactamente 2 atributos." });
       return;
     }
 
@@ -274,7 +335,7 @@ export default function RatingsPending() {
             {
               target_user_id: entry.target.user_id,
               rating: vote.rating,
-              comment: vote.comment?.trim() || null,
+              attributes: vote.attributes,
             },
           ],
         },
@@ -318,6 +379,34 @@ export default function RatingsPending() {
 
   const items = pendingData?.items || [];
   const totalPending = pendingData?.total_pending || 0;
+
+  if (pendingData?.locked && pendingData?.reason === "RANKING_OPT_OUT") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-4 py-8">
+        <Toast toast={toast} onClose={() => setToast(null)} />
+        <div className="mx-auto max-w-xl rounded-2xl border border-sky-400/20 bg-sky-400/10 p-6 text-sky-100">
+          <h1 className="text-xl font-bold">Ranking desactivado</h1>
+          <p className="mt-2 text-sm text-sky-100/80">
+            Para votar y recibir votos, activa "Participar del ranking" desde tu perfil.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <a
+              href="/profile"
+              className="rounded-xl bg-sky-300 px-4 py-2 text-sm font-semibold text-sky-950 hover:bg-sky-200"
+            >
+              Ir a mi perfil
+            </a>
+            <button
+              onClick={() => navigate("/")}
+              className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20"
+            >
+              Volver
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-4 py-8">
@@ -369,7 +458,7 @@ export default function RatingsPending() {
 
               const ratedDraft = pendingTargetsByCourt.filter((t) => {
                 const draft = getDraftVote(item.court_id, t.user_id);
-                return draft.rating != null;
+                return draft.rating != null && (draft.attributes || []).length === 2;
               }).length;
 
               return (
@@ -430,18 +519,12 @@ export default function RatingsPending() {
                             />
                           </div>
 
-                          <textarea
-                            value={draft.comment || ""}
-                            onChange={(e) => updateComment(item.court_id, target.user_id, e.target.value)}
+                          <AttributeSelector
+                            selected={draft.attributes || []}
+                            onToggle={(attr) => {
+                              if (!item.is_locked && !saving) toggleAttribute(item.court_id, target.user_id, attr);
+                            }}
                             disabled={item.is_locked || saving}
-                            placeholder="Comentario opcional..."
-                            maxLength={500}
-                            rows={2}
-                            className={cn(
-                              "mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white",
-                              "placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20",
-                              "disabled:cursor-not-allowed disabled:opacity-50"
-                            )}
                           />
 
                           {!item.is_locked && (
@@ -454,7 +537,7 @@ export default function RatingsPending() {
                                   is_locked: item.is_locked,
                                 })
                               }
-                              disabled={saving || draft.rating == null}
+                              disabled={saving || draft.rating == null || (draft.attributes || []).length !== 2}
                               className={cn(
                                 "mt-3 w-full rounded-xl bg-white py-2 text-sm font-semibold text-black",
                                 "hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"
@@ -535,18 +618,14 @@ export default function RatingsPending() {
                   />
                 </div>
 
-                <textarea
-                  value={getDraftVote(currentCard.court_id, currentCard.target.user_id).comment || ""}
-                  onChange={(e) => updateComment(currentCard.court_id, currentCard.target.user_id, e.target.value)}
+                <AttributeSelector
+                  selected={getDraftVote(currentCard.court_id, currentCard.target.user_id).attributes || []}
+                  onToggle={(attr) => {
+                    if (!currentCard.is_locked && !saving) {
+                      toggleAttribute(currentCard.court_id, currentCard.target.user_id, attr);
+                    }
+                  }}
                   disabled={currentCard.is_locked || saving}
-                  placeholder="Comentario opcional..."
-                  maxLength={500}
-                  rows={3}
-                  className={cn(
-                    "mt-3 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white",
-                    "placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20",
-                    "disabled:cursor-not-allowed disabled:opacity-50"
-                  )}
                 />
               </div>
 
@@ -574,7 +653,11 @@ export default function RatingsPending() {
                 {!currentCard.is_locked ? (
                   <button
                     onClick={() => saveSingleVote(currentCard)}
-                    disabled={saving || getDraftVote(currentCard.court_id, currentCard.target.user_id).rating == null}
+                    disabled={
+                      saving ||
+                      getDraftVote(currentCard.court_id, currentCard.target.user_id).rating == null ||
+                      (getDraftVote(currentCard.court_id, currentCard.target.user_id).attributes || []).length !== 2
+                    }
                     className={cn(
                       "rounded-xl bg-white px-3 py-2 text-sm font-semibold text-black",
                       "hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-40"

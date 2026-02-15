@@ -52,6 +52,13 @@ def get_notifications(
             "limit": limit,
         }).mappings().all()
 
+        actor_participates_ranking = conn.execute(text("""
+            SELECT ranking_opt_in
+            FROM public.users
+            WHERE id = :actor_user_id
+            LIMIT 1
+        """), {"actor_user_id": actor_user_id}).mappings().first()
+
     items = [{
         "id": str(r["id"]),
         "kind": r["kind"],
@@ -64,11 +71,14 @@ def get_notifications(
     } for r in rows]
 
     pending_ratings_count = 0
-    try:
-        pending = get_pending_ratings(actor_user_id=actor_user_id)
-        pending_ratings_count = int(pending.get("total_pending", 0))
-    except Exception:
-        pending_ratings_count = 0
+    can_show_pending = bool(actor_participates_ranking and actor_participates_ranking["ranking_opt_in"])
+
+    if can_show_pending:
+        try:
+            pending = get_pending_ratings(actor_user_id=actor_user_id)
+            pending_ratings_count = int(pending.get("total_pending", 0))
+        except Exception:
+            pending_ratings_count = 0
 
     if pending_ratings_count > 0:
         items.insert(0, {

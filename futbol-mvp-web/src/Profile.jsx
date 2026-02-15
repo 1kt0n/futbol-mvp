@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const API_BASE = (
@@ -6,6 +6,12 @@ const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
   ""
 ).trim();
+
+const PLAYER_LEVEL_OPTIONS = [
+  { value: "INICIAL", label: "Inicial" },
+  { value: "RECREATIVO", label: "Recreativo" },
+  { value: "COMPETITIVO", label: "Competitivo" },
+];
 
 function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
@@ -66,7 +72,6 @@ async function apiUpload(path, file) {
   return data;
 }
 
-// Toast component
 function Toast({ toast, onClose }) {
   if (!toast) return null;
   const bg = toast.kind === "error" ? "bg-red-500/90" : "bg-emerald-500/90";
@@ -74,12 +79,11 @@ function Toast({ toast, onClose }) {
     <div className={cn("fixed left-4 right-4 top-4 z-50 rounded-xl px-4 py-3 text-white shadow-lg sm:left-auto sm:right-4", bg)}>
       <div className="font-semibold">{toast.title}</div>
       {toast.text && <div className="text-sm opacity-90">{toast.text}</div>}
-      <button onClick={onClose} className="absolute top-1 right-2 text-white/70 hover:text-white">×</button>
+      <button onClick={onClose} className="absolute right-2 top-1 text-white/70 hover:text-white">x</button>
     </div>
   );
 }
 
-// Role badge component
 function RoleBadge({ role }) {
   const colors = {
     super_admin: "bg-purple-500/20 text-purple-300 border-purple-500/30",
@@ -91,6 +95,15 @@ function RoleBadge({ role }) {
     <span className={cn("rounded-full border px-3 py-1 text-xs font-semibold uppercase", color)}>
       {role}
     </span>
+  );
+}
+
+function AttributePill({ name, count }) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs">
+      <span className="font-semibold text-emerald-100">{name}</span>
+      <span className="rounded-full bg-black/20 px-2 py-0.5 font-bold text-emerald-200">{count}</span>
+    </div>
   );
 }
 
@@ -106,18 +119,17 @@ export default function Profile() {
   const [user, setUser] = useState(null);
   const [roles, setRoles] = useState([]);
 
-  // Rating data
   const [userRating, setUserRating] = useState(null);
-  const [userComments, setUserComments] = useState([]);
+  const [attributesTop, setAttributesTop] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
-  const [commentsTotal, setCommentsTotal] = useState(0);
+  const [rankingMessage, setRankingMessage] = useState("");
 
-  // Form state
   const [fullName, setFullName] = useState("");
   const [nickname, setNickname] = useState("");
   const [email, setEmail] = useState("");
+  const [rankingOptIn, setRankingOptIn] = useState(false);
+  const [playerLevel, setPlayerLevel] = useState("RECREATIVO");
 
-  // Load user data
   useEffect(() => {
     async function loadProfile() {
       try {
@@ -127,21 +139,27 @@ export default function Profile() {
         setFullName(data.user.full_name || "");
         setNickname(data.user.nickname || "");
         setEmail(data.user.email || "");
+        setRankingOptIn(Boolean(data.user.ranking_opt_in));
+        setPlayerLevel(data.user.player_level || "RECREATIVO");
 
-        // Load rating data
         try {
           const userId = data.user.id || getActorId();
-          const [ratingRes, commentsRes, pendingRes] = await Promise.all([
+          const [ratingRes, attrsRes, pendingRes] = await Promise.all([
             apiFetch(`/users/${userId}/rating`),
-            apiFetch(`/users/${userId}/ratings/comments?page=1&page_size=10`),
+            apiFetch(`/users/${userId}/ratings/attributes`),
             apiFetch("/ratings/pending"),
           ]);
-          setUserRating(ratingRes);
-          setUserComments(commentsRes.items || []);
-          setCommentsTotal(commentsRes.total || 0);
+
+          setUserRating(ratingRes?.participates ? ratingRes : null);
+          setAttributesTop(attrsRes?.participates ? attrsRes.top || [] : []);
           setPendingCount(pendingRes.total_pending || 0);
+          setRankingMessage(
+            ratingRes?.participates
+              ? ""
+              : ratingRes?.message || "No participas del ranking. Activalo para recibir feedback y aparecer en ranking."
+          );
         } catch {
-          // Rating data is optional, don't fail the whole profile
+          // rating endpoints are optional for profile render
         }
       } catch (e) {
         setToast({ kind: "error", title: "Error", text: e.message });
@@ -155,7 +173,6 @@ export default function Profile() {
     loadProfile();
   }, [navigate]);
 
-  // Auto-hide toast
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(null), 4000);
@@ -169,10 +186,33 @@ export default function Profile() {
     try {
       const data = await apiFetch("/me", {
         method: "PATCH",
-        body: { full_name: fullName, nickname, email },
+        body: {
+          full_name: fullName,
+          nickname,
+          email,
+          ranking_opt_in: rankingOptIn,
+          player_level: playerLevel,
+        },
       });
       setUser(data.user);
+      setRankingOptIn(Boolean(data.user.ranking_opt_in));
+      setPlayerLevel(data.user.player_level || "RECREATIVO");
       setToast({ kind: "success", title: "Guardado", text: "Perfil actualizado." });
+
+      const userId = data.user.id || getActorId();
+      const [ratingRes, attrsRes, pendingRes] = await Promise.all([
+        apiFetch(`/users/${userId}/rating`),
+        apiFetch(`/users/${userId}/ratings/attributes`),
+        apiFetch("/ratings/pending"),
+      ]);
+      setUserRating(ratingRes?.participates ? ratingRes : null);
+      setAttributesTop(attrsRes?.participates ? attrsRes.top || [] : []);
+      setPendingCount(pendingRes.total_pending || 0);
+      setRankingMessage(
+        ratingRes?.participates
+          ? ""
+          : ratingRes?.message || "No participas del ranking. Activalo para recibir feedback y aparecer en ranking."
+      );
     } catch (e) {
       setToast({ kind: "error", title: "Error", text: e.message });
     } finally {
@@ -184,9 +224,8 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate client-side
     if (!file.type.startsWith("image/")) {
-      setToast({ kind: "error", title: "Error", text: "Seleccioná una imagen." });
+      setToast({ kind: "error", title: "Error", text: "Selecciona una imagen." });
       return;
     }
     if (file.size > 2 * 1024 * 1024) {
@@ -234,21 +273,18 @@ export default function Profile() {
       <Toast toast={toast} onClose={() => setToast(null)} />
 
       <div className="mx-auto max-w-lg">
-        {/* Header */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold text-white">Mi Perfil</h1>
           <button
             onClick={() => navigate("/")}
             className="self-start rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
           >
-            ← Volver
+            Volver
           </button>
         </div>
 
-        {/* Avatar Section */}
         <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-6">
           <div className="flex flex-col items-center gap-4 sm:flex-row">
-            {/* Avatar */}
             <div className="relative">
               {user?.avatar_url ? (
                 <img
@@ -268,7 +304,6 @@ export default function Profile() {
               )}
             </div>
 
-            {/* Avatar Actions */}
             <div className="flex flex-col gap-2">
               <input
                 ref={fileInputRef}
@@ -296,12 +331,11 @@ export default function Profile() {
                   Eliminar foto
                 </button>
               )}
-              <p className="text-xs text-white/40">JPG, PNG o WebP. Máx 2MB.</p>
+              <p className="text-xs text-white/40">JPG, PNG o WebP. Max 2MB.</p>
             </div>
           </div>
         </div>
 
-        {/* Roles Section */}
         {roles.length > 0 && (
           <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">Roles</div>
@@ -313,10 +347,8 @@ export default function Profile() {
           </div>
         )}
 
-        {/* Profile Form */}
         <form onSubmit={handleSave} className="rounded-2xl border border-white/10 bg-white/5 p-6">
           <div className="space-y-4">
-            {/* Full Name */}
             <div>
               <label className="mb-1 block text-sm font-medium text-white/70">Nombre completo</label>
               <input
@@ -332,7 +364,6 @@ export default function Profile() {
               />
             </div>
 
-            {/* Nickname */}
             <div>
               <label className="mb-1 block text-sm font-medium text-white/70">Apodo (opcional)</label>
               <input
@@ -348,7 +379,6 @@ export default function Profile() {
               />
             </div>
 
-            {/* Email */}
             <div>
               <label className="mb-1 block text-sm font-medium text-white/70">Email (opcional)</label>
               <input
@@ -364,20 +394,65 @@ export default function Profile() {
               />
             </div>
 
-            {/* Phone (readonly) */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-white/70">Teléfono</label>
+              <label className="mb-1 block text-sm font-medium text-white/70">Telefono</label>
               <input
                 type="text"
                 value={user?.phone || ""}
                 readOnly
-                className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white/50 cursor-not-allowed"
+                className="w-full cursor-not-allowed rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white/50"
               />
-              <p className="mt-1 text-xs text-white/40">El teléfono no se puede modificar.</p>
+              <p className="mt-1 text-xs text-white/40">El telefono no se puede modificar.</p>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-white">Participar del ranking</div>
+                  <div className="text-xs text-white/50">Si esta apagado, no votas ni recibis votos.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRankingOptIn((v) => !v)}
+                  className={cn(
+                    "relative h-7 w-12 rounded-full border transition-colors",
+                    rankingOptIn
+                      ? "border-emerald-400/40 bg-emerald-500/30"
+                      : "border-white/20 bg-white/10"
+                  )}
+                  aria-pressed={rankingOptIn}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all",
+                      rankingOptIn ? "left-6" : "left-0.5"
+                    )}
+                  />
+                </button>
+              </div>
+
+              <div className="mt-3">
+                <label className="mb-1 block text-sm font-medium text-white/70">Nivel autodeclarado</label>
+                <select
+                  value={playerLevel}
+                  onChange={(e) => setPlayerLevel(e.target.value)}
+                  disabled={!rankingOptIn}
+                  className={cn(
+                    "w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white",
+                    "focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/10",
+                    "disabled:cursor-not-allowed disabled:opacity-50"
+                  )}
+                >
+                  {PLAYER_LEVEL_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
-          {/* Submit */}
           <button
             type="submit"
             disabled={saving}
@@ -390,14 +465,13 @@ export default function Profile() {
           </button>
         </form>
 
-        {/* Pending Ratings Card */}
-        {pendingCount > 0 && (
+        {rankingOptIn && pendingCount > 0 && (
           <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-amber-50">Pendientes de votación</div>
+                <div className="text-sm font-semibold text-amber-50">Pendientes de votacion</div>
                 <div className="mt-1 text-xs text-amber-50/70">
-                  Tenés {pendingCount} voto{pendingCount !== 1 ? "s" : ""} pendiente{pendingCount !== 1 ? "s" : ""}.
+                  Tenes {pendingCount} voto{pendingCount !== 1 ? "s" : ""} pendiente{pendingCount !== 1 ? "s" : ""}.
                 </div>
               </div>
               <a
@@ -413,23 +487,26 @@ export default function Profile() {
           </div>
         )}
 
-        {/* Rating Card */}
-        {userRating && userRating.total_votes > 0 && (
+        {!rankingOptIn && (
+          <div className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4 text-sm text-sky-100">
+            {rankingMessage || "No participas del ranking. Activalo para recibir feedback y aparecer en ranking."}
+          </div>
+        )}
+
+        {rankingOptIn && userRating?.participates && userRating.total_votes > 0 && (
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
-            <div className="text-xs font-semibold uppercase tracking-wide text-white/50 mb-3">
-              Mi Calificación
+            <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-white/50">
+              Mi calificacion
             </div>
             <div className="flex items-center gap-4">
-              <div className="text-4xl font-bold text-amber-300">
-                {userRating.avg_rating.toFixed(1)}
-              </div>
+              <div className="text-4xl font-bold text-amber-300">{userRating.avg_rating.toFixed(1)}</div>
               <div>
                 <div className="text-sm text-amber-300">
                   {Array.from({ length: 5 }, (_, i) => (
-                    <span key={i}>{i < Math.round(userRating.avg_rating) ? "\u2605" : "\u2606"}</span>
+                    <span key={i}>{i < Math.round(userRating.avg_rating) ? "?" : "?"}</span>
                   ))}
                 </div>
-                <div className="text-xs text-white/50 mt-1">
+                <div className="mt-1 text-xs text-white/50">
                   {userRating.total_votes} calificacion{userRating.total_votes !== 1 ? "es" : ""}
                 </div>
               </div>
@@ -437,41 +514,14 @@ export default function Profile() {
           </div>
         )}
 
-        {/* Comments Section */}
-        {userComments.length > 0 && (
+        {rankingOptIn && attributesTop.length > 0 && (
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
-            <div className="text-xs font-semibold uppercase tracking-wide text-white/50 mb-3">
-              Comentarios recibidos ({commentsTotal})
+            <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-white/50">
+              Atributos destacados
             </div>
-            <div className="space-y-3">
-              {userComments.map((c, i) => (
-                <div key={i} className="rounded-xl border border-white/10 bg-black/10 p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    {c.author.avatar_url ? (
-                      <img
-                        src={c.author.avatar_url}
-                        alt={c.author.full_name}
-                        className="h-7 w-7 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-[10px] font-bold text-white">
-                        {initials(c.author.full_name)}
-                      </div>
-                    )}
-                    <div className="text-sm font-semibold text-white">
-                      {c.author.nickname || c.author.full_name}
-                    </div>
-                    <div className="text-xs text-amber-300">
-                      {Array.from({ length: 5 }, (_, j) => (
-                        <span key={j}>{j < Math.round(c.rating) ? "\u2605" : "\u2606"}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="text-sm text-white/70">{c.comment}</div>
-                  <div className="mt-1 text-xs text-white/40">
-                    {c.event_title} — {c.court_name}
-                  </div>
-                </div>
+            <div className="flex flex-wrap gap-2">
+              {attributesTop.map((item) => (
+                <AttributePill key={item.attribute} name={item.attribute} count={item.count} />
               ))}
             </div>
           </div>

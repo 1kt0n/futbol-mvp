@@ -6,6 +6,11 @@ const API_BASE = (
   ""
 ).trim(); // default: same-origin
 const BRAND_LOGO_URL = "/tercer-tiempo-logo.png";
+const PLAYER_LEVEL_LABELS = {
+  INICIAL: "Inicial",
+  RECREATIVO: "Recreativo",
+  COMPETITIVO: "Competitivo",
+};
 
 // -------- Actor helpers --------
 function getActorId() {
@@ -268,7 +273,14 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
                   )}
                   <div>
                     <div className="text-sm font-semibold text-white">{p.name}</div>
-                    <div className="text-xs text-white/50">{p.type === "USER" ? "Jugador" : "Invitado"}</div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-white/50">
+                      <span>{p.type === "USER" ? "Jugador" : "Invitado"}</span>
+                      {p.type === "USER" && p.player_level && (
+                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-white/80">
+                          {PLAYER_LEVEL_LABELS[p.player_level] || p.player_level}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 

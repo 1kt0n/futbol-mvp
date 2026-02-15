@@ -1,19 +1,26 @@
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
+
 
 class RegisterRequest(BaseModel):
     court_id: str = Field(..., description="UUID de la cancha elegida")
+
 
 class GuestRequest(BaseModel):
     guest_name: str = Field(..., min_length=2, max_length=60)
     court_id: str = Field(..., description="UUID de la cancha elegida")
 
+
 class MoveRequest(BaseModel):
     to_court_id: str = Field(..., description="UUID de la cancha destino")
+
 
 class PinRegisterRequest(BaseModel):
     full_name: str = Field(..., min_length=3, max_length=120)
     phone: str = Field(..., min_length=6, max_length=30)
     pin: str = Field(..., min_length=4, max_length=6)
+
 
 class PinLoginRequest(BaseModel):
     phone: str = Field(..., min_length=6, max_length=30)
@@ -43,7 +50,7 @@ class UpdateCourtRequest(BaseModel):
 
 
 class AssignCaptainRequest(BaseModel):
-    user_id: str = Field(..., description="UUID del usuario a asignar como capitán")
+    user_id: str = Field(..., description="UUID del usuario a asignar como capitan")
 
 
 # ========== ADMIN USERS ==========
@@ -52,7 +59,7 @@ class CreateUserRequest(BaseModel):
     phone: str = Field(..., min_length=6, max_length=30)
     email: str | None = Field(None, max_length=120)
     pin: str | None = Field(None, min_length=4, max_length=6, description="PIN inicial opcional")
-    roles: list[str] | None = Field(None, description="Lista opcional de códigos de roles: ['admin', 'super_admin']")
+    roles: list[str] | None = Field(None, description="Lista opcional de codigos de roles: ['admin', 'super_admin']")
 
 
 class UpdateUserRequest(BaseModel):
@@ -64,7 +71,7 @@ class ResetPinRequest(BaseModel):
 
 
 class UpdateUserRolesRequest(BaseModel):
-    roles: list[str] = Field(..., description="Lista de códigos de roles: ['admin', 'super_admin']")
+    roles: list[str] = Field(..., description="Lista de codigos de roles: ['admin', 'super_admin']")
 
 
 # ========== PROFILE ==========
@@ -72,19 +79,41 @@ class UpdateProfileRequest(BaseModel):
     full_name: str | None = Field(None, min_length=2, max_length=120)
     nickname: str | None = Field(None, max_length=30)
     email: str | None = Field(None, max_length=120)
+    ranking_opt_in: bool | None = None
+    player_level: Literal["INICIAL", "RECREATIVO", "COMPETITIVO"] | None = None
 
 
 # ========== RATINGS ==========
 class SingleRating(BaseModel):
     target_user_id: str = Field(..., description="UUID del jugador a calificar")
-    rating: float = Field(..., ge=1.0, le=5.0, description="Calificación 1.0-5.0, step 0.5")
+    rating: float = Field(..., ge=1.0, le=5.0, description="Calificacion 1.0-5.0, step 0.5")
     comment: str | None = Field(None, max_length=500)
+    attributes: list[str] | None = Field(
+        default=None,
+        min_length=2,
+        max_length=2,
+        description="Dos atributos elegidos para el jugador.",
+    )
 
 
 class SaveRatingsRequest(BaseModel):
     event_id: str = Field(..., description="UUID del evento")
     court_id: str = Field(..., description="UUID de la cancha")
-    ratings: list[SingleRating] = Field(..., min_length=1, max_length=50)
+    ratings: list[SingleRating] | None = Field(None, max_length=50)
+    votes: list[SingleRating] | None = Field(None, max_length=50)
+
+    @model_validator(mode="after")
+    def normalize_votes(self):
+        if not self.ratings and self.votes:
+            self.ratings = self.votes
+
+        if not self.ratings:
+            raise ValueError("Debe enviar al menos un voto en 'ratings' o 'votes'.")
+
+        if len(self.ratings) > 50:
+            raise ValueError("Se permiten como maximo 50 votos por request.")
+
+        return self
 
 
 # ========== NOTIFICATIONS ==========
