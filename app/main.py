@@ -82,9 +82,13 @@ if STATIC_DIR.is_dir():
     # Catch-all: serve index.html for any non-API route (SPA routing)
     @app.get("/{full_path:path}")
     def serve_spa(full_path: str):
+        no_cache_headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
         # If the file exists in static dir, serve it directly
         file_path = STATIC_DIR / full_path
         if full_path and file_path.is_file():
+            # HTML should not be cached to force clients to pick the latest app shell.
+            if file_path.suffix.lower() == ".html":
+                return FileResponse(file_path, headers=no_cache_headers)
             return FileResponse(file_path)
         # Otherwise serve index.html (React Router handles the rest)
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers=no_cache_headers)
