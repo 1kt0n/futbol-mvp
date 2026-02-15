@@ -224,7 +224,7 @@ def create_notification(
                 :message,
                 :action_url,
                 now(),
-                now() + (:expires_in_days || ' days')::interval,
+                now() + (:expires_in_days * interval '1 day'),
                 true,
                 :actor_user_id,
                 now(),
