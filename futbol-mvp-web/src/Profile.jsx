@@ -156,7 +156,7 @@ export default function Profile() {
           setRankingMessage(
             ratingRes?.participates
               ? ""
-              : ratingRes?.message || "No participas del ranking. Activalo para recibir feedback y aparecer en ranking."
+              : ratingRes?.message || "No participas del Perfil de Juego. Si lo activas, podras votar y recibir feedback de tus companeros."
           );
         } catch {
           // rating endpoints are optional for profile render
@@ -211,7 +211,7 @@ export default function Profile() {
       setRankingMessage(
         ratingRes?.participates
           ? ""
-          : ratingRes?.message || "No participas del ranking. Activalo para recibir feedback y aparecer en ranking."
+          : ratingRes?.message || "No participas del Perfil de Juego. Si lo activas, podras votar y recibir feedback de tus companeros."
       );
     } catch (e) {
       setToast({ kind: "error", title: "Error", text: e.message });
@@ -406,10 +406,33 @@ export default function Profile() {
             </div>
 
             <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+              <label className="mb-1 block text-sm font-medium text-white/70">Nivel autodeclarado</label>
+              <div className="mb-2 text-xs text-white/50">
+                Es tu percepcion personal y no depende del Perfil de Juego.
+              </div>
+              <select
+                value={playerLevel}
+                onChange={(e) => setPlayerLevel(e.target.value)}
+                className={cn(
+                  "w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white",
+                  "focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/10"
+                )}
+              >
+                {PLAYER_LEVEL_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-white">Participar del ranking</div>
-                  <div className="text-xs text-white/50">Si esta apagado, no votas ni recibis votos.</div>
+                  <div className="text-xs text-white/50">
+                    Si esta apagado, no votas ni recibis votos del Perfil de Juego.
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -430,26 +453,6 @@ export default function Profile() {
                   />
                 </button>
               </div>
-
-              <div className="mt-3">
-                <label className="mb-1 block text-sm font-medium text-white/70">Nivel autodeclarado</label>
-                <select
-                  value={playerLevel}
-                  onChange={(e) => setPlayerLevel(e.target.value)}
-                  disabled={!rankingOptIn}
-                  className={cn(
-                    "w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-white",
-                    "focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/10",
-                    "disabled:cursor-not-allowed disabled:opacity-50"
-                  )}
-                >
-                  {PLAYER_LEVEL_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           </div>
 
@@ -469,9 +472,9 @@ export default function Profile() {
           <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-amber-50">Pendientes de votacion</div>
+                <div className="text-sm font-semibold text-amber-50">Feedback pendiente</div>
                 <div className="mt-1 text-xs text-amber-50/70">
-                  Tenes {pendingCount} voto{pendingCount !== 1 ? "s" : ""} pendiente{pendingCount !== 1 ? "s" : ""}.
+                  Tenes {pendingCount} voto{pendingCount !== 1 ? "s" : ""} para completar.
                 </div>
               </div>
               <a
@@ -481,7 +484,7 @@ export default function Profile() {
                   "hover:bg-amber-400"
                 )}
               >
-                Votar ahora
+                Dejar feedback
               </a>
             </div>
           </div>
@@ -489,43 +492,57 @@ export default function Profile() {
 
         {!rankingOptIn && (
           <div className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4 text-sm text-sky-100">
-            {rankingMessage || "No participas del ranking. Activalo para recibir feedback y aparecer en ranking."}
+            {rankingMessage || "No participas del Perfil de Juego. Si lo activas, podras votar y recibir feedback de tus companeros."}
           </div>
         )}
 
-        {rankingOptIn && userRating?.participates && userRating.total_votes > 0 && (
+        {rankingOptIn && (
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-white/50">
-              Mi calificacion
+            <div className="text-sm font-semibold text-white">Perfil de juego</div>
+            <div className="mt-1 text-xs text-white/60">
+              Basado en feedback de tus companeros de partido.
             </div>
-            <div className="flex items-center gap-4">
-              <div className="text-4xl font-bold text-amber-300">{userRating.avg_rating.toFixed(1)}</div>
-              <div>
-                <div className="text-sm text-amber-300">
-                  {Array.from({ length: 5 }, (_, i) => (
-                    <span key={i}>{i < Math.round(userRating.avg_rating) ? "?" : "?"}</span>
+
+            <div className="mt-5">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-white/50">
+                Atributos destacados
+              </div>
+              {attributesTop.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {attributesTop.map((item) => (
+                    <AttributePill key={item.attribute} name={item.attribute} count={item.count} />
                   ))}
                 </div>
-                <div className="mt-1 text-xs text-white/50">
-                  {userRating.total_votes} calificacion{userRating.total_votes !== 1 ? "es" : ""}
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-black/10 px-3 py-3 text-sm text-white/60">
+                  Todavia no hay suficiente feedback para mostrar atributos.
                 </div>
+              )}
+            </div>
+
+            <div className="mt-5 rounded-xl border border-white/10 bg-black/10 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-white/50">
+                Indicador colaborativo
               </div>
+              {userRating?.participates && userRating.total_votes > 0 ? (
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="text-2xl font-semibold text-amber-200">
+                    <span className="mr-1 text-amber-300">{"\u2605"}</span>
+                    {userRating.avg_rating.toFixed(1)}
+                  </div>
+                  <div className="text-xs text-white/60">
+                    Basado en {userRating.total_votes} voto{userRating.total_votes !== 1 ? "s" : ""}.
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-2 text-xs text-white/60">
+                  Aun no hay votos suficientes para mostrar un indicador.
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {rankingOptIn && attributesTop.length > 0 && (
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6">
-            <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-white/50">
-              Atributos destacados
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {attributesTop.map((item) => (
-                <AttributePill key={item.attribute} name={item.attribute} count={item.count} />
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -357,6 +357,95 @@ def update_court(
     return {"court_id": court_id, "message": "Cancha actualizada exitosamente.", "changes": changes}
 
 
+@router.delete("/events/{event_id}/courts/{court_id}")
+def delete_court(
+    event_id: str,
+    court_id: str,
+    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+):
+    """
+    Elimina una cancha de un evento. Solo admin/super_admin.
+    Solo se permite si no tiene inscripciones ni ratings asociados.
+    """
+    with engine.connect() as conn:
+        require_admin(conn, actor_user_id)
+
+        court = conn.execute(text("""
+            SELECT id, name
+            FROM public.event_courts
+            WHERE id = :court_id AND event_id = :event_id
+        """), {"court_id": court_id, "event_id": event_id}).mappings().first()
+
+        if not court:
+            raise HTTPException(status_code=404, detail="Cancha no encontrada en este evento.")
+
+        registrations_count = conn.execute(text("""
+            SELECT COUNT(*) AS count
+            FROM public.event_registrations
+            WHERE court_id = :court_id
+        """), {"court_id": court_id}).mappings().first()["count"]
+
+        if registrations_count > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "No se puede eliminar la cancha porque tiene inscripciones asociadas. "
+                    "Mové o eliminá esas inscripciones primero."
+                ),
+            )
+
+        ratings_table_exists = conn.execute(text("""
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = 'player_ratings'
+        """)).first() is not None
+
+        ratings_count = 0
+        if ratings_table_exists:
+            ratings_count = conn.execute(text("""
+                SELECT COUNT(*) AS count
+                FROM public.player_ratings
+                WHERE court_id = :court_id
+            """), {"court_id": court_id}).mappings().first()["count"]
+
+        if ratings_count > 0:
+            raise HTTPException(
+                status_code=409,
+                detail="No se puede eliminar la cancha porque tiene ratings asociados.",
+            )
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            DELETE FROM public.event_court_captains
+            WHERE event_id = :event_id AND court_id = :court_id
+        """), {"event_id": event_id, "court_id": court_id})
+
+        conn.execute(text("""
+            DELETE FROM public.event_courts
+            WHERE id = :court_id AND event_id = :event_id
+        """), {"court_id": court_id, "event_id": event_id})
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (
+                event_id, actor_user_id, action, metadata
+            )
+            VALUES (
+                :event_id, :actor_user_id, 'DELETE_COURT', CAST(:metadata AS jsonb)
+            )
+        """), {
+            "event_id": event_id,
+            "actor_user_id": actor_user_id,
+            "metadata": f'{{"court_id":"{court_id}"}}'
+        })
+
+    return {
+        "event_id": event_id,
+        "court_id": court_id,
+        "message": f"Cancha '{court['name']}' eliminada exitosamente."
+    }
+
+
 @router.post("/events/{event_id}/courts/{court_id}/captains")
 def assign_captain(
     event_id: str,
@@ -680,6 +769,7 @@ def get_event_detail(
                 "court_id": str(c["id"]),
                 "name": c["name"],
                 "capacity": capacity,
+                "sort_order": c["sort_order"],
                 "occupied": occupied,
                 "available": available,
                 "is_open": c["is_open"],

@@ -41,7 +41,9 @@ export default function AdminPanel() {
   const [activeEvent, setActiveEvent] = useState(null)
   const [showCreateEvent, setShowCreateEvent] = useState(false)
   const [showCreateCourt, setShowCreateCourt] = useState(false)
+  const [showEditCourt, setShowEditCourt] = useState(false)
   const [selectedEventId, setSelectedEventId] = useState(null)
+  const [selectedCourt, setSelectedCourt] = useState(null)
 
   // Estado para Usuarios
   const [users, setUsers] = useState([])
@@ -295,6 +297,50 @@ export default function AdminPanel() {
     }
   }
 
+  // Handler: Editar cancha
+  async function handleUpdateCourt(eventId, courtId, formData) {
+    setBusy(true)
+    try {
+      await apiFetch(`/admin/events/${eventId}/courts/${courtId}`, {
+        method: 'PATCH',
+        body: formData
+      })
+      setToast('Cancha actualizada')
+      setShowEditCourt(false)
+      setSelectedCourt(null)
+      await loadEvents()
+    } catch (err) {
+      setErr(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Handler: Eliminar cancha
+  async function handleDeleteCourt(eventId, court) {
+    setConfirmModal({
+      title: 'Eliminar cancha',
+      message: `Se eliminara '${court.name}'. Esta accion no se puede deshacer.`,
+      onConfirm: async () => {
+        setBusy(true)
+        try {
+          await apiFetch(`/admin/events/${eventId}/courts/${court.court_id}`, { method: 'DELETE' })
+          setToast('Cancha eliminada')
+          setConfirmModal(null)
+          if (selectedCourt?.court_id === court.court_id) {
+            setShowEditCourt(false)
+            setSelectedCourt(null)
+          }
+          await loadEvents()
+        } catch (err) {
+          setErr(err.message)
+        } finally {
+          setBusy(false)
+        }
+      }
+    })
+  }
+
   // Handler: Crear usuario
   async function handleCreateUser(formData) {
     setBusy(true)
@@ -478,6 +524,11 @@ export default function AdminPanel() {
               onFinalizeEvent={handleFinalizeEvent}
               onOpenCourt={handleOpenCourt}
               onCloseCourt={handleCloseCourt}
+              onEditCourt={(court) => {
+                setSelectedCourt(court)
+                setShowEditCourt(true)
+              }}
+              onDeleteCourt={handleDeleteCourt}
               onCreateCourt={() => setShowCreateCourt(true)}
               onRefresh={loadEvents}
             />
@@ -525,9 +576,25 @@ export default function AdminPanel() {
 
         <Modal isOpen={showCreateCourt} onClose={() => setShowCreateCourt(false)} title="Crear Cancha">
           <CreateCourtForm
-            eventId={selectedEventId}
             onSubmit={(data) => handleCreateCourt(selectedEventId, data)}
             busy={busy}
+            submitLabel="Crear Cancha"
+          />
+        </Modal>
+
+        <Modal
+          isOpen={showEditCourt}
+          onClose={() => {
+            setShowEditCourt(false)
+            setSelectedCourt(null)
+          }}
+          title="Editar Cancha"
+        >
+          <CreateCourtForm
+            onSubmit={(data) => handleUpdateCourt(selectedEventId, selectedCourt?.court_id, data)}
+            busy={busy}
+            initialData={selectedCourt}
+            submitLabel="Guardar cambios"
           />
         </Modal>
 
@@ -596,7 +663,24 @@ export default function AdminPanel() {
 
 // ==================== TAB COMPONENTS ====================
 
-function EventosTab({ eventsList, selectedEventId, onSelectEvent, activeEvent, busy, userRole, onCreateEvent, onCloseEvent, onReopenEvent, onFinalizeEvent, onOpenCourt, onCloseCourt, onCreateCourt, onRefresh }) {
+function EventosTab({
+  eventsList,
+  selectedEventId,
+  onSelectEvent,
+  activeEvent,
+  busy,
+  userRole,
+  onCreateEvent,
+  onCloseEvent,
+  onReopenEvent,
+  onFinalizeEvent,
+  onOpenCourt,
+  onCloseCourt,
+  onEditCourt,
+  onDeleteCourt,
+  onCreateCourt,
+  onRefresh
+}) {
   const event = activeEvent?.event
   const courts = activeEvent?.courts || []
   const waitlist = activeEvent?.waitlist || []
@@ -759,7 +843,7 @@ function EventosTab({ eventsList, selectedEventId, onSelectEvent, activeEvent, b
 
                   {/* Botones de gestión de cancha - Solo admin */}
                   {userRole === 'admin' && event.status !== 'FINALIZED' && (
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
                       {court.is_open ? (
                         <button
                           onClick={() => onCloseCourt(event.id, court.court_id)}
@@ -775,6 +859,18 @@ function EventosTab({ eventsList, selectedEventId, onSelectEvent, activeEvent, b
                           Abrir Cancha
                         </button>
                       )}
+                      <button
+                        onClick={() => onEditCourt(court)}
+                        className="text-xs rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 px-3 py-1.5"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => onDeleteCourt(event.id, court)}
+                        className="text-xs rounded-lg border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 px-3 py-1.5"
+                      >
+                        Eliminar
+                      </button>
                     </div>
                   )}
 
@@ -1382,7 +1478,7 @@ function CreateEventForm({ onSubmit, busy }) {
   )
 }
 
-function CreateCourtForm({ onSubmit, busy }) {
+function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Crear Cancha' }) {
   const [formData, setFormData] = useState({
     name: '',
     capacity: 10,
@@ -1390,9 +1486,33 @@ function CreateCourtForm({ onSubmit, busy }) {
     is_open: true
   })
 
+  useEffect(() => {
+    if (!initialData) {
+      setFormData({
+        name: '',
+        capacity: 10,
+        sort_order: 1,
+        is_open: true
+      })
+      return
+    }
+
+    setFormData({
+      name: initialData.name || '',
+      capacity: initialData.capacity ?? 10,
+      sort_order: initialData.sort_order ?? 1,
+      is_open: initialData.is_open ?? true
+    })
+  }, [initialData])
+
   function handleSubmit(e) {
     e.preventDefault()
-    onSubmit(formData)
+    onSubmit({
+      name: formData.name,
+      capacity: Number(formData.capacity),
+      sort_order: Number(formData.sort_order),
+      is_open: !!formData.is_open
+    })
   }
 
   return (
@@ -1413,10 +1533,21 @@ function CreateCourtForm({ onSubmit, busy }) {
         <input
           type="number"
           value={formData.capacity}
-          onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) })}
+          onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
           required
           min="1"
           max="50"
+          className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold mb-2">Orden</label>
+        <input
+          type="number"
+          value={formData.sort_order}
+          onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
+          required
+          min="1"
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
       </div>
@@ -1436,7 +1567,7 @@ function CreateCourtForm({ onSubmit, busy }) {
         disabled={busy}
         className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
       >
-        {busy ? 'Creando...' : 'Crear Cancha'}
+        {busy ? 'Guardando...' : submitLabel}
       </button>
     </form>
   )
