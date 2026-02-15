@@ -11,6 +11,15 @@ const PLAYER_LEVEL_LABELS = {
   RECREATIVO: "Recreativo",
   COMPETITIVO: "Competitivo",
 };
+const ATTRIBUTE_LABELS = {
+  EQUIPO: "Juego en equipo",
+  VISION: "Vision",
+  INTENSIDAD: "Intensidad",
+  DEFENSA: "Defensa",
+  ATAQUE: "Ataque",
+  FAIRPLAY: "Fair Play",
+};
+const PLAYER_CARD_CACHE_TTL_MS = 60_000;
 
 // -------- Actor helpers --------
 function getActorId() {
@@ -200,7 +209,127 @@ function StatPill({ label, value, tone = "neutral" }) {
   );
 }
 
-function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel, onMove }) {
+function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardData }) {
+  if (!open) return null;
+
+  const name = cardData?.full_name || cardData?.guest_name || selectedPlayer?.name || "Jugador";
+  const avatarUrl = selectedPlayer?.avatar_url || null;
+  const isGuest = (cardData?.subject_type || selectedPlayer?.type) === "GUEST";
+  const level = cardData?.player_level || selectedPlayer?.player_level || null;
+
+  let message = "";
+  if (!cardData?.participates) {
+    if (cardData?.reason === "VIEWER_OPT_OUT") {
+      message = "Para ver perfiles de juego tenes que activar 'Participar del perfil de juego' en tu perfil.";
+    } else if (cardData?.reason === "TARGET_OPT_OUT") {
+      message = "Este jugador no participa del Perfil de Juego.";
+    } else if (cardData?.reason === "GUEST" || isGuest) {
+      message = "Invitado (sin perfil).";
+    } else if (!loading && !error) {
+      message = "Perfil no disponible en este momento.";
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+      role="button"
+      tabIndex={-1}
+    >
+      <div
+        className={cn(
+          "fixed bottom-0 left-0 right-0 rounded-t-3xl border border-white/10 bg-zinc-950/95 p-4 shadow-2xl shadow-black/40",
+          "max-h-[85vh] overflow-y-auto",
+          "sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:right-auto sm:w-[420px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={name} className="h-12 w-12 rounded-full object-cover" />
+            ) : (
+              <div className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-sm font-bold text-white">
+                {initials(name)}
+              </div>
+            )}
+            <div>
+              <div className="text-base font-semibold text-white">{name}</div>
+              {isGuest ? (
+                <span className="mt-1 inline-flex rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-white/80">
+                  Invitado
+                </span>
+              ) : level ? (
+                <span className="mt-1 inline-flex rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-white/80">
+                  {PLAYER_LEVEL_LABELS[level] || level}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+          >
+            X
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
+            Cargando perfil...
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
+            {error}
+          </div>
+        ) : null}
+
+        {!loading && !error && cardData?.participates ? (
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Perfil de juego</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(cardData?.top_attributes || []).length > 0 ? (
+                  cardData.top_attributes.map((attr) => (
+                    <span
+                      key={`${attr.code}-${attr.count}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200"
+                    >
+                      {ATTRIBUTE_LABELS[attr.code] || attr.code}
+                      <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">{attr.count}</span>
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-sm text-white/60">Todavia no hay atributos suficientes.</span>
+                )}
+              </div>
+
+              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+                <span className="font-semibold text-amber-200">
+                  {`⭐ ${Number(cardData?.rating?.avg ?? 0).toFixed(1)}`}
+                </span>
+                <span className="ml-2 text-white/60">
+                  {`${cardData?.rating?.votes ?? 0} voto${(cardData?.rating?.votes ?? 0) === 1 ? "" : "s"}`}
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {!loading && !error && !cardData?.participates && message ? (
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
+            {message}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel, onMove, onPlayerClick }) {
   const pct = court.capacity > 0 ? Math.round((court.occupied / court.capacity) * 100) : 0;
   const fullnessTone = pct >= 100 ? "bad" : pct >= 80 ? "warn" : "good";
   const canRegister = eventStatus === "OPEN" && court.is_open;
@@ -257,7 +386,16 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
             court.players.map((p) => (
               <div
                 key={p.registration_id}
-                className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-black/10 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                className="flex cursor-pointer flex-col gap-2 rounded-2xl border border-white/10 bg-black/10 px-3 py-2 transition-colors hover:bg-black/25 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                role="button"
+                tabIndex={0}
+                onClick={() => onPlayerClick?.(court.court_id, p)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onPlayerClick?.(court.court_id, p);
+                  }
+                }}
               >
                 <div className="flex items-center gap-3">
                   {p.avatar_url ? (
@@ -288,7 +426,9 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
                   <select
                     disabled={busy}
                     defaultValue=""
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
+                      e.stopPropagation();
                       const toCourtId = e.target.value;
                       if (toCourtId) onMove(p.registration_id, toCourtId);
                       e.target.value = "";
@@ -312,7 +452,10 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
 
                   <button
                     disabled={busy}
-                    onClick={() => onCancel(p.registration_id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCancel(p.registration_id);
+                    }}
                     className={cn(
                       "rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold text-white",
                       "hover:bg-white/10",
@@ -370,6 +513,11 @@ export default function App() {
   const [notificationsUnread, setNotificationsUnread] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationBusyId, setNotificationBusyId] = useState(null);
+  const [playerCardsByCourt, setPlayerCardsByCourt] = useState({});
+  const [playerCardOpen, setPlayerCardOpen] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [playerCardLoading, setPlayerCardLoading] = useState(false);
+  const [playerCardError, setPlayerCardError] = useState("");
 
   const canUse = useMemo(() => actorUserId.trim().length > 0, [actorUserId]);
 
@@ -673,11 +821,67 @@ export default function App() {
     }
   }
 
+  async function loadPlayerCardsForCourt(courtId, { force = false } = {}) {
+    if (!event?.id || !courtId) return null;
+
+    const cached = playerCardsByCourt[courtId];
+    const now = Date.now();
+    if (!force && cached && now - cached.fetchedAt < PLAYER_CARD_CACHE_TTL_MS) {
+      return cached;
+    }
+
+    setPlayerCardLoading(true);
+    setPlayerCardError("");
+    try {
+      const res = await apiFetch(`/events/${event.id}/courts/${courtId}/player-cards`);
+      const cards = res?.cards || [];
+      const cardsByRegistration = {};
+      cards.forEach((card) => {
+        cardsByRegistration[card.registration_id] = card;
+      });
+
+      const next = {
+        fetchedAt: now,
+        viewerOptIn: !!res?.viewer?.ranking_opt_in,
+        cardsByRegistration,
+      };
+      setPlayerCardsByCourt((prev) => ({ ...prev, [courtId]: next }));
+      return next;
+    } catch (e) {
+      setPlayerCardError(e.message || "No se pudo cargar el perfil del jugador.");
+      return null;
+    } finally {
+      setPlayerCardLoading(false);
+    }
+  }
+
+  async function handleOpenPlayerCard(courtId, player) {
+    setSelectedPlayer({
+      court_id: courtId,
+      registration_id: player.registration_id,
+      type: player.type,
+      name: player.name,
+      player_level: player.player_level || null,
+      avatar_url: player.avatar_url || null,
+    });
+    setPlayerCardError("");
+    setPlayerCardOpen(true);
+    await loadPlayerCardsForCourt(courtId);
+  }
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2600);
     return () => clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    setPlayerCardsByCourt({});
+    setPlayerCardOpen(false);
+    setSelectedPlayer(null);
+    setPlayerCardLoading(false);
+    setPlayerCardError("");
+  }, [data?.event?.id]);
 
   // -------- Login screen --------
   if (!canUse) {
@@ -847,6 +1051,9 @@ export default function App() {
   const courts = data?.courts || [];
   const totalCap = courts.reduce((a, c) => a + (c.capacity || 0), 0);
   const totalOcc = courts.reduce((a, c) => a + (c.occupied || 0), 0);
+  const selectedCardData = selectedPlayer
+    ? playerCardsByCourt[selectedPlayer.court_id]?.cardsByRegistration?.[selectedPlayer.registration_id] || null
+    : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
@@ -1071,6 +1278,7 @@ export default function App() {
                   onRegisterSelf={registerSelf}
                   onCancel={cancelReg}
                   onMove={moveReg}
+                  onPlayerClick={handleOpenPlayerCard}
                 />
               ))}
             </div>
@@ -1137,6 +1345,15 @@ export default function App() {
             )}
           </>
         )}
+
+        <PlayerCardModal
+          open={playerCardOpen}
+          onClose={() => setPlayerCardOpen(false)}
+          loading={playerCardLoading}
+          error={playerCardError}
+          selectedPlayer={selectedPlayer}
+          cardData={selectedCardData}
+        />
 
         <div className="pb-10" />
       </div>

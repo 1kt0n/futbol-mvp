@@ -116,6 +116,39 @@ class SaveRatingsRequest(BaseModel):
         return self
 
 
+class RatingMini(BaseModel):
+    avg: float
+    votes: int
+
+
+class AttributeCount(BaseModel):
+    code: str
+    count: int
+
+
+class PlayerCardViewer(BaseModel):
+    user_id: str
+    ranking_opt_in: bool
+
+
+class PlayerCardItem(BaseModel):
+    registration_id: str
+    subject_type: Literal["USER", "GUEST"]
+    user_id: str | None = None
+    full_name: str | None = None
+    guest_name: str | None = None
+    player_level: Literal["INICIAL", "RECREATIVO", "COMPETITIVO"] | None = None
+    participates: bool
+    reason: Literal["VIEWER_OPT_OUT", "TARGET_OPT_OUT", "GUEST"] | None = None
+    rating: RatingMini | None = None
+    top_attributes: list[AttributeCount] | None = None
+
+
+class PlayerCardsResponse(BaseModel):
+    viewer: PlayerCardViewer
+    cards: list[PlayerCardItem]
+
+
 # ========== NOTIFICATIONS ==========
 class CreateNotificationRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=140)

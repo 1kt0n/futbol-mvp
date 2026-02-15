@@ -3,7 +3,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.settings import engine
-from app.schemas import RegisterRequest, GuestRequest, MoveRequest
+from app.schemas import RegisterRequest, GuestRequest, MoveRequest, PlayerCardsResponse
 
 router = APIRouter()
 
@@ -240,6 +240,7 @@ def get_active_event(
             confirmed_by_court.setdefault(r["court_id"], []).append({
                 "registration_id": str(r["registration_id"]),
                 "type": r["registration_type"],
+                "user_id": str(r["user_id"]) if r["registration_type"] == "USER" and r["user_id"] else None,
                 "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
                 "avatar_url": r["user_avatar_url"] if r["registration_type"] == "USER" else None,
                 "player_level": r["user_player_level"] if r["registration_type"] == "USER" else None,
@@ -267,6 +268,7 @@ def get_active_event(
         waitlist_payload = [{
             "registration_id": str(r["registration_id"]),
             "type": r["registration_type"],
+            "user_id": str(r["user_id"]) if r["registration_type"] == "USER" and r["user_id"] else None,
             "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
             "avatar_url": r["user_avatar_url"] if r["registration_type"] == "USER" else None,
             "player_level": r["user_player_level"] if r["registration_type"] == "USER" else None,
@@ -285,6 +287,159 @@ def get_active_event(
             },
             "courts": courts_payload,
             "waitlist": waitlist_payload,
+        }
+
+
+@router.get("/events/{event_id}/courts/{court_id}/player-cards", response_model=PlayerCardsResponse)
+def get_player_cards(
+    event_id: str,
+    court_id: str,
+    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+):
+    """
+    Devuelve cards de jugadores de una cancha, respetando privacy por ranking_opt_in.
+    """
+    with engine.connect() as conn:
+        viewer = conn.execute(text("""
+            SELECT id, ranking_opt_in
+            FROM public.users
+            WHERE id = :actor_user_id
+            LIMIT 1
+        """), {"actor_user_id": actor_user_id}).mappings().first()
+
+        if not viewer:
+            raise HTTPException(status_code=404, detail="Usuario actor no encontrado.")
+
+        court = conn.execute(text("""
+            SELECT id
+            FROM public.event_courts
+            WHERE id = :court_id
+              AND event_id = :event_id
+            LIMIT 1
+        """), {"court_id": court_id, "event_id": event_id}).first()
+
+        if not court:
+            raise HTTPException(status_code=404, detail="Cancha no encontrada para el evento.")
+
+        roster = conn.execute(text("""
+            SELECT
+              r.id                 AS registration_id,
+              r.registration_type,
+              r.user_id,
+              r.guest_name,
+              r.created_at,
+              u.full_name          AS user_full_name,
+              u.player_level       AS user_player_level,
+              u.ranking_opt_in     AS target_opt_in
+            FROM public.event_registrations r
+            LEFT JOIN public.users u
+              ON u.id = r.user_id
+            WHERE r.event_id = :event_id
+              AND r.court_id = :court_id
+              AND r.status = 'CONFIRMED'
+              AND r.registration_type IN ('USER', 'GUEST')
+            ORDER BY r.created_at ASC
+        """), {"event_id": event_id, "court_id": court_id}).mappings().all()
+
+        viewer_opt_in = bool(viewer["ranking_opt_in"])
+        cards = []
+        metrics_user_ids = []
+
+        for row in roster:
+            registration_id = str(row["registration_id"])
+            subject_type = row["registration_type"]
+
+            if subject_type == "GUEST":
+                cards.append({
+                    "registration_id": registration_id,
+                    "subject_type": "GUEST",
+                    "guest_name": row["guest_name"],
+                    "participates": False,
+                    "reason": "GUEST",
+                })
+                continue
+
+            user_id = str(row["user_id"])
+            card = {
+                "registration_id": registration_id,
+                "subject_type": "USER",
+                "user_id": user_id,
+                "full_name": row["user_full_name"],
+                "player_level": row["user_player_level"],
+            }
+
+            target_opt_in = bool(row["target_opt_in"])
+            if not viewer_opt_in:
+                card["participates"] = False
+                card["reason"] = "VIEWER_OPT_OUT"
+            elif not target_opt_in:
+                card["participates"] = False
+                card["reason"] = "TARGET_OPT_OUT"
+            else:
+                card["participates"] = True
+                metrics_user_ids.append(user_id)
+
+            cards.append(card)
+
+        metrics_user_ids = list(dict.fromkeys(metrics_user_ids))
+        ratings_map = {}
+        attrs_map = {}
+
+        if metrics_user_ids:
+            rating_rows = conn.execute(text("""
+                SELECT
+                  target_user_id,
+                  ROUND(AVG(rating)::numeric, 1) AS avg_rating,
+                  COUNT(*)                       AS votes
+                FROM public.player_ratings
+                WHERE target_user_id = ANY(CAST(:target_ids AS uuid[]))
+                  AND is_hidden = false
+                GROUP BY target_user_id
+            """), {"target_ids": metrics_user_ids}).mappings().all()
+
+            ratings_map = {
+                str(r["target_user_id"]): {
+                    "avg": float(r["avg_rating"]) if r["avg_rating"] is not None else 0.0,
+                    "votes": int(r["votes"] or 0),
+                }
+                for r in rating_rows
+            }
+
+            attr_rows = conn.execute(text("""
+                SELECT
+                  pr.target_user_id,
+                  attr.attribute AS code,
+                  COUNT(*)       AS count
+                FROM public.player_ratings pr
+                JOIN LATERAL jsonb_array_elements_text(pr.attributes) attr(attribute)
+                  ON true
+                WHERE pr.target_user_id = ANY(CAST(:target_ids AS uuid[]))
+                  AND pr.is_hidden = false
+                  AND jsonb_typeof(pr.attributes) = 'array'
+                GROUP BY pr.target_user_id, attr.attribute
+                ORDER BY pr.target_user_id, count DESC, attr.attribute ASC
+            """), {"target_ids": metrics_user_ids}).mappings().all()
+
+            for row in attr_rows:
+                uid = str(row["target_user_id"])
+                attrs_map.setdefault(uid, []).append({
+                    "code": str(row["code"]),
+                    "count": int(row["count"] or 0),
+                })
+
+        for card in cards:
+            if card.get("subject_type") != "USER" or not card.get("participates"):
+                continue
+            uid = card["user_id"]
+            card["rating"] = ratings_map.get(uid, {"avg": 0.0, "votes": 0})
+            card["top_attributes"] = (attrs_map.get(uid) or [])[:4]
+
+        return {
+            "viewer": {
+                "user_id": str(viewer["id"]),
+                "ranking_opt_in": viewer_opt_in,
+            },
+            "cards": cards,
         }
 
 
