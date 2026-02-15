@@ -180,6 +180,52 @@ ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS created_by_user_id UUI
 ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
 ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'notifications'
+      AND column_name = 'event_id'
+      AND is_nullable = 'NO'
+  ) THEN
+    ALTER TABLE public.notifications
+      ALTER COLUMN event_id DROP NOT NULL;
+  END IF;
+END $$;
+
+DO $$
+DECLARE
+  col_name TEXT;
+BEGIN
+  FOREACH col_name IN ARRAY ARRAY[
+    'user_id',
+    'channel',
+    'type',
+    'court_id',
+    'voter_user_id',
+    'target_user_id',
+    'rating',
+    'status'
+  ]
+  LOOP
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'notifications'
+        AND column_name = col_name
+        AND is_nullable = 'NO'
+    ) THEN
+      EXECUTE format(
+        'ALTER TABLE public.notifications ALTER COLUMN %I DROP NOT NULL',
+        col_name
+      );
+    END IF;
+  END LOOP;
+END $$;
+
 UPDATE public.notifications SET kind = 'INFO' WHERE kind IS NULL;
 UPDATE public.notifications SET starts_at = now() WHERE starts_at IS NULL;
 UPDATE public.notifications SET expires_at = now() + interval '7 days' WHERE expires_at IS NULL;

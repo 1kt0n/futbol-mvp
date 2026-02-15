@@ -102,14 +102,32 @@ function Toast({ toast, onClose }) {
   );
 }
 
-function timeRemaining(finalizedAt) {
-  const deadline = new Date(finalizedAt).getTime() + 24 * 60 * 60 * 1000;
+function timeRemaining(finalizedAt, votingWindowDays = 7) {
+  const deadline = new Date(finalizedAt).getTime() + votingWindowDays * 24 * 60 * 60 * 1000;
   const now = Date.now();
   const diff = deadline - now;
   if (diff <= 0) return null;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  if (days > 0) {
+    const remHours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    return `${days}d ${remHours}h`;
+  }
   return `${hours}h ${mins}m`;
+}
+
+function fmtMatchDate(value) {
+  if (!value) return "Fecha no disponible";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("es-AR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function RatingsPending() {
@@ -137,7 +155,9 @@ export default function RatingsPending() {
             key: `${item.event_id}:${item.court_id}:${target.user_id}`,
             event_id: item.event_id,
             event_title: item.event_title,
+            event_starts_at: item.event_starts_at,
             finalized_at: item.finalized_at,
+            voting_window_days: item.voting_window_days || 7,
             court_id: item.court_id,
             court_name: item.court_name,
             is_locked: item.is_locked,
@@ -342,7 +362,7 @@ export default function RatingsPending() {
         ) : showListView ? (
           <div className="space-y-6">
             {items.map((item) => {
-              const remaining = timeRemaining(item.finalized_at);
+              const remaining = timeRemaining(item.finalized_at, item.voting_window_days || 7);
               const pendingTargetsByCourt = (item.targets || []).filter((t) => !t.existing_vote);
 
               if (pendingTargetsByCourt.length === 0) return null;
@@ -358,6 +378,9 @@ export default function RatingsPending() {
                     <div>
                       <div className="text-base font-semibold text-white">{item.event_title}</div>
                       <div className="text-sm text-white/60">{item.court_name}</div>
+                      <div className="mt-1 text-xs text-white/50">
+                        Fecha del partido: {fmtMatchDate(item.event_starts_at || item.finalized_at)}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       {item.is_locked ? (
@@ -455,6 +478,9 @@ export default function RatingsPending() {
                 <div>
                   <div className="text-base font-semibold text-white">{currentCard.event_title}</div>
                   <div className="text-sm text-white/60">{currentCard.court_name}</div>
+                  <div className="mt-1 text-xs text-white/50">
+                    Fecha del partido: {fmtMatchDate(currentCard.event_starts_at || currentCard.finalized_at)}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {currentCard.is_locked ? (
@@ -463,7 +489,7 @@ export default function RatingsPending() {
                     </span>
                   ) : (
                     <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300">
-                      Quedan {timeRemaining(currentCard.finalized_at) || "menos de 1h"}
+                      Quedan {timeRemaining(currentCard.finalized_at, currentCard.voting_window_days || 7) || "menos de 1h"}
                     </span>
                   )}
                   <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/60">

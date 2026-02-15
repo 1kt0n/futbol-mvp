@@ -7,6 +7,8 @@ from app.settings import engine
 from app.schemas import SaveRatingsRequest
 
 router = APIRouter()
+VOTING_WINDOW_DAYS = 7
+VOTING_WINDOW = timedelta(days=VOTING_WINDOW_DAYS)
 
 
 # ============================================================
@@ -17,7 +19,8 @@ router = APIRouter()
 def get_pending_ratings(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
     """
     Devuelve los votos pendientes agrupados por cancha.
-    Incluye canchas de eventos FINALIZED donde el usuario estuvo CONFIRMED.
+    Incluye solo eventos FINALIZED recientes (ultimos 7 dias)
+    donde el usuario estuvo CONFIRMED.
     """
     with engine.connect() as conn:
         # Canchas donde el actor estuvo CONFIRMED en eventos FINALIZED
@@ -25,6 +28,7 @@ def get_pending_ratings(actor_user_id: str = Header(..., alias="X-Actor-User-Id"
             SELECT
                 e.id        AS event_id,
                 e.title     AS event_title,
+                e.starts_at AS event_starts_at,
                 e.finalized_at,
                 ec.id       AS court_id,
                 ec.name     AS court_name
@@ -38,6 +42,7 @@ def get_pending_ratings(actor_user_id: str = Header(..., alias="X-Actor-User-Id"
                 ON ec.id = er.court_id
             WHERE e.status = 'FINALIZED'
               AND e.finalized_at IS NOT NULL
+              AND e.finalized_at >= (now() - interval '7 days')
             ORDER BY e.finalized_at DESC
         """), {"actor": actor_user_id}).mappings().all()
 
@@ -49,7 +54,7 @@ def get_pending_ratings(actor_user_id: str = Header(..., alias="X-Actor-User-Id"
             if finalized_at and finalized_at.tzinfo is None:
                 finalized_at = finalized_at.replace(tzinfo=timezone.utc)
 
-            is_locked = datetime.now(timezone.utc) > finalized_at + timedelta(hours=24)
+            is_locked = datetime.now(timezone.utc) > finalized_at + VOTING_WINDOW
 
             # Peers: users CONFIRMED en la misma cancha (excluye al voter y guests)
             peers = conn.execute(text("""
@@ -112,7 +117,9 @@ def get_pending_ratings(actor_user_id: str = Header(..., alias="X-Actor-User-Id"
             items.append({
                 "event_id": str(row["event_id"]),
                 "event_title": row["event_title"],
+                "event_starts_at": str(row["event_starts_at"]) if row["event_starts_at"] else None,
                 "finalized_at": str(row["finalized_at"]),
+                "voting_window_days": VOTING_WINDOW_DAYS,
                 "court_id": str(row["court_id"]),
                 "court_name": row["court_name"],
                 "targets": targets,
@@ -154,8 +161,11 @@ def save_ratings(
         finalized_at = event["finalized_at"]
         if finalized_at.tzinfo is None:
             finalized_at = finalized_at.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > finalized_at + timedelta(hours=24):
-            raise HTTPException(status_code=400, detail="El plazo de votación (24h) ya venció.")
+        if datetime.now(timezone.utc) > finalized_at + VOTING_WINDOW:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El plazo de votacion ({VOTING_WINDOW_DAYS} dias) ya vencio.",
+            )
 
         # Validar voter CONFIRMED en la cancha
         voter_reg = conn.execute(text("""
