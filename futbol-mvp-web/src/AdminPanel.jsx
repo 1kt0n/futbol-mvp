@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { cn, apiFetch, Banner, StatPill } from './App.jsx'
+import TournamentsAdminTab from './TournamentsAdminTab.jsx'
 
 // Modal genérico reutilizable
 function Modal({ isOpen, onClose, title, children }) {
@@ -490,6 +491,17 @@ export default function AdminPanel() {
               >
                 Notificaciones
               </button>
+              <button
+                onClick={() => setTab('torneos')}
+                className={cn(
+                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
+                  tab === 'torneos'
+                    ? "bg-white/10 border-b-2 border-emerald-400 text-white"
+                    : "text-white/60 hover:bg-white/5 hover:text-white"
+                )}
+              >
+                Torneos
+              </button>
             </>
           )}
         </div>
@@ -566,6 +578,10 @@ export default function AdminPanel() {
 
           {tab === 'notificaciones' && userRole === 'admin' && (
             <NotificationsTab />
+          )}
+
+          {tab === 'torneos' && userRole === 'admin' && (
+            <TournamentsAdminTab />
           )}
         </div>
 

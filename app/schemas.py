@@ -149,6 +149,166 @@ class PlayerCardsResponse(BaseModel):
     cards: list[PlayerCardItem]
 
 
+# ========== TOURNAMENTS ==========
+TournamentStatus = Literal["DRAFT", "LIVE", "FINISHED", "ARCHIVED"]
+TournamentFormat = Literal["ROUND_ROBIN", "KNOCKOUT", "GROUPS_PLAYOFFS"]
+MatchStatus = Literal["PENDING", "LIVE", "FINISHED"]
+MemberType = Literal["USER", "GUEST"]
+PlayerLevel = Literal["INICIAL", "RECREATIVO", "COMPETITIVO"]
+
+
+class TournamentCreateRequest(BaseModel):
+    title: str = Field(..., min_length=3, max_length=160)
+    location_name: str | None = Field(None, max_length=160)
+    starts_at: str | None = Field(None, description="ISO 8601 timestamp opcional")
+    format: TournamentFormat = "ROUND_ROBIN"
+    teams_count: int = Field(default=4, ge=2, le=16)
+    minutes_per_match: int = Field(default=20, ge=5, le=120)
+
+
+class TournamentUpdateRequest(BaseModel):
+    title: str | None = Field(None, min_length=3, max_length=160)
+    location_name: str | None = Field(None, max_length=160)
+    starts_at: str | None = Field(None, description="ISO 8601 timestamp opcional")
+    format: TournamentFormat | None = None
+    teams_count: int | None = Field(default=None, ge=2, le=16)
+    minutes_per_match: int | None = Field(default=None, ge=5, le=120)
+
+
+class TournamentUpdateStatusRequest(BaseModel):
+    status: TournamentStatus
+
+
+class TournamentCreateTeamRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+    logo_emoji: str | None = Field(default=None, max_length=8)
+    is_guest: bool = False
+
+
+class TournamentCreateMemberRequest(BaseModel):
+    member_type: MemberType
+    user_id: str | None = None
+    guest_name: str | None = Field(default=None, min_length=2, max_length=120)
+    level_override: PlayerLevel | None = None
+
+    @model_validator(mode="after")
+    def validate_member_payload(self):
+        if self.member_type == "USER":
+            if not self.user_id:
+                raise ValueError("Para member_type=USER, user_id es obligatorio.")
+            self.guest_name = None
+        else:
+            if not self.guest_name:
+                raise ValueError("Para member_type=GUEST, guest_name es obligatorio.")
+            self.user_id = None
+        return self
+
+
+class TournamentScorePatchRequest(BaseModel):
+    home_goals: int = Field(..., ge=0)
+    away_goals: int = Field(..., ge=0)
+
+
+class TournamentOut(BaseModel):
+    id: str
+    title: str
+    location_name: str | None
+    starts_at: str | None
+    status: TournamentStatus
+    format: TournamentFormat
+    teams_count: int
+    minutes_per_match: int
+    public_token: str
+    public_url: str
+    created_at: str
+    updated_at: str
+
+
+class TeamOut(BaseModel):
+    id: str
+    tournament_id: str
+    name: str
+    logo_emoji: str | None
+    is_guest: bool
+    created_at: str
+
+
+class MemberOut(BaseModel):
+    id: str
+    tournament_id: str
+    team_id: str
+    member_type: MemberType
+    user_id: str | None
+    guest_name: str | None
+    level_override: PlayerLevel | None
+    created_at: str
+
+
+class MatchTeamRef(BaseModel):
+    id: str | None
+    name: str
+    emoji: str | None
+
+
+class MatchOut(BaseModel):
+    id: str
+    tournament_id: str
+    round: int
+    sort_order: int
+    status: MatchStatus
+    home_goals: int
+    away_goals: int
+    home: MatchTeamRef
+    away: MatchTeamRef
+    started_at: str | None
+    ended_at: str | None
+    next_match_id: str | None = None
+    next_slot: Literal["HOME", "AWAY"] | None = None
+
+
+class PublicStandingRow(BaseModel):
+    team_id: str
+    team_name: str
+    emoji: str | None
+    pts: int
+    pj: int
+    pg: int
+    pe: int
+    pp: int
+    gf: int
+    gc: int
+    dg: int
+
+
+class PublicNowMatch(BaseModel):
+    match_id: str
+    round: int
+
+
+class PublicBracketRound(BaseModel):
+    round: int
+    matches: list[MatchOut]
+
+
+class PublicTournamentInfo(BaseModel):
+    id: str
+    title: str
+    location_name: str | None
+    starts_at: str | None
+    status: TournamentStatus
+    format: TournamentFormat
+    minutes_per_match: int
+
+
+class PublicTournamentLiveResponse(BaseModel):
+    tournament: PublicTournamentInfo
+    standings: list[PublicStandingRow]
+    matches: list[MatchOut]
+    now: PublicNowMatch | None
+    bracket: list[PublicBracketRound]
+    tiebreak_note: str | None = None
+
+
 # ========== NOTIFICATIONS ==========
 class CreateNotificationRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=140)
