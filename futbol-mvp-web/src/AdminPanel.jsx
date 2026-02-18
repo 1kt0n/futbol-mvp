@@ -1214,7 +1214,9 @@ function NotificationsTab() {
               <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Preview</div>
               <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-3">
                 <div className="text-sm font-semibold text-white">{formData.title.trim() || 'Titulo de ejemplo'}</div>
-                <div className="mt-1 text-xs text-white/70">{formData.message.trim() || 'Mensaje de ejemplo para la campana.'}</div>
+                <div className="mt-1 whitespace-pre-line text-xs text-white/70">
+                  {formData.message.trim() || 'Mensaje de ejemplo para la campana.'}
+                </div>
                 <div className="mt-2 flex items-center gap-2">
                   {formData.action_url.trim() && (
                     <span className="rounded-lg border border-amber-400/30 bg-amber-500/20 px-2 py-1 text-[11px] font-semibold text-amber-200">
@@ -1287,7 +1289,7 @@ function NotificationsTab() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-semibold text-white">{item.title}</div>
-                      <div className="mt-1 text-xs text-white/70">{messagePreview}</div>
+                      <div className="mt-1 whitespace-pre-line text-xs text-white/70">{messagePreview}</div>
                       {longMessage && (
                         <button
                           onClick={() => setExpanded((prev) => ({ ...prev, [item.id]: !prev[item.id] }))}
@@ -1341,7 +1343,7 @@ function NotificationsTab() {
           </p>
           <div className="rounded-xl border border-white/10 bg-black/20 p-3">
             <div className="text-sm font-semibold text-white">{confirmTarget?.title}</div>
-            <div className="mt-1 text-xs text-white/70">{confirmTarget?.message}</div>
+            <div className="mt-1 whitespace-pre-line text-xs text-white/70">{confirmTarget?.message}</div>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button

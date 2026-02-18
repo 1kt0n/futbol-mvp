@@ -1127,7 +1127,7 @@ export default function App() {
                       {notifications.map((n) => (
                         <div key={n.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
                           <div className="text-sm font-semibold text-white">{n.title}</div>
-                          <div className="mt-1 text-xs text-white/70">{n.message}</div>
+                          <div className="mt-1 whitespace-pre-line text-xs text-white/70">{n.message}</div>
                           <div className="mt-2 flex items-center gap-2">
                             {n.action_url && (
                               <a
