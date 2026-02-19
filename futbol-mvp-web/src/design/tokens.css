@@ -1,0 +1,39 @@
+﻿:root {
+  --app-bg: #09090b;
+  --app-surface: rgba(255, 255, 255, 0.05);
+  --app-surface-strong: rgba(255, 255, 255, 0.09);
+  --app-border: rgba(255, 255, 255, 0.12);
+  --app-text: #f4f4f5;
+  --app-muted: rgba(244, 244, 245, 0.62);
+
+  --primary-500: #10b981;
+  --accent-400: #fbbf24;
+  --info-400: #38bdf8;
+  --error-500: #f43f5e;
+
+  --status-draft-bg: rgba(245, 158, 11, 0.16);
+  --status-draft-text: #fcd34d;
+  --status-live-bg: rgba(16, 185, 129, 0.16);
+  --status-live-text: #6ee7b7;
+  --status-finished-bg: rgba(56, 189, 248, 0.16);
+  --status-finished-text: #7dd3fc;
+  --status-archived-bg: rgba(113, 113, 122, 0.25);
+  --status-archived-text: #d4d4d8;
+}
+
+.focus-ring {
+  outline: none;
+}
+
+.focus-ring:focus-visible {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.45);
+}
+
+.app-card {
+  border-radius: 1.5rem;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(16px);
+}
+

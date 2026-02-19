@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "e2e:install": "playwright install chromium",
+    "e2e:a11y": "playwright test e2e/accessibility-smoke.spec.ts --config=playwright.config.ts",
+    "e2e:tournaments:screenshots": "node ./scripts/run-tournaments-screenshots.mjs",
+    "e2e:events:screenshots": "node ./scripts/run-events-screenshots.mjs"
   },
   "dependencies": {
     "qrcode.react": "^4.2.0",
@@ -16,6 +22,8 @@
     "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.0",
+    "@playwright/test": "^1.57.0",
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
@@ -27,6 +35,8 @@
     "globals": "^16.5.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vite-plugin-pwa": "^1.1.0",
+    "vitest": "^3.2.4"
   }
 }

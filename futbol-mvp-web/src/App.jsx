@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import AuthLayout from "./features/auth/AuthLayout.jsx";
+import BrandHero from "./features/auth/BrandHero.jsx";
+import AuthFlowCard, { InstallPwaButton } from "./features/auth/AuthFlowCard.jsx";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -335,7 +338,7 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
   const canRegister = eventStatus === "OPEN" && court.is_open;
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl shadow-black/10">
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl shadow-black/10" data-testid={`court-card-${court.court_id}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-base font-semibold text-white">{court.name}</div>
@@ -351,6 +354,7 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
         <button
           disabled={busy || !canRegister}
           onClick={() => onRegisterSelf(court.court_id)}
+          data-testid={`court-register-${court.court_id}`}
           className={cn(
             "shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold",
             "bg-white text-black hover:bg-white/90",
@@ -386,6 +390,7 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
             court.players.map((p) => (
               <div
                 key={p.registration_id}
+                data-testid={`player-row-${p.registration_id}`}
                 className="flex cursor-pointer flex-col gap-2 rounded-2xl border border-white/10 bg-black/10 px-3 py-2 transition-colors hover:bg-black/25 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
                 role="button"
                 tabIndex={0}
@@ -426,6 +431,7 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
                   <select
                     disabled={busy}
                     defaultValue=""
+                    data-testid={`player-move-select-${p.registration_id}`}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => {
                       e.stopPropagation();
@@ -452,6 +458,7 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
 
                   <button
                     disabled={busy}
+                    data-testid={`player-cancel-${p.registration_id}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       onCancel(p.registration_id);
@@ -492,6 +499,7 @@ export default function App() {
 
   const [actorUserId, setActorUserId] = useState(getActorId());
   const [actorDraft, setActorDraft] = useState(getActorId());
+  const [authHydrating, setAuthHydrating] = useState(true);
   const [data, setData] = useState(null);
 
   const [err, setErr] = useState("");
@@ -520,6 +528,15 @@ export default function App() {
   const [playerCardError, setPlayerCardError] = useState("");
 
   const canUse = useMemo(() => actorUserId.trim().length > 0, [actorUserId]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setAuthHydrating(false), 320);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (canUse) setAuthHydrating(false);
+  }, [canUse]);
 
 
 
@@ -625,12 +642,17 @@ export default function App() {
       const evts = await loadEventsList();
       // Determine which event to load:
       // 1. Explicit override passed to function
-      // 2. First event from fresh list (most common case on refresh)
-      // 3. Fall back to nothing
+      // 2. URL query param (?event_id=...)
+      // 3. First event from fresh list (most common case on refresh)
+      // 4. Fall back to nothing
       let targetId = null;
       if (typeof eventIdOverride === "string" && eventIdOverride) {
         targetId = eventIdOverride;
-      } else if (evts.length > 0) {
+      } else {
+        const queryId = new URLSearchParams(window.location.search).get("event_id") || "";
+        if (queryId) targetId = queryId;
+      }
+      if (!targetId && evts.length > 0) {
         // Check if current selectedEventId is still in the list
         const currentStillExists = selectedEventId && evts.some(e => e.id === selectedEventId);
         targetId = currentStillExists ? selectedEventId : evts[0].id;
@@ -885,164 +907,44 @@ export default function App() {
 
   // -------- Login screen --------
   if (!canUse) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
-        <div className="mx-auto max-w-md px-4 py-10">
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/20">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-lg font-semibold">Tercer Tiempo FC (Canchas)</div>
-                <div className="mt-1 text-sm text-white/60">
-                  Entrá con tu celular y un PIN (4 o 6 dígitos).
-                </div>
-              </div>
-              <img
-                src={BRAND_LOGO_URL}
-                alt="Tercer Tiempo FC"
-                className="h-10 w-10 rounded-2xl bg-white/10 object-cover p-1"
-              />
+    if (authHydrating) {
+      return (
+        <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black px-4 py-8 text-white">
+          <div className="mx-auto max-w-6xl">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.05fr_1fr]">
+              <div className="app-card h-80 animate-pulse bg-white/[0.06]" />
+              <div className="app-card h-80 animate-pulse bg-white/[0.06]" />
             </div>
-
-            {/* Tabs */}
-            <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/10 p-1">
-              <button
-                onClick={() => setLoginMode("login")}
-                className={cn(
-                  "rounded-2xl px-3 py-2 text-sm font-semibold",
-                  loginMode === "login" ? "bg-white text-black" : "text-white/80 hover:bg-white/10"
-                )}
-              >
-                Ingresar
-              </button>
-              <button
-                onClick={() => setLoginMode("register")}
-                className={cn(
-                  "rounded-2xl px-3 py-2 text-sm font-semibold",
-                  loginMode === "register" ? "bg-white text-black" : "text-white/80 hover:bg-white/10"
-                )}
-              >
-                Crear cuenta
-              </button>
-            </div>
-
-            {/* Form */}
-            <div className="mt-5 space-y-3">
-              {loginMode === "register" ? (
-                <div>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-white/50">
-                    Nombre y apellido
-                  </label>
-                  <input
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Ej: Milton Clavijo"
-                    className={cn(
-                      "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
-                      "placeholder:text-white/30",
-                      "focus:outline-none focus:ring-2 focus:ring-white/20"
-                    )}
-                  />
-                </div>
-              ) : null}
-
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-white/50">
-                  Celular
-                </label>
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Ej: 5491122334455"
-                  inputMode="tel"
-                  className={cn(
-                    "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
-                    "placeholder:text-white/30",
-                    "focus:outline-none focus:ring-2 focus:ring-white/20"
-                  )}
-                />
-                <div className="mt-2 text-xs text-white/40">
-                  Tip: puede ser con o sin +, espacios o guiones (el backend lo normaliza).
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-white/50">
-                  PIN (4 o 6 dígitos)
-                </label>
-                <input
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D+/g, "").slice(0, 6))}
-                  placeholder="••••"
-                  inputMode="numeric"
-                  className={cn(
-                    "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
-                    "placeholder:text-white/30",
-                    "focus:outline-none focus:ring-2 focus:ring-white/20"
-                  )}
-                />
-              </div>
-
-              <button
-                onClick={loginMode === "login" ? onPinLogin : onPinRegister}
-                disabled={
-                  busy ||
-                  !phone.trim() ||
-                  !(/^\d{4}$|^\d{6}$/.test(pin.trim())) ||
-                  (loginMode === "register" && fullName.trim().length < 3)
-                }
-                className={cn(
-                  "mt-1 w-full rounded-2xl px-4 py-3 text-sm font-semibold",
-                  "bg-white text-black hover:bg-white/90",
-                  "disabled:opacity-50 disabled:cursor-not-allowed"
-                )}
-              >
-                {busy ? "Validando..." : loginMode === "login" ? "Entrar" : "Crear y entrar"}
-              </button>
-
-              {err ? (
-                <Banner kind="error" title="Error" onClose={() => setErr("")}>
-                  {err}
-                </Banner>
-              ) : null}
-
-              {/* Escape hatch para debug: actor manual */}
-              <div className="mt-4 rounded-2xl border border-white/10 bg-black/10 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-white/50">
-                  Debug (Actor ID manual)
-                </div>
-                <div className="mt-1 text-xs text-white/45">
-                  Si necesitás, podés seguir pegando el Actor ID como antes.
-                </div>
-                <input
-                  value={actorDraft}
-                  onChange={(e) => setActorDraft(e.target.value)}
-                  placeholder="UUID actor..."
-                  className={cn(
-                    "mt-3 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
-                    "placeholder:text-white/30",
-                    "focus:outline-none focus:ring-2 focus:ring-white/20"
-                  )}
-                />
-                <button
-                  onClick={onSaveActor}
-                  disabled={busy || actorDraft.trim().length === 0}
-                  className={cn(
-                    "mt-3 w-full rounded-2xl px-4 py-3 text-sm font-semibold",
-                    "border border-white/10 bg-white/5 text-white hover:bg-white/10",
-                    "disabled:opacity-50 disabled:cursor-not-allowed"
-                  )}
-                >
-                  {busy ? "Validando..." : "Guardar Actor ID"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center text-xs text-white/30">
-            Work in progress • Tercer Tiempo FC (Canchas)
           </div>
         </div>
-      </div>
+      );
+    }
+
+    return (
+      <AuthLayout
+        hero={<BrandHero />}
+        card={
+          <AuthFlowCard
+            busy={busy}
+            err={err}
+            clearError={() => setErr("")}
+            loginMode={loginMode}
+            setLoginMode={setLoginMode}
+            phone={phone}
+            setPhone={setPhone}
+            pin={pin}
+            setPin={setPin}
+            fullName={fullName}
+            setFullName={setFullName}
+            onLogin={onPinLogin}
+            onRegister={onPinRegister}
+            actorDraft={actorDraft}
+            setActorDraft={setActorDraft}
+            onSaveActor={onSaveActor}
+          />
+        }
+        footer="Work in progress • Tercer Tiempo FC (Canchas)"
+      />
     );
   }
 
@@ -1084,6 +986,7 @@ export default function App() {
                 href="/admin"
                 target="_blank"
                 rel="noopener noreferrer"
+                data-testid="open-admin-panel"
                 className={cn(
                   "rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-300",
                   "hover:bg-amber-500/30"
@@ -1092,6 +995,7 @@ export default function App() {
                 Panel Admin
               </a>
             )}
+            <InstallPwaButton />
                         <div className="relative">
               <button
                 onClick={() => setNotificationsOpen((v) => !v)}
@@ -1179,6 +1083,7 @@ export default function App() {
             <button
               onClick={load}
               disabled={busy}
+              data-testid="app-refresh-btn"
               className={cn(
                 "rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white",
                 "hover:bg-white/10",
@@ -1209,7 +1114,7 @@ export default function App() {
           </Banner>
         )}
 
-        {openEvents.length > 1 && (
+        {openEvents.length > 0 && (
           <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-white/50">Eventos disponibles</div>
             <div className="flex flex-wrap gap-2">
@@ -1217,6 +1122,7 @@ export default function App() {
                 <button
                   key={ev.id}
                   onClick={() => selectEvent(ev.id)}
+                  data-testid={`app-event-select-${ev.id}`}
                   className={cn(
                     "rounded-xl px-3 py-2 text-sm font-semibold transition-colors",
                     ev.id === selectedEventId
@@ -1246,11 +1152,11 @@ export default function App() {
             <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/10">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
-                  <div className="truncate text-lg font-semibold text-white">{event.title}</div>
+                  <div className="truncate text-lg font-semibold text-white" data-testid="event-active-title">{event.title}</div>
                   <div className="mt-1 text-sm text-white/60">{event.location_name}</div>
                   <div className="mt-1 text-sm text-white/60">Empieza: {fmtStart(event.starts_at)}</div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2" data-testid="event-active-header">
                   <StatPill
                     label="Estado"
                     value={event.status === "OPEN" ? "Abierto" : event.status === "CLOSED" ? "Cerrado" : event.status}
@@ -1262,7 +1168,7 @@ export default function App() {
             </div>
 
             {event.status === "CLOSED" && (
-              <div className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              <div className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" data-testid="event-closed-banner">
                 Este evento esta cerrado para nuevas inscripciones. Contacta al administrador para cambios.
               </div>
             )}
@@ -1297,6 +1203,7 @@ export default function App() {
                       value={guestName}
                       onChange={(e) => setGuestName(e.target.value)}
                       placeholder="Ej: Franco"
+                      data-testid="guest-name-input"
                       className={cn(
                         "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
                         "placeholder:text-white/30",
@@ -1310,6 +1217,7 @@ export default function App() {
                     <select
                       value={selectedCourtId}
                       onChange={(e) => setSelectedCourtId(e.target.value)}
+                      data-testid="guest-court-select"
                       className={cn(
                         "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
                         "focus:outline-none focus:ring-2 focus:ring-white/20"
@@ -1327,6 +1235,7 @@ export default function App() {
                     <button
                       disabled={busy || guestName.trim().length < 2}
                       onClick={registerGuest}
+                      data-testid="guest-submit-btn"
                       className={cn(
                         "w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black",
                         "hover:bg-white/90",
