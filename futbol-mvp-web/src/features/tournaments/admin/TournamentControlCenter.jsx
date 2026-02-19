@@ -36,6 +36,13 @@ function formatName(code) {
   return FORMAT_META[code]?.label || code;
 }
 
+function toDatetimeLocal(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function grouped(matches = []) {
   const byRound = {};
   for (const m of matches) {
@@ -228,7 +235,7 @@ export default function TournamentControlCenter() {
         body: {
           ...createForm,
           location_name: createForm.location_name || null,
-          starts_at: createForm.starts_at || null,
+          starts_at: createForm.starts_at ? new Date(createForm.starts_at).toISOString() : null,
           teams_count: Number(createForm.teams_count),
           minutes_per_match: Number(createForm.minutes_per_match),
         },
@@ -424,8 +431,8 @@ export default function TournamentControlCenter() {
               <input placeholder="Ej: El poli de cramer" data-testid="create-tournament-location-input" value={createForm.location_name} onChange={(e) => setCreateForm((p) => ({ ...p, location_name: e.target.value }))} className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" />
             </label>
             <label className="text-xs font-semibold text-white/70">
-              Inicio (ISO 8601)
-              <input placeholder="Ej: 2026-03-13T20:00:00Z" data-testid="create-tournament-starts-at-input" value={createForm.starts_at} onChange={(e) => setCreateForm((p) => ({ ...p, starts_at: e.target.value }))} className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" />
+              Inicio
+              <input type="datetime-local" data-testid="create-tournament-starts-at-input" value={createForm.starts_at} onChange={(e) => setCreateForm((p) => ({ ...p, starts_at: e.target.value }))} className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" />
             </label>
             <label className="text-xs font-semibold text-white/70">
               Formato
@@ -472,7 +479,7 @@ export default function TournamentControlCenter() {
                 <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
                   <input data-testid="tournament-config-title-input" value={tournament.title || ""} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, title: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Titulo" />
                   <input data-testid="tournament-config-location-input" value={tournament.location_name || ""} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, location_name: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Ubicacion" />
-                  <input data-testid="tournament-config-starts-at-input" value={tournament.starts_at || ""} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, starts_at: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Inicio (ISO 8601)" />
+                  <input type="datetime-local" data-testid="tournament-config-starts-at-input" value={toDatetimeLocal(tournament.starts_at)} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, starts_at: e.target.value ? new Date(e.target.value).toISOString() : null } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" />
                   <select data-testid="tournament-config-format-select" value={tournament.format} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, format: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" title={FORMAT_META[tournament.format]?.tooltip || ""}>
                     {FORMATS.map((f) => (<option key={f} value={f}>{formatName(f)}</option>))}
                   </select>
