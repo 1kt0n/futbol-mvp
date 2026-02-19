@@ -19,6 +19,7 @@ function Modal({ isOpen, onClose, title, children }) {
           <h2 className="text-xl font-bold">{title}</h2>
           <button
             onClick={onClose}
+            data-testid="admin-modal-close-btn"
             className="text-white/60 hover:text-white text-2xl leading-none"
           >
             ×
@@ -91,8 +92,12 @@ export default function AdminPanel() {
     try {
       const data = await apiFetch('/admin/events')
       setEventsList(data.events || [])
+      const urlEventId = new URLSearchParams(window.location.search).get('event_id') || null
       // Si no hay evento seleccionado, seleccionar el primero
-      if (!selectedEventId && data.events?.length > 0) {
+      if (urlEventId) {
+        setSelectedEventId(urlEventId)
+        await loadEventDetail(urlEventId)
+      } else if (!selectedEventId && data.events?.length > 0) {
         const firstId = data.events[0].id
         setSelectedEventId(firstId)
         await loadEventDetail(firstId)
@@ -447,6 +452,7 @@ export default function AdminPanel() {
         <div className="mb-6 flex gap-2 overflow-x-auto border-b border-white/10 pb-1">
           <button
             onClick={() => setTab('eventos')}
+            data-testid="admin-tab-eventos"
             className={cn(
               "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
               tab === 'eventos'
@@ -493,6 +499,7 @@ export default function AdminPanel() {
               </button>
               <button
                 onClick={() => setTab('torneos')}
+                data-testid="admin-tab-torneos"
                 className={cn(
                   "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
                   tab === 'torneos'
@@ -594,6 +601,7 @@ export default function AdminPanel() {
           <CreateCourtForm
             onSubmit={(data) => handleCreateCourt(selectedEventId, data)}
             busy={busy}
+            testIdPrefix="create-court"
             submitLabel="Crear Cancha"
           />
         </Modal>
@@ -610,6 +618,7 @@ export default function AdminPanel() {
             onSubmit={(data) => handleUpdateCourt(selectedEventId, selectedCourt?.court_id, data)}
             busy={busy}
             initialData={selectedCourt}
+            testIdPrefix="edit-court"
             submitLabel="Guardar cambios"
           />
         </Modal>
@@ -659,12 +668,14 @@ export default function AdminPanel() {
               <button
                 onClick={confirmModal?.onConfirm}
                 disabled={busy}
+                data-testid="admin-confirm-modal-confirm-btn"
                 className="flex-1 rounded-xl bg-rose-500 hover:bg-rose-600 px-4 py-3 font-semibold disabled:opacity-50"
               >
                 Confirmar
               </button>
               <button
                 onClick={() => setConfirmModal(null)}
+                data-testid="admin-confirm-modal-cancel-btn"
                 className="flex-1 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-3 font-semibold"
               >
                 Cancelar
@@ -716,12 +727,13 @@ function EventosTab({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="admin-events-tab">
       {/* Botones de acción */}
       {userRole === 'admin' && (
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={onCreateEvent}
+            data-testid="admin-event-create-btn"
             className="rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-2 font-semibold"
           >
             + Crear Evento
@@ -730,6 +742,7 @@ function EventosTab({
             <>
               <button
                 onClick={onCreateCourt}
+                data-testid="admin-event-create-court-btn"
                 className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 font-semibold"
               >
                 + Crear Cancha
@@ -737,6 +750,7 @@ function EventosTab({
               {event.status === 'OPEN' && (
                 <button
                   onClick={() => onCloseEvent(event.id)}
+                  data-testid="admin-event-close-btn"
                   className="rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 px-4 py-2 font-semibold"
                 >
                   Cerrar Evento
@@ -746,12 +760,14 @@ function EventosTab({
                 <>
                   <button
                     onClick={() => onReopenEvent(event.id)}
+                    data-testid="admin-event-reopen-btn"
                     className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-4 py-2 font-semibold"
                   >
                     Reabrir Evento
                   </button>
                   <button
                     onClick={() => onFinalizeEvent(event.id)}
+                    data-testid="admin-event-finalize-btn"
                     className="rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-4 py-2 font-semibold"
                   >
                     Finalizar / Archivar
@@ -761,6 +777,7 @@ function EventosTab({
               {event.status === 'FINALIZED' && (
                 <button
                   onClick={() => onReopenEvent(event.id)}
+                  data-testid="admin-event-reactivate-btn"
                   className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-4 py-2 font-semibold"
                 >
                   Reactivar Evento
@@ -771,6 +788,7 @@ function EventosTab({
           <button
             onClick={onRefresh}
             disabled={busy}
+            data-testid="admin-events-refresh-btn"
             className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 font-semibold disabled:opacity-50"
           >
             {busy ? 'Actualizando...' : 'Actualizar'}
@@ -787,6 +805,7 @@ function EventosTab({
               <button
                 key={ev.id}
                 onClick={() => onSelectEvent(ev.id)}
+                data-testid={`admin-event-select-${ev.id}`}
                 className={cn(
                   "px-4 py-2 rounded-xl text-sm font-semibold transition-colors border",
                   selectedEventId === ev.id
@@ -818,7 +837,7 @@ function EventosTab({
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="text-2xl font-bold">{event.title}</h2>
+              <h2 className="text-2xl font-bold" data-testid="admin-event-active-title">{event.title}</h2>
               <p className="text-white/60 mt-1">{event.location_name}</p>
               <p className="text-white/50 text-sm mt-1">
                 Inicia: {new Date(event.starts_at).toLocaleString()}
@@ -832,7 +851,7 @@ function EventosTab({
             <h3 className="text-lg font-semibold">Canchas ({courts.length})</h3>
             <div className="grid gap-4 md:grid-cols-2">
               {courts.map(court => (
-                <div key={court.court_id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div key={court.court_id} className="rounded-2xl border border-white/10 bg-black/20 p-4" data-testid={`admin-court-card-${court.court_id}`}>
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="font-semibold flex items-center gap-2">
                       {court.name}
@@ -863,6 +882,7 @@ function EventosTab({
                       {court.is_open ? (
                         <button
                           onClick={() => onCloseCourt(event.id, court.court_id)}
+                          data-testid={`admin-court-close-${court.court_id}`}
                           className="text-xs rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-3 py-1.5"
                         >
                           Cerrar Cancha
@@ -870,6 +890,7 @@ function EventosTab({
                       ) : (
                         <button
                           onClick={() => onOpenCourt(event.id, court.court_id)}
+                          data-testid={`admin-court-open-${court.court_id}`}
                           className="text-xs rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-3 py-1.5"
                         >
                           Abrir Cancha
@@ -877,12 +898,14 @@ function EventosTab({
                       )}
                       <button
                         onClick={() => onEditCourt(court)}
+                        data-testid={`admin-court-edit-${court.court_id}`}
                         className="text-xs rounded-lg border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 px-3 py-1.5"
                       >
                         Editar
                       </button>
                       <button
                         onClick={() => onDeleteCourt(event.id, court)}
+                        data-testid={`admin-court-delete-${court.court_id}`}
                         className="text-xs rounded-lg border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 px-3 py-1.5"
                       >
                         Eliminar
@@ -910,7 +933,7 @@ function EventosTab({
 
           {/* Waitlist */}
           {waitlist.length > 0 && (
-            <div className="mt-6">
+            <div className="mt-6" data-testid="admin-waitlist-section">
               <h3 className="text-lg font-semibold mb-3">Lista de Espera ({waitlist.length})</h3>
               <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4">
                 {waitlist.slice(0, 10).map((w, i) => (
@@ -1461,6 +1484,7 @@ function CreateEventForm({ onSubmit, busy }) {
           type="text"
           value={formData.title}
           onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+          data-testid="admin-create-event-title-input"
           required
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
@@ -1471,6 +1495,7 @@ function CreateEventForm({ onSubmit, busy }) {
           type="datetime-local"
           value={formData.starts_at}
           onChange={(e) => setFormData({ ...formData, starts_at: e.target.value })}
+          data-testid="admin-create-event-starts-at-input"
           required
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
@@ -1481,6 +1506,7 @@ function CreateEventForm({ onSubmit, busy }) {
           type="text"
           value={formData.location_name}
           onChange={(e) => setFormData({ ...formData, location_name: e.target.value })}
+          data-testid="admin-create-event-location-input"
           required
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
@@ -1488,6 +1514,7 @@ function CreateEventForm({ onSubmit, busy }) {
       <button
         type="submit"
         disabled={busy}
+        data-testid="admin-create-event-submit-btn"
         className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
       >
         {busy ? 'Creando...' : 'Crear Evento'}
@@ -1496,7 +1523,7 @@ function CreateEventForm({ onSubmit, busy }) {
   )
 }
 
-function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Crear Cancha' }) {
+function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Crear Cancha', testIdPrefix = 'court-form' }) {
   const [formData, setFormData] = useState({
     name: '',
     capacity: 10,
@@ -1541,6 +1568,7 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Cr
           type="text"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          data-testid={`${testIdPrefix}-name-input`}
           required
           placeholder="Cancha 1"
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
@@ -1552,6 +1580,7 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Cr
           type="number"
           value={formData.capacity}
           onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
+          data-testid={`${testIdPrefix}-capacity-input`}
           required
           min="1"
           max="50"
@@ -1564,6 +1593,7 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Cr
           type="number"
           value={formData.sort_order}
           onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
+          data-testid={`${testIdPrefix}-sort-order-input`}
           required
           min="1"
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
@@ -1575,6 +1605,7 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Cr
             type="checkbox"
             checked={formData.is_open}
             onChange={(e) => setFormData({ ...formData, is_open: e.target.checked })}
+            data-testid={`${testIdPrefix}-is-open-input`}
             className="rounded"
           />
           <span className="text-sm">Cancha abierta</span>
@@ -1583,6 +1614,7 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Cr
       <button
         type="submit"
         disabled={busy}
+        data-testid={`${testIdPrefix}-submit-btn`}
         className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
       >
         {busy ? 'Guardando...' : submitLabel}

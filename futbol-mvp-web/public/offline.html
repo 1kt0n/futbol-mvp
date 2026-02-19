@@ -1,0 +1,23 @@
+﻿<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sin conexión - Futbol MVP</title>
+    <style>
+      body { margin: 0; min-height: 100vh; background: #09090b; color: #f4f4f5; font-family: "Segoe UI", Tahoma, sans-serif; display: grid; place-items: center; }
+      .card { width: min(92vw, 420px); border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); border-radius: 24px; padding: 24px; text-align: center; }
+      h1 { margin: 0; font-size: 1.3rem; }
+      p { margin: 12px 0 0; color: rgba(244,244,245,.75); }
+      button { margin-top: 18px; background: #10b981; color: #00110b; border: none; border-radius: 12px; padding: 10px 14px; font-weight: 700; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Sin conexión</h1>
+      <p>No pudimos cargar la app. Verifica internet y vuelve a intentar.</p>
+      <button onclick="location.reload()">Reintentar</button>
+    </div>
+  </body>
+</html>
+
