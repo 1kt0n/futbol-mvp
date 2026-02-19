@@ -29,7 +29,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        navigateFallback: '/offline.html',
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/me/, /^\/events/, /^\/auth/, /^\/admin-api/],
         runtimeCaching: [
           {
             urlPattern: ({ request }) => request.destination === 'image' || request.destination === 'style' || request.destination === 'script',
