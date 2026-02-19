@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { cn, apiFetch, Banner, StatPill } from './App.jsx'
 import TournamentsAdminTab from './TournamentsAdminTab.jsx'
 
@@ -32,6 +33,7 @@ function Modal({ isOpen, onClose, title, children }) {
 }
 
 export default function AdminPanel() {
+  const navigate = useNavigate()
   const [tab, setTab] = useState('eventos')
   const [err, setErr] = useState('')
   const [toast, setToast] = useState(null)
@@ -80,7 +82,7 @@ export default function AdminPanel() {
         }
       } catch {
         setErr('Acceso denegado. Requiere permisos de administrador.')
-        setTimeout(() => window.location.href = '/', 2000)
+        setTimeout(() => navigate('/'), 2000)
       }
     }
     checkAccess()
@@ -429,7 +431,7 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
+    <div className="page-enter min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
       <div className="mx-auto max-w-7xl px-4 py-6">
         {/* Header */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -440,12 +442,12 @@ export default function AdminPanel() {
               {userRole === 'captain' && ' (Vista Capitán)'}
             </p>
           </div>
-          <a
-            href="/"
+          <button
+            onClick={() => navigate('/')}
             className="self-start rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
           >
             ← Volver
-          </a>
+          </button>
         </div>
 
         {/* Tabs */}

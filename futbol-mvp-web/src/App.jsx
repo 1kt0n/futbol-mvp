@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import AuthLayout from "./features/auth/AuthLayout.jsx";
 import BrandHero from "./features/auth/BrandHero.jsx";
 import AuthFlowCard, { InstallPwaButton } from "./features/auth/AuthFlowCard.jsx";
@@ -958,7 +959,7 @@ export default function App() {
     : null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
+    <div className="page-enter min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
@@ -982,10 +983,8 @@ export default function App() {
               tone={totalOcc >= totalCap && totalCap > 0 ? "warn" : "neutral"}
             />
             {isAdmin && (
-              <a
-                href="/admin"
-                target="_blank"
-                rel="noopener noreferrer"
+              <Link
+                to="/admin"
                 data-testid="open-admin-panel"
                 className={cn(
                   "rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-300",
@@ -993,7 +992,7 @@ export default function App() {
                 )}
               >
                 Panel Admin
-              </a>
+              </Link>
             )}
             <InstallPwaButton />
                         <div className="relative">
@@ -1059,8 +1058,8 @@ export default function App() {
               )}
             </div>
             {currentUser && (
-              <a
-                href="/profile"
+              <Link
+                to="/profile"
                 title="Mi Perfil"
                 className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-1 hover:bg-white/10"
               >
@@ -1078,7 +1077,7 @@ export default function App() {
                 <span className="hidden text-sm font-medium text-white/80 sm:inline">
                   {currentUser.nickname || currentUser.full_name?.split(" ")[0] || "Perfil"}
                 </span>
-              </a>
+              </Link>
             )}
             <button
               onClick={load}

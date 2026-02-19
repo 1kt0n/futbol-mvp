@@ -269,7 +269,7 @@ export default function Profile() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-4 py-8">
+    <div className="page-enter min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-4 py-8">
       <Toast toast={toast} onClose={() => setToast(null)} />
 
       <div className="mx-auto max-w-lg">
@@ -477,15 +477,15 @@ export default function Profile() {
                   Tenes {pendingCount} voto{pendingCount !== 1 ? "s" : ""} para completar.
                 </div>
               </div>
-              <a
-                href="/ratings/pending-ui"
+              <button
+                onClick={() => navigate('/ratings/pending-ui')}
                 className={cn(
                   "self-start rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-black",
                   "hover:bg-amber-400"
                 )}
               >
                 Dejar feedback
-              </a>
+              </button>
             </div>
           </div>
         )}
