@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import AuthLayout from "./features/auth/AuthLayout.jsx";
 import BrandHero from "./features/auth/BrandHero.jsx";
@@ -14,6 +14,11 @@ const PLAYER_LEVEL_LABELS = {
   INICIAL: "Inicial",
   RECREATIVO: "Recreativo",
   COMPETITIVO: "Competitivo",
+};
+const LEVEL_RING = {
+  INICIAL: "ring-2 ring-blue-400",
+  RECREATIVO: "ring-2 ring-emerald-400",
+  COMPETITIVO: "ring-2 ring-amber-400",
 };
 const ATTRIBUTE_LABELS = {
   EQUIPO: "Juego en equipo",
@@ -235,250 +240,314 @@ function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardDa
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-      role="button"
-      tabIndex={-1}
-    >
-      <div
-        className={cn(
-          "fixed bottom-0 left-0 right-0 rounded-t-3xl border border-white/10 bg-zinc-950/95 p-4 shadow-2xl shadow-black/40",
-          "max-h-[85vh] overflow-y-auto",
-          "sm:left-1/2 sm:top-1/2 sm:bottom-auto sm:right-auto sm:w-[420px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-3xl"
-        )}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt={name} className="h-12 w-12 rounded-full object-cover" />
-            ) : (
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-sm font-bold text-white">
-                {initials(name)}
-              </div>
-            )}
-            <div>
-              <div className="text-base font-semibold text-white">{name}</div>
-              {isGuest ? (
-                <span className="mt-1 inline-flex rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-white/80">
-                  Invitado
-                </span>
-              ) : level ? (
-                <span className="mt-1 inline-flex rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-white/80">
-                  {PLAYER_LEVEL_LABELS[level] || level}
-                </span>
-              ) : null}
+    <BottomSheet open={open} onClose={onClose}>
+      <div className="mb-4 flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={name} className="h-12 w-12 rounded-full object-cover ring-2 ring-white/10" />
+          ) : (
+            <div className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-sm font-bold text-white">
+              {initials(name)}
             </div>
+          )}
+          <div>
+            <div className="text-base font-semibold text-white">{name}</div>
+            {isGuest ? (
+              <span className="mt-1 inline-flex rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-white/80">
+                Invitado
+              </span>
+            ) : level ? (
+              <span className={cn(
+                "mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                level === "COMPETITIVO" ? "border-amber-400/30 bg-amber-400/10 text-amber-200" :
+                level === "RECREATIVO"  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" :
+                                          "border-blue-400/30 bg-blue-400/10 text-blue-200"
+              )}>
+                {PLAYER_LEVEL_LABELS[level] || level}
+              </span>
+            ) : null}
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10 hover:text-white"
-          >
-            X
-          </button>
         </div>
+        <button
+          onClick={onClose}
+          className="rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10 hover:text-white"
+        >
+          ✕
+        </button>
+      </div>
 
-        {loading ? (
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
-            Cargando perfil...
-          </div>
-        ) : null}
+      {loading ? (
+        <div className="space-y-2">
+          <div className="skeleton h-4 w-3/4 rounded-lg" />
+          <div className="skeleton h-4 w-1/2 rounded-lg" />
+          <div className="skeleton h-16 w-full rounded-2xl" />
+        </div>
+      ) : null}
 
-        {error ? (
-          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
-            {error}
-          </div>
-        ) : null}
+      {error ? (
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-100">
+          {error}
+        </div>
+      ) : null}
 
-        {!loading && !error && cardData?.participates ? (
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Perfil de juego</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(cardData?.top_attributes || []).length > 0 ? (
-                  cardData.top_attributes.map((attr) => (
-                    <span
-                      key={`${attr.code}-${attr.count}`}
-                      className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200"
-                    >
-                      {ATTRIBUTE_LABELS[attr.code] || attr.code}
-                      <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">{attr.count}</span>
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-sm text-white/60">Todavia no hay atributos suficientes.</span>
-                )}
-              </div>
+      {!loading && !error && cardData?.participates ? (
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Perfil de juego</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(cardData?.top_attributes || []).length > 0 ? (
+                cardData.top_attributes.map((attr) => (
+                  <span
+                    key={`${attr.code}-${attr.count}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200"
+                  >
+                    {ATTRIBUTE_LABELS[attr.code] || attr.code}
+                    <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">{attr.count}</span>
+                  </span>
+                ))
+              ) : (
+                <span className="text-sm text-white/60">Todavia no hay atributos suficientes.</span>
+              )}
+            </div>
 
-              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-                <span className="font-semibold text-amber-200">
-                  {`⭐ ${Number(cardData?.rating?.avg ?? 0).toFixed(1)}`}
-                </span>
-                <span className="ml-2 text-white/60">
-                  {`${cardData?.rating?.votes ?? 0} voto${(cardData?.rating?.votes ?? 0) === 1 ? "" : "s"}`}
-                </span>
-              </div>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+              <span className="font-semibold text-amber-200">
+                {`⭐ ${Number(cardData?.rating?.avg ?? 0).toFixed(1)}`}
+              </span>
+              <span className="ml-2 text-white/60">
+                {`${cardData?.rating?.votes ?? 0} voto${(cardData?.rating?.votes ?? 0) === 1 ? "" : "s"}`}
+              </span>
             </div>
           </div>
-        ) : null}
+        </div>
+      ) : null}
 
-        {!loading && !error && !cardData?.participates && message ? (
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
-            {message}
-          </div>
-        ) : null}
+      {!loading && !error && !cardData?.participates && message ? (
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/70">
+          {message}
+        </div>
+      ) : null}
+    </BottomSheet>
+  );
+}
+
+// ── Skeleton shimmer card ──────────────────────────────────────────────────
+function SkeletonCourtCard() {
+  return (
+    <div className="court-carousel-item rounded-3xl border border-white/10 bg-white/5 p-4">
+      <div className="skeleton h-5 w-2/3 rounded-lg" />
+      <div className="skeleton mt-2 h-1 w-full rounded-full" />
+      <div className="mt-4 grid grid-cols-5 gap-2">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="skeleton aspect-square rounded-full" />
+        ))}
       </div>
     </div>
   );
 }
 
-function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel, onMove, onPlayerClick }) {
-  const pct = court.capacity > 0 ? Math.round((court.occupied / court.capacity) * 100) : 0;
-  const fullnessTone = pct >= 100 ? "bad" : pct >= 80 ? "warn" : "good";
-  const canRegister = eventStatus === "OPEN" && court.is_open;
+// ── Individual avatar slot ─────────────────────────────────────────────────
+function AvatarSlot({ player, canRegister, courtId, isFirstEmpty, isAdmin, dragRef, onRegisterSelf, onPlayerClick }) {
+  if (player) {
+    const ringClass = LEVEL_RING[player.player_level] || "ring-1 ring-white/15";
+    return (
+      <button
+        className={cn(
+          "aspect-square w-full rounded-full overflow-hidden relative transition-transform active:scale-95",
+          ringClass,
+          isAdmin ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+        )}
+        draggable={isAdmin}
+        onDragStart={isAdmin ? () => { dragRef.current = { regId: player.registration_id, fromCourtId: courtId }; } : undefined}
+        onClick={() => onPlayerClick?.(courtId, player)}
+        title={player.name}
+      >
+        {player.avatar_url ? (
+          <img src={player.avatar_url} alt={player.name} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full grid place-items-center bg-white/10 text-[10px] font-bold text-white select-none">
+            {initials(player.name)}
+          </div>
+        )}
+      </button>
+    );
+  }
+
+  if (canRegister) {
+    return (
+      <button
+        {...(isFirstEmpty ? { "data-testid": `court-register-${courtId}` } : {})}
+        onClick={() => { navigator.vibrate?.(30); onRegisterSelf(courtId); }}
+        className="aspect-square w-full rounded-full border-2 border-dashed border-white/20 hover:border-emerald-400/50 hover:bg-emerald-400/5 transition-colors"
+        title="Anotarme"
+      />
+    );
+  }
 
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/5 p-4 shadow-xl shadow-black/10" data-testid={`court-card-${court.court_id}`}>
-      <div className="flex items-start justify-between gap-3">
+    <div className="aspect-square w-full rounded-full bg-white/5 border border-white/8" />
+  );
+}
+
+// ── Slot grid (capacity slots) ─────────────────────────────────────────────
+function SlotGrid({ court, canRegister, isAdmin, dragRef, onRegisterSelf, onPlayerClick }) {
+  let firstEmptySet = false;
+  return (
+    <div className="mt-4 grid grid-cols-5 gap-2">
+      {Array.from({ length: court.capacity }).map((_, i) => {
+        const player = court.players[i] || null;
+        const isEmpty = !player;
+        const isFirstEmpty = isEmpty && !firstEmptySet && canRegister;
+        if (isFirstEmpty) firstEmptySet = true;
+        return (
+          <AvatarSlot
+            key={i}
+            player={player}
+            canRegister={canRegister}
+            courtId={court.court_id}
+            isFirstEmpty={isFirstEmpty}
+            isAdmin={isAdmin}
+            dragRef={dragRef}
+            onRegisterSelf={onRegisterSelf}
+            onPlayerClick={onPlayerClick}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Glassmorphism bottom sheet ─────────────────────────────────────────────
+function BottomSheet({ open, onClose, children }) {
+  if (!open) return null;
+  return (
+    <div className="bottom-sheet-overlay" onClick={onClose}>
+      <div className="bottom-sheet-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Court card (spatial layout) ────────────────────────────────────────────
+function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel, onMove, onPlayerClick, isAdmin, dragRef }) {
+  const pct = court.capacity > 0 ? Math.round((court.occupied / court.capacity) * 100) : 0;
+  const canRegister = eventStatus === "OPEN" && court.is_open;
+  const [dragOver, setDragOver] = useState(false);
+
+  function handleDrop() {
+    setDragOver(false);
+    if (!dragRef?.current) return;
+    const { regId, fromCourtId } = dragRef.current;
+    dragRef.current = null;
+    if (fromCourtId !== court.court_id) onMove(regId, court.court_id);
+  }
+
+  return (
+    <div
+      className={cn(
+        "court-carousel-item rounded-3xl border bg-white/5 p-4 shadow-xl shadow-black/20 transition-all",
+        dragOver && isAdmin ? "border-emerald-400/50 bg-emerald-400/5" : "border-white/10"
+      )}
+      data-testid={`court-card-${court.court_id}`}
+      onDragOver={isAdmin ? (e) => { e.preventDefault(); setDragOver(true); } : undefined}
+      onDragLeave={isAdmin ? () => setDragOver(false) : undefined}
+      onDrop={isAdmin ? handleDrop : undefined}
+    >
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-base font-semibold text-white">{court.name}</div>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <StatPill label="Ocupación" value={`${court.occupied}/${court.capacity}`} tone={fullnessTone} />
-            <StatPill label="Disponibles" value={court.available} tone={court.available > 0 ? "good" : "bad"} />
-            {!court.is_open && (
-              <StatPill label="Estado" value={court.occupied >= court.capacity ? "Llena" : "Cerrada"} tone="bad" />
-            )}
+          <div className="mt-0.5 flex items-center gap-2 text-xs text-white/50">
+            <span>{court.occupied}/{court.capacity}</span>
+            {!court.is_open && <span className="text-rose-400">Cerrada</span>}
           </div>
         </div>
-
-        <button
-          disabled={busy || !canRegister}
-          onClick={() => onRegisterSelf(court.court_id)}
-          data-testid={`court-register-${court.court_id}`}
-          className={cn(
-            "shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold",
-            "bg-white text-black hover:bg-white/90",
-            "disabled:cursor-not-allowed disabled:opacity-40"
-          )}
-        >
-          Anotarme
-        </button>
+        <div className={cn(
+          "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold",
+          pct >= 100 ? "bg-rose-400/20 text-rose-300" :
+          pct >= 80  ? "bg-amber-400/20 text-amber-300" :
+                       "bg-emerald-400/20 text-emerald-300"
+        )}>
+          {court.available > 0 ? `${court.available} libre${court.available !== 1 ? "s" : ""}` : "Llena"}
+        </div>
       </div>
 
-      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-black/20">
+      {/* ── Progress bar ── */}
+      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-black/20">
         <div
           className={cn(
-            "h-full rounded-full",
+            "h-full rounded-full transition-all duration-500",
             pct >= 100 ? "bg-rose-400" : pct >= 80 ? "bg-amber-300" : "bg-emerald-300"
           )}
           style={{ width: `${Math.min(pct, 100)}%` }}
         />
       </div>
 
-      <div className="mt-4">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Jugadores</div>
-          <div className="text-xs text-white/40">Orden: por llegada</div>
-        </div>
+      {/* ── Avatar slot grid ── */}
+      <SlotGrid
+        court={court}
+        canRegister={canRegister}
+        isAdmin={isAdmin}
+        dragRef={dragRef}
+        onRegisterSelf={onRegisterSelf}
+        onPlayerClick={onPlayerClick}
+      />
 
-        <div className="mt-3 space-y-2">
-          {court.players.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-black/10 px-3 py-3 text-sm text-white/60">
-              Todavía no hay jugadores en esta cancha.
-            </div>
-          ) : (
-            court.players.map((p) => (
-              <div
-                key={p.registration_id}
-                data-testid={`player-row-${p.registration_id}`}
-                className="flex cursor-pointer flex-col gap-2 rounded-2xl border border-white/10 bg-black/10 px-3 py-2 transition-colors hover:bg-black/25 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
-                role="button"
-                tabIndex={0}
-                onClick={() => onPlayerClick?.(court.court_id, p)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onPlayerClick?.(court.court_id, p);
-                  }
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  {p.avatar_url ? (
-                    <img
-                      src={p.avatar_url}
-                      alt={p.name}
-                      className="h-9 w-9 flex-shrink-0 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-full bg-white/10 text-xs font-bold text-white">
-                      {initials(p.name)}
-                    </div>
-                  )}
-                  <div>
-                    <div className="text-sm font-semibold text-white">{p.name}</div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-white/50">
-                      <span>{p.type === "USER" ? "Jugador" : "Invitado"}</span>
-                      {p.type === "USER" && p.player_level && (
-                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-white/80">
-                          {PLAYER_LEVEL_LABELS[p.player_level] || p.player_level}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pl-12 sm:pl-0">
-                  <select
-                    disabled={busy}
-                    defaultValue=""
-                    data-testid={`player-move-select-${p.registration_id}`}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      const toCourtId = e.target.value;
-                      if (toCourtId) onMove(p.registration_id, toCourtId);
-                      e.target.value = "";
-                    }}
-                    className={cn(
-                      "flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white sm:flex-initial",
-                      "focus:outline-none focus:ring-2 focus:ring-white/20",
-                      "disabled:opacity-40"
-                    )}
-                    title="Mover (requiere Admin/Capitán)"
-                  >
-                    <option value="">Mover…</option>
-                    {courts
-                      .filter((x) => x.court_id !== court.court_id)
-                      .map((x) => (
-                        <option key={x.court_id} value={x.court_id}>
-                          {x.name}
-                        </option>
-                      ))}
-                  </select>
-
-                  <button
-                    disabled={busy}
-                    data-testid={`player-cancel-${p.registration_id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCancel(p.registration_id);
-                    }}
-                    className={cn(
-                      "rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold text-white",
-                      "hover:bg-white/10",
-                      "disabled:opacity-40"
-                    )}
-                    title="Baja (requiere Admin/Capitán)"
-                  >
-                    Baja
-                  </button>
-                </div>
+      {/* ── Compact player list (E2E testids + admin controls) ── */}
+      {court.players.length > 0 && (
+        <div className="mt-3 space-y-1.5">
+          {court.players.map((p) => (
+            <div
+              key={p.registration_id}
+              data-testid={`player-row-${p.registration_id}`}
+              className="flex items-center gap-2 rounded-xl border border-white/5 bg-black/10 px-2.5 py-1.5 cursor-pointer hover:bg-black/20 transition-colors"
+              onClick={() => onPlayerClick?.(court.court_id, p)}
+            >
+              <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                <span className="text-xs text-white/70 truncate">{p.name}</span>
+                {p.type === "USER" && p.player_level && (
+                  <span className="shrink-0 text-[10px] text-white/35">
+                    {PLAYER_LEVEL_LABELS[p.player_level] || p.player_level}
+                  </span>
+                )}
+                {p.type === "GUEST" && (
+                  <span className="shrink-0 text-[10px] text-white/35">Invitado</span>
+                )}
               </div>
-            ))
-          )}
+              <select
+                disabled={busy}
+                defaultValue=""
+                data-testid={`player-move-select-${p.registration_id}`}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  const toCourtId = e.target.value;
+                  if (toCourtId) onMove(p.registration_id, toCourtId);
+                  e.target.value = "";
+                }}
+                className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[10px] text-white/60 max-w-[76px] disabled:opacity-40 focus:outline-none"
+                title="Mover"
+              >
+                <option value="">Mover…</option>
+                {courts.filter((x) => x.court_id !== court.court_id).map((x) => (
+                  <option key={x.court_id} value={x.court_id}>{x.name}</option>
+                ))}
+              </select>
+              <button
+                disabled={busy}
+                data-testid={`player-cancel-${p.registration_id}`}
+                onClick={(e) => { e.stopPropagation(); onCancel(p.registration_id); }}
+                className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[10px] font-semibold text-white/60 hover:bg-white/10 disabled:opacity-40"
+                title="Baja"
+              >
+                Baja
+              </button>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -487,6 +556,38 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
 // EXPORTS FOR ADMIN PANEL
 // =========================
 export { cn, apiFetch, Banner, StatPill };
+
+// ── Pull-to-refresh hook ───────────────────────────────────────────────────
+function usePullToRefresh(onRefresh) {
+  const [pulling, setPulling] = useState(false);
+  const [pullY, setPullY] = useState(0);
+  const startYRef = useRef(0);
+  const activeRef = useRef(false);
+
+  function onTouchStart(e) {
+    if (window.scrollY > 5) return;
+    startYRef.current = e.touches[0].clientY;
+    activeRef.current = true;
+  }
+
+  function onTouchMove(e) {
+    if (!activeRef.current) return;
+    const delta = e.touches[0].clientY - startYRef.current;
+    if (delta <= 0) { setPullY(0); return; }
+    setPulling(true);
+    setPullY(Math.min(delta * 0.45, 80));
+  }
+
+  function onTouchEnd() {
+    if (!activeRef.current) return;
+    activeRef.current = false;
+    if (pullY >= 60) onRefresh();
+    setPulling(false);
+    setPullY(0);
+  }
+
+  return { pulling, pullY, handlers: { onTouchStart, onTouchMove, onTouchEnd } };
+}
 
 // =========================
 // APP
@@ -527,6 +628,12 @@ export default function App() {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [playerCardLoading, setPlayerCardLoading] = useState(false);
   const [playerCardError, setPlayerCardError] = useState("");
+
+  // Drag & drop ref (admin only)
+  const dragRef = useRef(null);
+
+  // Pull-to-refresh (must be called unconditionally before any early returns)
+  const { pulling, pullY, handlers: ptrHandlers } = usePullToRefresh(load);
 
   const canUse = useMemo(() => actorUserId.trim().length > 0, [actorUserId]);
 
@@ -779,8 +886,32 @@ export default function App() {
   }
 
   async function registerSelf(courtId) {
+    // Optimistic: show the user in the slot immediately
+    setData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        courts: prev.courts.map((c) =>
+          c.court_id !== courtId ? c : {
+            ...c,
+            occupied: c.occupied + 1,
+            available: Math.max(0, c.available - 1),
+            players: [
+              ...c.players,
+              {
+                registration_id: `__opt_${Date.now()}`,
+                name: currentUser?.full_name || "Yo",
+                type: "USER",
+                player_level: null,
+                avatar_url: currentUser?.avatar_url || null,
+              },
+            ],
+          }
+        ),
+      };
+    });
+
     setErr("");
-    setBusy(true);
     try {
       await apiFetch(`/events/${data.event.id}/register`, {
         method: "POST",
@@ -789,9 +920,8 @@ export default function App() {
       setToast({ kind: "success", title: "Anotado", text: "Tu inscripción fue registrada." });
       await load();
     } catch (e) {
+      await load(); // revert optimistic state
       setErr(e.message);
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -1172,7 +1302,29 @@ export default function App() {
               </div>
             )}
 
-            <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* PTR indicator */}
+            {pulling && pullY > 20 && (
+              <div
+                className="flex justify-center py-2 transition-all"
+                style={{ height: pullY * 0.6 }}
+              >
+                <div className="ptr-spinner h-5 w-5 rounded-full border-2 border-white/20 border-t-white/70" />
+              </div>
+            )}
+
+            {/* Skeleton during initial load */}
+            {!event && busy && (
+              <div className="mt-5 court-carousel">
+                <SkeletonCourtCard />
+                <SkeletonCourtCard />
+              </div>
+            )}
+
+            {/* Court carousel */}
+            <div
+              className="mt-5 court-carousel"
+              {...ptrHandlers}
+            >
               {courts.map((c) => (
                 <CourtCard
                   key={c.court_id}
@@ -1184,6 +1336,8 @@ export default function App() {
                   onCancel={cancelReg}
                   onMove={moveReg}
                   onPlayerClick={handleOpenPlayerCard}
+                  isAdmin={isAdmin}
+                  dragRef={dragRef}
                 />
               ))}
             </div>
