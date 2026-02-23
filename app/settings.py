@@ -31,4 +31,12 @@ if SUPABASE_URL and SUPABASE_SERVICE_KEY:
     supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 AVATAR_BUCKET = "avatars"
-AVATAR_MAX_SIZE = 2 * 1024 * 1024  # 2MB
+try:
+    AVATAR_MAX_MB = int(os.getenv("AVATAR_MAX_MB", "8"))
+except ValueError:
+    AVATAR_MAX_MB = 8
+
+if AVATAR_MAX_MB < 1:
+    AVATAR_MAX_MB = 1
+
+AVATAR_MAX_SIZE = AVATAR_MAX_MB * 1024 * 1024

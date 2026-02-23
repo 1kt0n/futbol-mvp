@@ -15,6 +15,7 @@ from app.schemas import (
     TournamentUpdateStatusRequest,
 )
 from app.settings import engine
+from app.utils.datetime_parser import parse_client_datetime
 from app.utils.permissions import require_admin
 
 router = APIRouter()
@@ -296,7 +297,10 @@ def create_tournament(
         raise HTTPException(status_code=400, detail="KNOCKOUT requiere teams_count 4, 8 o 16.")
 
     location_name = body.location_name.strip() if body.location_name else None
-    starts_at = body.starts_at.strip() if body.starts_at else None
+    try:
+        starts_at = parse_client_datetime(body.starts_at, "starts_at")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     with engine.begin() as conn:
         created = None
@@ -501,8 +505,12 @@ def update_tournament_config(
             updates.append("location_name = :location_name")
             params["location_name"] = body.location_name.strip() or None
         if body.starts_at is not None:
+            try:
+                starts_at_value = parse_client_datetime(body.starts_at, "starts_at")
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             updates.append("starts_at = :starts_at")
-            params["starts_at"] = body.starts_at.strip() or None
+            params["starts_at"] = starts_at_value
         if body.format is not None:
             updates.append("format = :format")
             params["format"] = body.format

@@ -3,6 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { cn, apiFetch, Banner, StatPill } from './App.jsx'
 import TournamentsAdminTab from './TournamentsAdminTab.jsx'
 
+function localDateTimeToIso(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toISOString()
+}
+
 // Modal genérico reutilizable
 function Modal({ isOpen, onClose, title, children }) {
   if (!isOpen) return null
@@ -173,7 +181,8 @@ export default function AdminPanel() {
       // Convertir strings vacíos a null para campos opcionales
       const payload = {
         ...formData,
-        close_at: formData.close_at && formData.close_at.trim() ? formData.close_at : null
+        starts_at: localDateTimeToIso(formData.starts_at),
+        close_at: localDateTimeToIso(formData.close_at),
       }
       await apiFetch('/admin/events', {
         method: 'POST',
@@ -1826,6 +1835,7 @@ function EditRolesForm({ user, onSubmit, busy }) {
     </form>
   )
 }
+
 
 
 

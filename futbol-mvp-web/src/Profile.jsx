@@ -6,6 +6,8 @@ const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
   ""
 ).trim();
+const AVATAR_MAX_MB = Number(import.meta.env.VITE_AVATAR_MAX_MB || 8);
+const AVATAR_MAX_BYTES = Math.max(1, AVATAR_MAX_MB) * 1024 * 1024;
 
 const PLAYER_LEVEL_OPTIONS = [
   { value: "INICIAL", label: "Inicial" },
@@ -228,8 +230,12 @@ export default function Profile() {
       setToast({ kind: "error", title: "Error", text: "Selecciona una imagen." });
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setToast({ kind: "error", title: "Error", text: "La imagen no puede superar 2MB." });
+    if (file.size > AVATAR_MAX_BYTES) {
+      setToast({
+        kind: "error",
+        title: "Error",
+        text: `La imagen no puede superar ${AVATAR_MAX_MB}MB.`,
+      });
       return;
     }
 
@@ -331,7 +337,7 @@ export default function Profile() {
                   Eliminar foto
                 </button>
               )}
-              <p className="text-xs text-white/40">JPG, PNG o WebP. Max 2MB.</p>
+              <p className="text-xs text-white/40">JPG, PNG o WebP. Max {AVATAR_MAX_MB}MB.</p>
             </div>
           </div>
         </div>

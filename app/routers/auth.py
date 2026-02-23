@@ -4,9 +4,16 @@ import io
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from PIL import Image
+from PIL import Image, ImageOps
 
-from app.settings import engine, supabase_client, AVATAR_BUCKET, AVATAR_MAX_SIZE, SUPABASE_URL
+from app.settings import (
+    engine,
+    supabase_client,
+    AVATAR_BUCKET,
+    AVATAR_MAX_SIZE,
+    AVATAR_MAX_MB,
+    SUPABASE_URL,
+)
 from app.schemas import PinRegisterRequest, PinLoginRequest, UpdateProfileRequest
 from app.utils.security import hash_pin, assert_pin
 from app.utils.phone import normalize_phone
@@ -311,11 +318,16 @@ async def upload_avatar(
     # Leer y validar tamaño
     content = await file.read()
     if len(content) > AVATAR_MAX_SIZE:
-        raise HTTPException(status_code=400, detail="La imagen excede el límite de 2MB.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"La imagen excede el límite de {AVATAR_MAX_MB}MB.",
+        )
 
     try:
         # Abrir imagen y convertir a WebP
         img = Image.open(io.BytesIO(content))
+        # Respeta orientación EXIF (evita fotos rotadas en iOS/Android).
+        img = ImageOps.exif_transpose(img)
 
         # Convertir a RGB si es necesario (para WebP)
         if img.mode in ("RGBA", "P"):

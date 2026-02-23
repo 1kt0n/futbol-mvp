@@ -9,6 +9,7 @@ from app.schemas import (
     UpdateCourtRequest,
     AssignCaptainRequest
 )
+from app.utils.datetime_parser import parse_client_datetime
 from app.utils.permissions import require_admin
 
 router = APIRouter()
@@ -23,8 +24,11 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alia
     with engine.connect() as conn:
         require_admin(conn, actor_user_id)
 
-    # Convertir string vacío a None para close_at
-    close_at_value = body.close_at if body.close_at and body.close_at.strip() else None
+    try:
+        starts_at_value = parse_client_datetime(body.starts_at, "starts_at", required=True)
+        close_at_value = parse_client_datetime(body.close_at, "close_at")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     with engine.begin() as conn:
         # Crear evento
@@ -52,7 +56,7 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alia
             RETURNING id, title, starts_at, location_name, status, close_at
         """), {
             "title": body.title,
-            "starts_at": body.starts_at,
+            "starts_at": starts_at_value,
             "location_name": body.location_name,
             "close_at": close_at_value,
             "created_by_user_id": actor_user_id
