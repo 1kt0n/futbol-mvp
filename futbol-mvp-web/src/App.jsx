@@ -9,7 +9,7 @@ const API_BASE = (
   import.meta.env.VITE_API_BASE_URL ||
   ""
 ).trim(); // default: same-origin
-const BRAND_LOGO_URL = "/tercer-tiempo-logo.png";
+const BRAND_LOGO_URL = "/tercertiempo_escudo_3d.png";
 const PLAYER_LEVEL_LABELS = {
   INICIAL: "Inicial",
   RECREATIVO: "Recreativo",

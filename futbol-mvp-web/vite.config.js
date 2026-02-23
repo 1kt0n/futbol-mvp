@@ -13,7 +13,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      includeAssets: ['tercer-tiempo-logo.png', 'offline.html', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'],
+      includeAssets: ['tercertiempo_escudo_3d.png', 'offline.html', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png'],
       manifest: {
         name: 'Futbol MVP',
         short_name: 'FutbolMVP',
