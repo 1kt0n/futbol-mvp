@@ -1089,6 +1089,7 @@ export default function App() {
     : null;
 
   return (
+    <>
     <div className="page-enter min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1408,18 +1409,20 @@ export default function App() {
           </>
         )}
 
-        <PlayerCardModal
-          open={playerCardOpen}
-          onClose={() => setPlayerCardOpen(false)}
-          loading={playerCardLoading}
-          error={playerCardError}
-          selectedPlayer={selectedPlayer}
-          cardData={selectedCardData}
-        />
-
         <div className="pb-10" />
       </div>
     </div>
+
+    {/* Rendered outside .page-enter so position:fixed works relative to viewport */}
+    <PlayerCardModal
+      open={playerCardOpen}
+      onClose={() => setPlayerCardOpen(false)}
+      loading={playerCardLoading}
+      error={playerCardError}
+      selectedPlayer={selectedPlayer}
+      cardData={selectedCardData}
+    />
+  </>
   );
 }
 
