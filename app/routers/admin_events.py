@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Header
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -355,7 +357,7 @@ def update_court(
         """), {
             "event_id": event_id,
             "actor_user_id": actor_user_id,
-            "metadata": str(changes).replace("'", '"')
+            "metadata": json.dumps(changes)
         })
 
     return {"court_id": court_id, "message": "Cancha actualizada exitosamente.", "changes": changes}
