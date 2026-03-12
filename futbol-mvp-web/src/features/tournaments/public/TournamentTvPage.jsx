@@ -73,28 +73,53 @@ export default function TournamentTvPage() {
           <article className="min-h-0 rounded-3xl border border-white/15 bg-zinc-900/80 p-4">
             <h2 className="mb-3 text-xl font-semibold">Tabla</h2>
             <div className="h-[calc(100%-2.25rem)] overflow-hidden">
-              <table className="w-full text-lg">
-                <thead>
-                  <tr className="border-b border-white/10 text-white/60">
-                    <th className="p-2 text-left">Equipo</th>
-                    <th className="p-2 text-right">PTS</th>
-                    <th className="p-2 text-right">PJ</th>
-                    <th className="p-2 text-right">DG</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.standings || []).slice(0, 10).map((r) => (
-                    <tr key={r.team_id} className="border-b border-white/5">
-                      <td className="p-2">{r.emoji ? `${r.emoji} ` : ""}{r.team_name}</td>
-                      <td className="p-2 text-right font-semibold">{r.pts}</td>
-                      <td className="p-2 text-right">{r.pj}</td>
-                      <td className="p-2 text-right">{r.dg}</td>
-                    </tr>
+              {data?.group_standings ? (
+                <div className="space-y-3">
+                  {Object.entries(data.group_standings).sort(([a], [b]) => a.localeCompare(b)).map(([group, gs]) => (
+                    <div key={group}>
+                      <div className="mb-1 text-sm font-semibold text-emerald-300">Grupo {group}</div>
+                      <table className="w-full text-base">
+                        <thead><tr className="border-b border-white/10 text-sm text-white/60"><th className="p-1 text-left">Equipo</th><th className="p-1 text-right">PTS</th><th className="p-1 text-right">PJ</th><th className="p-1 text-right">DG</th></tr></thead>
+                        <tbody>
+                          {(gs || []).map((r, idx) => (
+                            <tr key={r.team_id} className={cn("border-b border-white/5", idx < 2 && "bg-emerald-500/10")}>
+                              <td className="p-1">{r.emoji ? `${r.emoji} ` : ""}{r.team_name}</td>
+                              <td className="p-1 text-right font-semibold">{r.pts}</td>
+                              <td className="p-1 text-right">{r.pj}</td>
+                              <td className="p-1 text-right">{r.dg}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-              {(!data?.standings || data.standings.length === 0) && (
-                <div className="mt-4 text-lg text-white/60">Sin tabla disponible para este formato.</div>
+                </div>
+              ) : (
+                <>
+                  <table className="w-full text-lg">
+                    <thead>
+                      <tr className="border-b border-white/10 text-white/60">
+                        <th className="p-2 text-left">Equipo</th>
+                        <th className="p-2 text-right">PTS</th>
+                        <th className="p-2 text-right">PJ</th>
+                        <th className="p-2 text-right">DG</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(data?.standings || []).slice(0, 10).map((r) => (
+                        <tr key={r.team_id} className="border-b border-white/5">
+                          <td className="p-2">{r.emoji ? `${r.emoji} ` : ""}{r.team_name}</td>
+                          <td className="p-2 text-right font-semibold">{r.pts}</td>
+                          <td className="p-2 text-right">{r.pj}</td>
+                          <td className="p-2 text-right">{r.dg}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {(!data?.standings || data.standings.length === 0) && (
+                    <div className="mt-4 text-lg text-white/60">Sin tabla disponible para este formato.</div>
+                  )}
+                </>
               )}
             </div>
           </article>

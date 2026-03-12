@@ -1,4 +1,4 @@
-﻿import Badge from "../../../design/ui/Badge.jsx";
+import Badge from "../../../design/ui/Badge.jsx";
 import Card from "../../../design/ui/Card.jsx";
 import { cn } from "../../../App.jsx";
 
@@ -11,8 +11,25 @@ function fmt(v) {
   }
 }
 
-export default function TournamentHeaderHero({ tournament, ready, teamsCount, matchesCount, busy, onSaveConfig, onGenerateFixture, onGoLive, onFinish, onArchive }) {
+const DRAFT_STEPS = [
+  { key: "config", label: "Config", tab: "overview" },
+  { key: "teams", label: "Equipos", tab: "teams" },
+  { key: "fixture", label: "Fixture", tab: "fixture" },
+  { key: "publish", label: "Publicar", tab: "overview" },
+];
+
+function stageIndex(stage) {
+  if (!stage || stage === "config") return 0;
+  if (stage === "teams") return 1;
+  if (stage === "fixture") return 2;
+  if (stage === "publish") return 3;
+  return 0;
+}
+
+export default function TournamentHeaderHero({ tournament, ready, teamsCount, matchesCount, busy, draftStage, onSaveConfig, onGenerateFixture, onGoLive, onFinish, onArchive, onTabChange }) {
   if (!tournament) return null;
+
+  const currentIdx = stageIndex(draftStage);
 
   return (
     <Card className="sticky top-3 z-20 overflow-hidden bg-gradient-to-br from-zinc-900/95 via-zinc-900/80 to-zinc-800/70">
@@ -25,10 +42,10 @@ export default function TournamentHeaderHero({ tournament, ready, teamsCount, ma
           </div>
           <h2 className="text-2xl font-semibold tracking-tight text-white" data-testid="tournament-hero-title">{tournament.title}</h2>
           <div className="mt-2 flex flex-wrap gap-4 text-sm text-white/70">
-            <span>?? {tournament.location_name || "Sin ubicacion"}</span>
-            <span>?? {fmt(tournament.starts_at)}</span>
-            <span>?? {teamsCount}/{tournament.teams_count} equipos</span>
-            <span>? {matchesCount} partidos</span>
+            <span>📍 {tournament.location_name || "Sin ubicacion"}</span>
+            <span>📅 {fmt(tournament.starts_at)}</span>
+            <span>👥 {teamsCount}/{tournament.teams_count} equipos</span>
+            <span>⚽ {matchesCount} partidos</span>
           </div>
         </div>
 
@@ -87,7 +104,39 @@ export default function TournamentHeaderHero({ tournament, ready, teamsCount, ma
           )}
         </div>
       </div>
+
+      {/* Draft stepper navigation */}
+      {tournament.status === "DRAFT" && onTabChange && (
+        <div className="relative mt-4 flex items-center gap-1 border-t border-white/10 pt-3">
+          {DRAFT_STEPS.map((step, idx) => {
+            const done = idx < currentIdx;
+            const active = idx === currentIdx;
+            return (
+              <button
+                key={step.key}
+                type="button"
+                onClick={() => onTabChange(step.tab)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                  active ? "bg-emerald-500/20 text-emerald-300" :
+                  done ? "text-emerald-400/70 hover:bg-white/5" :
+                  "text-white/40 hover:bg-white/5"
+                )}
+              >
+                <span className={cn(
+                  "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold",
+                  active ? "bg-emerald-500 text-black" :
+                  done ? "bg-emerald-500/30 text-emerald-300" :
+                  "bg-white/10 text-white/40"
+                )}>
+                  {done ? "✓" : idx + 1}
+                </span>
+                <span className="hidden sm:inline">{step.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </Card>
   );
 }
-

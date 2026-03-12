@@ -20,6 +20,15 @@ from app.utils.permissions import require_admin
 
 router = APIRouter()
 
+GROUPS_PLAYOFFS_CONFIG = {
+    4:  {"groups": 2, "per_group": 2, "advance": 1},
+    6:  {"groups": 2, "per_group": 3, "advance": 2},
+    8:  {"groups": 2, "per_group": 4, "advance": 2},
+    10: {"groups": 2, "per_group": 5, "advance": 2},
+    12: {"groups": 4, "per_group": 3, "advance": 2},
+    16: {"groups": 4, "per_group": 4, "advance": 2},
+}
+
 
 def _is_power_of_two(value: int) -> bool:
     return value > 0 and (value & (value - 1)) == 0
@@ -119,6 +128,226 @@ def _generate_knockout(team_ids: list[str]):
     return [m for rnd in rounds for m in rnd]
 
 
+def _generate_groups_playoffs(team_ids: list[str]):
+    """Generate group-stage round-robin + playoff knockout bracket."""
+    total = len(team_ids)
+    cfg = GROUPS_PLAYOFFS_CONFIG.get(total)
+    if not cfg:
+        raise ValueError(f"GROUPS_PLAYOFFS no soporta {total} equipos.")
+
+    num_groups = cfg["groups"]
+    group_labels = [chr(ord("A") + i) for i in range(num_groups)]
+
+    # Snake-draft assignment: A,B,C,D,D,C,B,A,...
+    team_group_map: dict[str, str] = {}
+    groups: dict[str, list[str]] = {g: [] for g in group_labels}
+    order = list(group_labels)
+    for i, tid in enumerate(team_ids):
+        cycle = i // num_groups
+        idx = i % num_groups
+        if cycle % 2 == 1:
+            idx = num_groups - 1 - idx
+        g = order[idx]
+        groups[g].append(tid)
+        team_group_map[tid] = g
+
+    # Generate round-robin within each group
+    all_matches = []
+    max_group_round = 0
+    for g in group_labels:
+        group_matches = _generate_round_robin(groups[g])
+        for m in group_matches:
+            m["group_label"] = g
+            m["stage"] = "GROUP"
+        # Offset sort_order to avoid unique constraint collision across groups
+        g_idx = group_labels.index(g)
+        per_group_max_sort = len(groups[g]) // 2 + 1  # max matches per round in group
+        for m in group_matches:
+            m["sort_order"] = m["sort_order"] + g_idx * per_group_max_sort
+            if m["round"] > max_group_round:
+                max_group_round = m["round"]
+        all_matches.extend(group_matches)
+
+    # Generate playoff bracket
+    playoff_team_count = num_groups * cfg["advance"]
+    # Use placeholder IDs for playoff first-round teams (will be filled by _seed_playoffs)
+    placeholder_ids = [str(uuid4()) for _ in range(playoff_team_count)]
+    playoff_matches = _generate_knockout(placeholder_ids)
+
+    # Offset playoff rounds and clear placeholder team IDs
+    for m in playoff_matches:
+        m["round"] = m["round"] + max_group_round
+        m["group_label"] = None
+        m["stage"] = "PLAYOFF"
+        m["home_team_id"] = None
+        m["away_team_id"] = None
+
+    all_matches.extend(playoff_matches)
+    return all_matches, team_group_map
+
+
+def _seed_playoffs(conn, tournament_id: str):
+    """Compute group standings, pick qualifiers, and seed the playoff bracket."""
+    tournament = _get_tournament(conn, tournament_id)
+    total = int(tournament["teams_count"])
+    cfg = GROUPS_PLAYOFFS_CONFIG.get(total)
+    if not cfg:
+        return
+
+    # Get groups
+    teams = conn.execute(
+        text("SELECT id, group_label FROM public.tournament_teams WHERE tournament_id = :tid ORDER BY group_label, created_at"),
+        {"tid": tournament_id},
+    ).mappings().all()
+
+    group_labels = sorted(set(t["group_label"] for t in teams if t["group_label"]))
+    advance = cfg["advance"]
+
+    # Compute standings per group and pick qualifiers
+    qualifiers: list[tuple[str, str, int]] = []  # (team_id, group, position)
+    for g in group_labels:
+        standings = compute_group_standings(conn, tournament_id, g)
+        for pos, row in enumerate(standings[:advance]):
+            qualifiers.append((row["team_id"], g, pos + 1))
+
+    # Build seeding order based on number of groups
+    # 2 groups: A1 vs B2, B1 vs A2
+    # 4 groups: A1 vs B2, C1 vs D2, B1 vs A2, D1 vs C2
+    seeded: list[tuple[str, str]] = []  # (home_team_id, away_team_id) pairs
+    if len(group_labels) == 2:
+        a_q = [q for q in qualifiers if q[1] == "A"]
+        b_q = [q for q in qualifiers if q[1] == "B"]
+        a_q.sort(key=lambda x: x[2])
+        b_q.sort(key=lambda x: x[2])
+        if advance == 1:
+            seeded.append((a_q[0][0], b_q[0][0]))
+        else:
+            seeded.append((a_q[0][0], b_q[1][0]))
+            seeded.append((b_q[0][0], a_q[1][0]))
+    elif len(group_labels) == 4:
+        by_group = {}
+        for q in qualifiers:
+            by_group.setdefault(q[1], []).append(q)
+        for g in by_group:
+            by_group[g].sort(key=lambda x: x[2])
+        seeded.append((by_group["A"][0][0], by_group["B"][1][0]))
+        seeded.append((by_group["C"][0][0], by_group["D"][1][0]))
+        seeded.append((by_group["B"][0][0], by_group["A"][1][0]))
+        seeded.append((by_group["D"][0][0], by_group["C"][1][0]))
+
+    # Get first-round playoff matches (lowest playoff round)
+    playoff_matches = conn.execute(
+        text(
+            """
+            SELECT id, round, sort_order
+            FROM public.tournament_matches
+            WHERE tournament_id = :tid AND stage = 'PLAYOFF'
+            ORDER BY round ASC, sort_order ASC
+            """
+        ),
+        {"tid": tournament_id},
+    ).mappings().all()
+
+    if not playoff_matches:
+        return
+
+    first_round = playoff_matches[0]["round"]
+    first_round_matches = [m for m in playoff_matches if m["round"] == first_round]
+    first_round_matches.sort(key=lambda m: m["sort_order"])
+
+    for i, (home_id, away_id) in enumerate(seeded):
+        if i < len(first_round_matches):
+            conn.execute(
+                text(
+                    """
+                    UPDATE public.tournament_matches
+                    SET home_team_id = CAST(:home AS uuid), away_team_id = CAST(:away AS uuid)
+                    WHERE id = :match_id
+                    """
+                ),
+                {"home": home_id, "away": away_id, "match_id": first_round_matches[i]["id"]},
+            )
+
+
+def compute_group_standings(conn, tournament_id: str, group_label: str):
+    """Compute standings for a single group within a GROUPS_PLAYOFFS tournament."""
+    teams = conn.execute(
+        text(
+            """
+            SELECT id, name, logo_emoji
+            FROM public.tournament_teams
+            WHERE tournament_id = :tid AND group_label = :group_label
+            ORDER BY created_at ASC, id ASC
+            """
+        ),
+        {"tid": tournament_id, "group_label": group_label},
+    ).mappings().all()
+
+    stats = {
+        str(t["id"]): {
+            "team_id": str(t["id"]),
+            "team_name": t["name"],
+            "emoji": t["logo_emoji"],
+            "pts": 0, "pj": 0, "pg": 0, "pe": 0, "pp": 0,
+            "gf": 0, "gc": 0, "dg": 0,
+        }
+        for t in teams
+    }
+
+    matches = conn.execute(
+        text(
+            """
+            SELECT home_team_id, away_team_id, home_goals, away_goals
+            FROM public.tournament_matches
+            WHERE tournament_id = :tid
+              AND stage = 'GROUP'
+              AND group_label = :group_label
+              AND status = 'FINISHED'
+              AND home_team_id IS NOT NULL
+              AND away_team_id IS NOT NULL
+            """
+        ),
+        {"tid": tournament_id, "group_label": group_label},
+    ).mappings().all()
+
+    for m in matches:
+        home_id = str(m["home_team_id"])
+        away_id = str(m["away_team_id"])
+        if home_id not in stats or away_id not in stats:
+            continue
+        hg = int(m["home_goals"] or 0)
+        ag = int(m["away_goals"] or 0)
+        home = stats[home_id]
+        away = stats[away_id]
+        home["pj"] += 1
+        away["pj"] += 1
+        home["gf"] += hg
+        home["gc"] += ag
+        away["gf"] += ag
+        away["gc"] += hg
+        if hg > ag:
+            home["pg"] += 1
+            away["pp"] += 1
+            home["pts"] += 3
+        elif ag > hg:
+            away["pg"] += 1
+            home["pp"] += 1
+            away["pts"] += 3
+        else:
+            home["pe"] += 1
+            away["pe"] += 1
+            home["pts"] += 1
+            away["pts"] += 1
+
+    for row in stats.values():
+        row["dg"] = row["gf"] - row["gc"]
+
+    return sorted(
+        stats.values(),
+        key=lambda x: (-x["pts"], -x["dg"], -x["gf"], x["team_name"].lower()),
+    )
+
+
 def _get_tournament(conn, tournament_id: str):
     row = conn.execute(
         text(
@@ -140,7 +369,7 @@ def _team_map(conn, tournament_id: str):
     teams = conn.execute(
         text(
             """
-            SELECT id, tournament_id, name, logo_emoji, is_guest, created_at
+            SELECT id, tournament_id, name, logo_emoji, is_guest, group_label, created_at
             FROM public.tournament_teams
             WHERE tournament_id = :tournament_id
             ORDER BY created_at ASC, id ASC
@@ -157,7 +386,8 @@ def _match_payload(conn, tournament_id: str):
         text(
             """
             SELECT id, tournament_id, round, sort_order, home_team_id, away_team_id,
-                   status, home_goals, away_goals, started_at, ended_at, next_match_id, next_slot
+                   status, home_goals, away_goals, started_at, ended_at, next_match_id, next_slot,
+                   group_label, stage
             FROM public.tournament_matches
             WHERE tournament_id = :tournament_id
             ORDER BY round ASC, sort_order ASC
@@ -193,6 +423,8 @@ def _match_payload(conn, tournament_id: str):
                 "ended_at": str(m["ended_at"]) if m["ended_at"] else None,
                 "next_match_id": str(m["next_match_id"]) if m["next_match_id"] else None,
                 "next_slot": m["next_slot"],
+                "group_label": m["group_label"],
+                "stage": m["stage"],
             }
         )
 
@@ -295,6 +527,9 @@ def create_tournament(
 
     if body.format == "KNOCKOUT" and not _is_power_of_two(body.teams_count):
         raise HTTPException(status_code=400, detail="KNOCKOUT requiere teams_count 4, 8 o 16.")
+    if body.format == "GROUPS_PLAYOFFS" and body.teams_count not in GROUPS_PLAYOFFS_CONFIG:
+        valid = ", ".join(str(k) for k in sorted(GROUPS_PLAYOFFS_CONFIG))
+        raise HTTPException(status_code=400, detail=f"GROUPS_PLAYOFFS requiere teams_count: {valid}.")
 
     location_name = body.location_name.strip() if body.location_name else None
     try:
@@ -458,10 +693,24 @@ def get_tournament_detail(
                     "name": t["name"],
                     "logo_emoji": t["logo_emoji"],
                     "is_guest": bool(t["is_guest"]),
+                    "group_label": t.get("group_label"),
                     "created_at": str(t["created_at"]),
                     "members": members_by_team.get(str(t["id"]), []),
                 }
             )
+
+        # Compute standings based on format
+        standings = []
+        group_standings = None
+        fmt = tournament["format"]
+        if fmt == "ROUND_ROBIN":
+            standings = compute_round_robin_standings(conn, tournament_id)
+        elif fmt == "GROUPS_PLAYOFFS":
+            group_labels = sorted(set(t.get("group_label") for t in teams if t.get("group_label")))
+            if group_labels:
+                group_standings = {}
+                for g in group_labels:
+                    group_standings[g] = compute_group_standings(conn, tournament_id, g)
 
         return {
             "tournament": {
@@ -480,6 +729,8 @@ def get_tournament_detail(
             },
             "teams": team_payload,
             "matches": matches,
+            "standings": standings,
+            "group_standings": group_standings,
         }
 
 
@@ -528,6 +779,9 @@ def update_tournament_config(
         next_teams_count = body.teams_count if body.teams_count is not None else int(tournament["teams_count"])
         if next_format == "KNOCKOUT" and next_teams_count not in (4, 8, 16):
             raise HTTPException(status_code=400, detail="KNOCKOUT requiere teams_count 4, 8 o 16.")
+        if next_format == "GROUPS_PLAYOFFS" and next_teams_count not in GROUPS_PLAYOFFS_CONFIG:
+            valid = ", ".join(str(k) for k in sorted(GROUPS_PLAYOFFS_CONFIG))
+            raise HTTPException(status_code=400, detail=f"GROUPS_PLAYOFFS requiere teams_count: {valid}.")
 
         updates.append("updated_at = now()")
         conn.execute(text(f"UPDATE public.tournaments SET {', '.join(updates)} WHERE id = :tournament_id"), params)
@@ -803,9 +1057,13 @@ def generate_fixture(
         conn.execute(text("DELETE FROM public.tournament_matches WHERE tournament_id = :tournament_id"), {"tournament_id": tournament_id})
 
         fmt = tournament["format"]
+        team_group_map = None
         if fmt == "GROUPS_PLAYOFFS":
-            raise HTTPException(status_code=400, detail="Formato no disponible en esta fase.")
-        if fmt == "ROUND_ROBIN":
+            if len(team_ids) not in GROUPS_PLAYOFFS_CONFIG:
+                valid = ", ".join(str(k) for k in sorted(GROUPS_PLAYOFFS_CONFIG))
+                raise HTTPException(status_code=400, detail=f"GROUPS_PLAYOFFS requiere {valid} equipos.")
+            matches, team_group_map = _generate_groups_playoffs(team_ids)
+        elif fmt == "ROUND_ROBIN":
             matches = _generate_round_robin(team_ids)
         elif fmt == "KNOCKOUT":
             if len(team_ids) not in (4, 8, 16) or not _is_power_of_two(len(team_ids)):
@@ -820,11 +1078,14 @@ def generate_fixture(
                     """
                     INSERT INTO public.tournament_matches (
                       id, tournament_id, round, home_team_id, away_team_id,
-                      status, home_goals, away_goals, sort_order, created_at
+                      status, home_goals, away_goals, sort_order,
+                      group_label, stage, created_at
                     )
                     VALUES (
-                      CAST(:id AS uuid), :tournament_id, :round, CAST(:home_team_id AS uuid), CAST(:away_team_id AS uuid),
-                      'PENDING', 0, 0, :sort_order, now()
+                      CAST(:id AS uuid), :tournament_id, :round,
+                      CAST(:home_team_id AS uuid), CAST(:away_team_id AS uuid),
+                      'PENDING', 0, 0, :sort_order,
+                      :group_label, :stage, now()
                     )
                     """
                 ),
@@ -835,6 +1096,8 @@ def generate_fixture(
                     "home_team_id": m["home_team_id"],
                     "away_team_id": m["away_team_id"],
                     "sort_order": m["sort_order"],
+                    "group_label": m.get("group_label"),
+                    "stage": m.get("stage"),
                 },
             )
 
@@ -850,6 +1113,14 @@ def generate_fixture(
                 ),
                 {"id": link["id"], "next_match_id": link["next_match_id"], "next_slot": link["next_slot"]},
             )
+
+        # Update team group assignments for GROUPS_PLAYOFFS
+        if team_group_map:
+            for tid, glabel in team_group_map.items():
+                conn.execute(
+                    text("UPDATE public.tournament_teams SET group_label = :gl WHERE id = CAST(:tid AS uuid)"),
+                    {"gl": glabel, "tid": tid},
+                )
 
         conn.execute(text("UPDATE public.tournaments SET updated_at = now() WHERE id = :id"), {"id": tournament_id})
 
@@ -974,7 +1245,8 @@ def finish_match(
         match = conn.execute(
             text(
                 """
-                SELECT id, status, home_team_id, away_team_id, home_goals, away_goals, next_match_id, next_slot
+                SELECT id, status, home_team_id, away_team_id, home_goals, away_goals,
+                       next_match_id, next_slot, stage
                 FROM public.tournament_matches
                 WHERE id = :match_id AND tournament_id = :tournament_id
                 """
@@ -986,8 +1258,11 @@ def finish_match(
         if match["status"] != "LIVE":
             raise HTTPException(status_code=400, detail="Solo se puede finalizar un partido LIVE.")
 
-        if tournament["format"] == "KNOCKOUT" and int(match["home_goals"]) == int(match["away_goals"]):
-            raise HTTPException(status_code=400, detail="En KNOCKOUT no se puede finalizar con empate.")
+        fmt = tournament["format"]
+        is_knockout_match = fmt == "KNOCKOUT" or (fmt == "GROUPS_PLAYOFFS" and match["stage"] == "PLAYOFF")
+
+        if is_knockout_match and int(match["home_goals"]) == int(match["away_goals"]):
+            raise HTTPException(status_code=400, detail="En eliminacion directa no se puede finalizar con empate.")
 
         conn.execute(
             text(
@@ -1000,7 +1275,8 @@ def finish_match(
             {"match_id": match_id, "tournament_id": tournament_id},
         )
 
-        if tournament["format"] == "KNOCKOUT" and match["next_match_id"]:
+        # Winner propagation for knockout / playoff matches
+        if is_knockout_match and match["next_match_id"]:
             winner_id = match["home_team_id"] if int(match["home_goals"]) > int(match["away_goals"]) else match["away_team_id"]
             if winner_id:
                 if match["next_slot"] == "HOME":
@@ -1013,6 +1289,20 @@ def finish_match(
                         text("UPDATE public.tournament_matches SET away_team_id = :winner_id WHERE id = :next_match_id"),
                         {"winner_id": winner_id, "next_match_id": match["next_match_id"]},
                     )
+
+        # Auto-seed playoffs when all group matches are finished
+        if fmt == "GROUPS_PLAYOFFS" and match["stage"] == "GROUP":
+            pending_group = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*) AS cnt FROM public.tournament_matches
+                    WHERE tournament_id = :tid AND stage = 'GROUP' AND status != 'FINISHED'
+                    """
+                ),
+                {"tid": tournament_id},
+            ).mappings().first()["cnt"]
+            if int(pending_group) == 0:
+                _seed_playoffs(conn, tournament_id)
 
         conn.execute(text("UPDATE public.tournaments SET updated_at = now() WHERE id = :id"), {"id": tournament_id})
         return {"match_id": match_id, "status": "FINISHED"}

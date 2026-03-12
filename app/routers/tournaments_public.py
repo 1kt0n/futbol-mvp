@@ -1,7 +1,12 @@
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import text
 
-from app.routers.tournaments_admin import _match_payload, compute_round_robin_standings
+from app.routers.tournaments_admin import (
+    _match_payload,
+    compute_group_standings,
+    compute_round_robin_standings,
+    GROUPS_PLAYOFFS_CONFIG,
+)
 from app.settings import engine
 
 router = APIRouter()
@@ -60,12 +65,26 @@ def get_tournament_live(
 
         standings = []
         bracket = []
+        group_standings = None
         tiebreak_note = None
-        if tournament["format"] == "ROUND_ROBIN":
+        fmt = tournament["format"]
+        if fmt == "ROUND_ROBIN":
             standings = compute_round_robin_standings(conn, tournament_id)
             tiebreak_note = "Desempate MVP: puntos, diferencia de gol, goles a favor."
-        elif tournament["format"] == "KNOCKOUT":
+        elif fmt == "KNOCKOUT":
             bracket = _build_bracket(matches)
+        elif fmt == "GROUPS_PLAYOFFS":
+            # Group standings
+            group_labels = sorted(set(m["group_label"] for m in matches if m.get("group_label")))
+            if group_labels:
+                group_standings = {}
+                for g in group_labels:
+                    group_standings[g] = compute_group_standings(conn, tournament_id, g)
+            # Playoff bracket
+            playoff_matches = [m for m in matches if m.get("stage") == "PLAYOFF"]
+            if playoff_matches:
+                bracket = _build_bracket(playoff_matches)
+            tiebreak_note = "Fase de grupos: todos contra todos. Los mejores avanzan a eliminacion directa."
 
         return {
             "tournament": {
@@ -81,5 +100,6 @@ def get_tournament_live(
             "matches": matches,
             "now": now_payload,
             "bracket": bracket,
+            "group_standings": group_standings,
             "tiebreak_note": tiebreak_note,
         }

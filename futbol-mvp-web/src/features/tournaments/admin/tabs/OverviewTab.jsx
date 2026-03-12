@@ -10,7 +10,7 @@ function fmt(v) {
   }
 }
 
-export default function OverviewTab({ tournament, teams, matches, standings, nextMatch }) {
+export default function OverviewTab({ tournament, teams, matches, standings, groupStandings, nextMatch }) {
   const totalPlayers = teams.reduce((acc, t) => acc + (t.members?.length || 0), 0);
   const estimatedMinutes = (matches?.length || 0) * Number(tournament?.minutes_per_match || 0);
 
@@ -49,13 +49,29 @@ export default function OverviewTab({ tournament, teams, matches, standings, nex
 
         <h4 className="mt-4 text-sm font-semibold text-white/90">Mini tabla</h4>
         <div className="mt-2 space-y-1">
-          {(standings || []).slice(0, 5).map((row, idx) => (
-            <div key={row.team_id} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs">
-              <div>{idx + 1}. {row.emoji ? `${row.emoji} ` : ""}{row.team_name}</div>
-              <div className="font-semibold">{row.pts} pts</div>
-            </div>
-          ))}
-          {(!standings || standings.length === 0) && (
+          {tournament?.format === "GROUPS_PLAYOFFS" && groupStandings ? (
+            Object.entries(groupStandings).sort(([a], [b]) => a.localeCompare(b)).map(([group, gs]) => (
+              <div key={group}>
+                <div className="mb-1 mt-2 text-xs font-semibold text-emerald-300">Grupo {group}</div>
+                {(gs || []).slice(0, 4).map((row, idx) => (
+                  <div key={row.team_id} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs">
+                    <div>{idx + 1}. {row.emoji ? `${row.emoji} ` : ""}{row.team_name}</div>
+                    <div className="font-semibold">{row.pts} pts</div>
+                  </div>
+                ))}
+              </div>
+            ))
+          ) : (
+            <>
+              {(standings || []).slice(0, 5).map((row, idx) => (
+                <div key={row.team_id} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs">
+                  <div>{idx + 1}. {row.emoji ? `${row.emoji} ` : ""}{row.team_name}</div>
+                  <div className="font-semibold">{row.pts} pts</div>
+                </div>
+              ))}
+            </>
+          )}
+          {(!standings || standings.length === 0) && !groupStandings && (
             <div className="rounded-lg border border-white/10 bg-black/20 px-2 py-2 text-xs text-white/60">La tabla aparecera cuando exista fixture y resultados.</div>
           )}
         </div>

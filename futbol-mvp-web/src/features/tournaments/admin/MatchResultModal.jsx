@@ -9,11 +9,19 @@ function fmt(value) {
   }
 }
 
-export default function MatchResultModal({ open, busy, state, onChange, onClose, onSave, onFinish }) {
+function stageLabel(state, format) {
+  if (format !== "GROUPS_PLAYOFFS" || !state.stage) return null;
+  if (state.stage === "GROUP" && state.group_label) return `Grupo ${state.group_label}`;
+  if (state.stage === "PLAYOFF") return "Playoffs";
+  return null;
+}
+
+export default function MatchResultModal({ open, busy, state, format, onChange, onClose, onSave, onFinish }) {
   if (!open || !state) return null;
 
   const canSave = state.status === "LIVE" || state.status === "FINISHED";
   const canFinish = state.status === "LIVE";
+  const context = stageLabel(state, format);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 p-4" role="button" tabIndex={-1} data-testid="result-modal-overlay" onClick={onClose}>
@@ -22,7 +30,7 @@ export default function MatchResultModal({ open, busy, state, onChange, onClose,
           <div>
             <div className="text-lg font-semibold text-white">Cargar resultado</div>
             <div className="text-xs text-white/60">
-              Ronda {state.round} - {state.status}
+              {context ? `${context} · ` : ""}Ronda {state.round} - {state.status}
             </div>
           </div>
           <button onClick={onClose} className="focus-ring rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/80 hover:bg-white/10">

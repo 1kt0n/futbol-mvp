@@ -130,6 +130,59 @@ export default function TournamentPublicPage() {
           </section>
         )}
 
+        {data?.tournament?.format === "GROUPS_PLAYOFFS" && data?.group_standings && (
+          <section className="app-card mt-4 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-white/50">Fase de Grupos</h2>
+              {data?.tiebreak_note && <div className="text-xs text-white/50">{data.tiebreak_note}</div>}
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {Object.entries(data.group_standings).sort(([a], [b]) => a.localeCompare(b)).map(([group, gs]) => (
+                <div key={group} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <h3 className="mb-2 text-sm font-semibold text-emerald-300">Grupo {group}</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead><tr className="border-b border-white/10 text-xs text-white/60"><th className="p-1 text-left">Equipo</th><th className="p-1 text-right">PTS</th><th className="p-1 text-right">PJ</th><th className="p-1 text-right">DG</th></tr></thead>
+                      <tbody>
+                        {(gs || []).map((r, idx) => (
+                          <tr key={r.team_id} className={cn("border-b border-white/5", idx < 2 && "bg-emerald-500/10")}>
+                            <td className="p-1">{r.emoji ? `${r.emoji} ` : ""}{r.team_name}</td>
+                            <td className="p-1 text-right font-semibold">{r.pts}</td>
+                            <td className="p-1 text-right">{r.pj}</td>
+                            <td className="p-1 text-right">{r.dg}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {data?.tournament?.format === "GROUPS_PLAYOFFS" && (data?.bracket || []).length > 0 && (
+          <section className="app-card mt-4 p-4">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-300/70">Playoffs</h2>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {(data.bracket || []).map((round) => (
+                <div key={round.round} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                  <h3 className="mb-2 text-sm font-semibold">{round.matches?.length === 1 ? "Final" : round.matches?.length === 2 ? "Semifinal" : `Ronda ${round.round}`}</h3>
+                  <div className="space-y-2">
+                    {(round.matches || []).map((m) => (
+                      <div key={m.id} className="rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-xs">
+                        <div>{m.home?.name || "TBD"} <span className="font-semibold">{m.home_goals}</span></div>
+                        <div>{m.away?.name || "TBD"} <span className="font-semibold">{m.away_goals}</span></div>
+                        <div className="mt-1 text-white/50">{m.status}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="app-card mt-4 p-4">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-white/50">Fixture</h2>
           <div className="space-y-3">

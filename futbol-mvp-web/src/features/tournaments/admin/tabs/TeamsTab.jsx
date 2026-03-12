@@ -67,6 +67,31 @@ export default function TeamsTab({
             <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-white/60">Todavia no hay equipos.</div>
           )}
         </div>
+
+        {/* Group preview for GROUPS_PLAYOFFS */}
+        {tournament.format === "GROUPS_PLAYOFFS" && teams.some((t) => t.group_label) && (
+          <div className="mt-4">
+            <h4 className="mb-2 text-sm font-semibold text-emerald-300">Asignacion de grupos</h4>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(
+                teams.reduce((acc, t) => {
+                  if (t.group_label) {
+                    acc[t.group_label] = acc[t.group_label] || [];
+                    acc[t.group_label].push(t);
+                  }
+                  return acc;
+                }, {})
+              ).sort(([a], [b]) => a.localeCompare(b)).map(([group, gTeams]) => (
+                <div key={group} className="rounded-lg border border-white/10 bg-black/20 p-2">
+                  <div className="mb-1 text-xs font-semibold text-emerald-300">Grupo {group}</div>
+                  {gTeams.map((t) => (
+                    <div key={t.id} className="text-xs text-white/80">{t.logo_emoji ? `${t.logo_emoji} ` : ""}{t.name}</div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card>
