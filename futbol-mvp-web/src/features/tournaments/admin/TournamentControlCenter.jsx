@@ -81,6 +81,7 @@ export default function TournamentControlCenter() {
   const [userSuggestions, setUserSuggestions] = useState([]);
   const [usersBusy, setUsersBusy] = useState(false);
   const [resultModal, setResultModal] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const tournament = detail?.tournament;
   const teams = detail?.teams || [];
@@ -296,6 +297,26 @@ export default function TournamentControlCenter() {
     });
   }
 
+  function handleReopenTournament() {
+    if (!tournament) return;
+    save("Torneo reabierto.", async () => {
+      await apiFetch(`/admin/tournaments/${tournament.id}/status`, {
+        method: "POST",
+        body: { status: "LIVE" },
+      });
+      await loadList(tournament.id);
+    });
+  }
+
+  function handleDeleteTournament() {
+    if (!tournament) return;
+    save("Torneo eliminado.", async () => {
+      await apiFetch(`/admin/tournaments/${tournament.id}`, { method: "DELETE" });
+      setConfirmDelete(false);
+      await loadList();
+    });
+  }
+
   function handleAddTeam(e) {
     e.preventDefault();
     if (!tournament) return;
@@ -424,6 +445,8 @@ export default function TournamentControlCenter() {
             onGoLive={handleGoLive}
             onFinish={handleFinishTournament}
             onArchive={handleArchiveTournament}
+            onReopen={handleReopenTournament}
+            onDelete={() => setConfirmDelete(true)}
             onTabChange={setActiveTab}
           />
 
@@ -525,6 +548,36 @@ export default function TournamentControlCenter() {
             />
           )}
         </>
+      )}
+
+      {/* Confirm delete modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setConfirmDelete(false)}>
+          <div className="mx-4 w-full max-w-sm rounded-3xl border border-white/10 bg-zinc-900 p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white">Eliminar torneo</h3>
+            <p className="mt-2 text-sm text-white/70">
+              ¿Eliminar <span className="font-semibold text-white">{tournament?.title}</span>? Esta accion no se puede deshacer.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="focus-ring flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold hover:bg-white/10"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteTournament}
+                disabled={busy}
+                data-testid="tournament-confirm-delete-btn"
+                className="focus-ring flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-40"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <MatchResultModal

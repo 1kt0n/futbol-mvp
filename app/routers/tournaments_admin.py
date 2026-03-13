@@ -800,7 +800,7 @@ def update_tournament_status(
         current = tournament["status"]
         requested = body.status
 
-        valid = {"DRAFT": {"LIVE"}, "LIVE": {"FINISHED"}, "FINISHED": {"ARCHIVED"}, "ARCHIVED": set()}
+        valid = {"DRAFT": {"LIVE"}, "LIVE": {"FINISHED"}, "FINISHED": {"ARCHIVED", "LIVE"}, "ARCHIVED": set()}
         if requested not in valid.get(current, set()):
             raise HTTPException(status_code=400, detail=f"Transicion invalida: {current} -> {requested}.")
 
@@ -817,6 +817,25 @@ def update_tournament_status(
             {"status": requested, "id": tournament_id},
         )
         return {"tournament_id": tournament_id, "status": requested}
+
+
+@router.delete("/tournaments/{tournament_id}")
+def delete_tournament(
+    tournament_id: str,
+    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+):
+    with engine.begin() as conn:
+        require_admin(conn, actor_user_id)
+        tournament = _get_tournament(conn, tournament_id)
+        if tournament["status"] not in ("DRAFT", "ARCHIVED"):
+            raise HTTPException(status_code=400, detail="Solo se pueden eliminar torneos en DRAFT o ARCHIVED.")
+        # Clear self-referencing FK before cascade delete
+        conn.execute(
+            text("UPDATE public.tournament_matches SET next_match_id = NULL WHERE tournament_id = :tid"),
+            {"tid": tournament_id},
+        )
+        conn.execute(text("DELETE FROM public.tournaments WHERE id = :id"), {"id": tournament_id})
+        return {"ok": True}
 
 
 @router.post("/tournaments/{tournament_id}/teams")

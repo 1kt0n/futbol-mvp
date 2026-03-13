@@ -26,7 +26,7 @@ function stageIndex(stage) {
   return 0;
 }
 
-export default function TournamentHeaderHero({ tournament, ready, teamsCount, matchesCount, busy, draftStage, onSaveConfig, onGenerateFixture, onGoLive, onFinish, onArchive, onTabChange }) {
+export default function TournamentHeaderHero({ tournament, ready, teamsCount, matchesCount, busy, draftStage, onSaveConfig, onGenerateFixture, onGoLive, onFinish, onArchive, onReopen, onDelete, onTabChange }) {
   if (!tournament) return null;
 
   const currentIdx = stageIndex(draftStage);
@@ -98,8 +98,19 @@ export default function TournamentHeaderHero({ tournament, ready, teamsCount, ma
           )}
 
           {tournament.status === "FINISHED" && (
-            <button type="button" onClick={onArchive} data-testid="tournament-status-archived-btn" disabled={busy} className="focus-ring rounded-xl bg-zinc-300 px-3 py-2 text-sm font-semibold text-black hover:bg-zinc-200 disabled:opacity-40">
-              Archivar
+            <>
+              <button type="button" onClick={onReopen} data-testid="tournament-status-reopen-btn" disabled={busy} className="focus-ring rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/20 disabled:opacity-40">
+                Reabrir
+              </button>
+              <button type="button" onClick={onArchive} data-testid="tournament-status-archived-btn" disabled={busy} className="focus-ring rounded-xl bg-zinc-300 px-3 py-2 text-sm font-semibold text-black hover:bg-zinc-200 disabled:opacity-40">
+                Archivar
+              </button>
+            </>
+          )}
+
+          {(tournament.status === "DRAFT" || tournament.status === "ARCHIVED") && (
+            <button type="button" onClick={onDelete} data-testid="tournament-delete-btn" disabled={busy} className="focus-ring rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200 hover:bg-rose-500/20 disabled:opacity-40">
+              Eliminar
             </button>
           )}
         </div>
