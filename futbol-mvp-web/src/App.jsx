@@ -377,7 +377,7 @@ function AvatarSlot({ player, canRegister, courtId, isFirstEmpty, isAdmin, dragR
     return (
       <button
         {...(isFirstEmpty ? { "data-testid": `court-register-${courtId}` } : {})}
-        onClick={() => { navigator.vibrate?.(30); onRegisterSelf(courtId); }}
+        onClick={() => { navigator.vibrate?.(30); onRegisterSelf(courtId, true); }}
         className="aspect-square w-full rounded-full border-2 border-dashed border-white/20 hover:border-emerald-400/50 hover:bg-emerald-400/5 transition-colors"
         title="Anotarme"
       />
@@ -602,6 +602,8 @@ export default function App() {
   const [actorUserId, setActorUserId] = useState(getActorId());
   const [actorDraft, setActorDraft] = useState(getActorId());
   const [authHydrating, setAuthHydrating] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
+  const [confirmCourtId, setConfirmCourtId] = useState(null);
   const [data, setData] = useState(null);
 
   const [err, setErr] = useState("");
@@ -1053,7 +1055,7 @@ export default function App() {
 
     return (
       <AuthLayout
-        hero={<BrandHero />}
+        hero={<BrandHero onUnlockDebug={() => setShowDebug(true)} />}
         card={
           <AuthFlowCard
             busy={busy}
@@ -1072,6 +1074,7 @@ export default function App() {
             actorDraft={actorDraft}
             setActorDraft={setActorDraft}
             onSaveActor={onSaveActor}
+            showDebug={showDebug}
           />
         }
         footer="Work in progress • Tercer Tiempo FC (Canchas)"
@@ -1333,7 +1336,7 @@ export default function App() {
                   courts={courts}
                   busy={busy}
                   eventStatus={event.status}
-                  onRegisterSelf={registerSelf}
+                  onRegisterSelf={(courtId) => setConfirmCourtId(courtId)}
                   onCancel={cancelReg}
                   onMove={moveReg}
                   onPlayerClick={handleOpenPlayerCard}
@@ -1422,6 +1425,54 @@ export default function App() {
       selectedPlayer={selectedPlayer}
       cardData={selectedCardData}
     />
+
+    {/* Confirm registration modal */}
+    {(() => {
+      const confirmCourt = confirmCourtId ? courts.find((c) => c.court_id === confirmCourtId) : null;
+      return (
+        <BottomSheet open={!!confirmCourt} onClose={() => setConfirmCourtId(null)}>
+          {confirmCourt && (
+            <div className="space-y-4">
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-white">
+                  ¿Estás seguro de anotarte?
+                </h3>
+                <p className="mt-2 text-sm text-white/60">
+                  Te vas a inscribir en la siguiente cancha:
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-base font-semibold text-white">{confirmCourt.name}</div>
+                <div className="mt-1 flex items-center gap-3 text-sm text-white/60">
+                  <span>{confirmCourt.occupied}/{confirmCourt.capacity} anotados</span>
+                  <span className="text-emerald-400">
+                    {confirmCourt.available} lugar{confirmCourt.available !== 1 ? "es" : ""} libre{confirmCourt.available !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmCourtId(null)}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { const id = confirmCourtId; setConfirmCourtId(null); registerSelf(id); }}
+                  className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-emerald-400"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          )}
+        </BottomSheet>
+      );
+    })()}
   </>
   );
 }
