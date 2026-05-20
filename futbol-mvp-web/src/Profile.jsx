@@ -289,20 +289,6 @@ export default function Profile() {
           </button>
         </div>
 
-        <button
-          onClick={() => navigate("/calendar")}
-          className="mb-4 flex w-full items-center justify-between gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-left hover:bg-emerald-500/20"
-        >
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-black/30 text-lg">📅</div>
-            <div>
-              <div className="text-sm font-semibold text-white">Mi Calendario</div>
-              <div className="text-xs text-emerald-200/80">Partidos, torneos y anuncios</div>
-            </div>
-          </div>
-          <span className="text-white/40">›</span>
-        </button>
-
         <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-6">
           <div className="flex flex-col items-center gap-4 sm:flex-row">
             <div className="relative">

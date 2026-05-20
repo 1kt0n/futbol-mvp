@@ -1123,9 +1123,9 @@ export default function App() {
                 "rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-200",
                 "hover:bg-emerald-500/25"
               )}
-              title="Mi calendario"
+              title="Mi Calendario"
             >
-              <span className="mr-1">📅</span>Calendario
+              <span className="mr-1">📅</span>Mi Calendario
             </Link>
             {isAdmin && (
               <Link
