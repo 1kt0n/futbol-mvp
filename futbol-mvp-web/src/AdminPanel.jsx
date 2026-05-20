@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, apiFetch, Banner, StatPill } from './App.jsx'
 import TournamentsAdminTab from './TournamentsAdminTab.jsx'
+import AdminAnnouncementForm from './calendar/AdminAnnouncementForm.jsx'
 
 function localDateTimeToIso(value) {
   const raw = String(value || '').trim()
@@ -80,6 +81,10 @@ export default function AdminPanel() {
 
         if (me.is_admin) {
           setUserRole('admin')
+          const focus = new URLSearchParams(window.location.search).get('focus')
+          if (focus === 'calendar') {
+            setTab('calendario')
+          }
         } else {
           // Chequear si es capitán
           await apiFetch('/events/active')
@@ -191,6 +196,24 @@ export default function AdminPanel() {
       setToast('Evento creado exitosamente')
       setShowCreateEvent(false)
       await loadEvents()
+    } catch (err) {
+      setErr(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleToggleVisibility(eventId, nextVisibility) {
+    setBusy(true)
+    try {
+      await apiFetch(`/admin/events/${eventId}/visibility`, {
+        method: 'PATCH',
+        body: { visibility: nextVisibility },
+      })
+      setToast(nextVisibility === 'GLOBAL'
+        ? 'Evento visible en el calendario de todos.'
+        : 'Evento oculto del calendario general.')
+      await loadEventDetail(eventId)
     } catch (err) {
       setErr(err.message)
     } finally {
@@ -520,6 +543,18 @@ export default function AdminPanel() {
               >
                 Torneos
               </button>
+              <button
+                onClick={() => setTab('calendario')}
+                data-testid="admin-tab-calendario"
+                className={cn(
+                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
+                  tab === 'calendario'
+                    ? "bg-white/10 border-b-2 border-emerald-400 text-white"
+                    : "text-white/60 hover:bg-white/5 hover:text-white"
+                )}
+              >
+                Calendario
+              </button>
             </>
           )}
         </div>
@@ -561,6 +596,7 @@ export default function AdminPanel() {
               onDeleteCourt={handleDeleteCourt}
               onCreateCourt={() => setShowCreateCourt(true)}
               onRefresh={loadEvents}
+              onToggleVisibility={handleToggleVisibility}
             />
           )}
 
@@ -600,6 +636,10 @@ export default function AdminPanel() {
 
           {tab === 'torneos' && userRole === 'admin' && (
             <TournamentsAdminTab />
+          )}
+
+          {tab === 'calendario' && userRole === 'admin' && (
+            <CalendarAdminTab setToast={setToast} setErr={setErr} />
           )}
         </div>
 
@@ -717,7 +757,8 @@ function EventosTab({
   onEditCourt,
   onDeleteCourt,
   onCreateCourt,
-  onRefresh
+  onRefresh,
+  onToggleVisibility,
 }) {
   const event = activeEvent?.event
   const courts = activeEvent?.courts || []
@@ -854,7 +895,24 @@ function EventosTab({
                 Inicia: {new Date(event.starts_at).toLocaleString()}
               </p>
             </div>
-            {getStatusBadge(event.status)}
+            <div className="flex flex-col items-end gap-2">
+              {getStatusBadge(event.status)}
+              {userRole === 'admin' && (
+                <button
+                  onClick={() => onToggleVisibility?.(event.id, event.visibility === 'GLOBAL' ? 'PRIVATE' : 'GLOBAL')}
+                  data-testid="admin-event-visibility-toggle"
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs font-semibold",
+                    event.visibility === 'GLOBAL'
+                      ? "border-sky-400/40 bg-sky-500/20 text-sky-200 hover:bg-sky-500/30"
+                      : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10",
+                  )}
+                  title="Mostrar/ocultar en el calendario de todos"
+                >
+                  {event.visibility === 'GLOBAL' ? '🌐 Visible para todos' : 'Solo anotados'}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Canchas */}
@@ -1479,7 +1537,8 @@ function CreateEventForm({ onSubmit, busy }) {
   const [formData, setFormData] = useState({
     title: '',
     starts_at: '',
-    location_name: ''
+    location_name: '',
+    visibility: 'PRIVATE',
   })
 
   function handleSubmit(e) {
@@ -1522,6 +1581,21 @@ function CreateEventForm({ onSubmit, busy }) {
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
       </div>
+      <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={formData.visibility === 'GLOBAL'}
+          onChange={(e) => setFormData({ ...formData, visibility: e.target.checked ? 'GLOBAL' : 'PRIVATE' })}
+          data-testid="admin-create-event-visibility-input"
+          className="mt-1 h-4 w-4"
+        />
+        <span className="text-sm text-white/80">
+          <span className="font-semibold">Mostrar en el calendario de todos</span>
+          <span className="block text-xs text-white/50 mt-0.5">
+            Aparecera en "Mi Calendario" de todos los jugadores con boton para anotarse.
+          </span>
+        </span>
+      </label>
       <button
         type="submit"
         disabled={busy}
@@ -1836,6 +1910,134 @@ function EditRolesForm({ user, onSubmit, busy }) {
   )
 }
 
+function CalendarAdminTab({ setToast, setErr }) {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [includePast, setIncludePast] = useState(false)
 
+  async function load() {
+    setLoading(true)
+    try {
+      const data = await apiFetch(`/admin/calendar/announcements?include_past=${includePast}`)
+      setItems(data.items || [])
+    } catch (e) {
+      setErr?.(e.message || 'No se pudo cargar la lista de anuncios.')
+      setItems([])
+    } finally {
+      setLoading(false)
+    }
+  }
 
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includePast])
+
+  async function handleDelete(id) {
+    if (!window.confirm('¿Eliminar este anuncio?')) return
+    try {
+      await apiFetch(`/admin/calendar/announcements/${id}`, { method: 'DELETE' })
+      setToast?.('Anuncio eliminado')
+      await load()
+    } catch (e) {
+      setErr?.(e.message || 'No se pudo eliminar.')
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-lg font-bold text-white">Anuncios del calendario</h3>
+          <p className="text-sm text-white/50">
+            Entradas informativas visibles para todos en "Mi Calendario".
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-white/60">
+            <input
+              type="checkbox"
+              checked={includePast}
+              onChange={(e) => setIncludePast(e.target.checked)}
+            />
+            Incluir pasados
+          </label>
+          <button
+            onClick={() => {
+              setEditing(null)
+              setShowForm(true)
+            }}
+            className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold hover:bg-emerald-400"
+          >
+            + Nuevo anuncio
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/50">
+          Cargando...
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/60">
+          No hay anuncios{includePast ? '' : ' próximos'}.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => (
+            <div
+              key={it.id}
+              className="rounded-2xl border border-white/10 bg-white/5 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-white">{it.title}</div>
+                  <div className="mt-0.5 text-xs text-white/50">
+                    {new Date(it.starts_at).toLocaleString()}
+                    {it.location_name ? ` · ${it.location_name}` : ''}
+                  </div>
+                  {it.description && (
+                    <div className="mt-1 line-clamp-2 text-xs text-white/70">{it.description}</div>
+                  )}
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    onClick={() => {
+                      setEditing(it)
+                      setShowForm(true)
+                    }}
+                    className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => handleDelete(it.id)}
+                    className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <AdminAnnouncementForm
+        open={showForm}
+        editing={editing}
+        onClose={() => {
+          setShowForm(false)
+          setEditing(null)
+        }}
+        onSaved={() => {
+          setToast?.(editing ? 'Anuncio actualizado' : 'Anuncio creado')
+          load()
+        }}
+      />
+    </div>
+  )
+}
 

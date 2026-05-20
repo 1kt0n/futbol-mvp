@@ -7,6 +7,7 @@ import App from './App.jsx'
 import AdminPanel from './AdminPanel.jsx'
 import Profile from './Profile.jsx'
 import RatingsPending from './RatingsPending.jsx'
+import Calendar from './calendar/Calendar.jsx'
 import TournamentPublicPage from './features/tournaments/public/TournamentPublicPage.jsx'
 import TournamentTvPage from './features/tournaments/public/TournamentTvPage.jsx'
 
@@ -31,6 +32,7 @@ createRoot(document.getElementById('root')).render(
         <Route path="/" element={<App />} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/calendar" element={<Calendar />} />
         <Route path="/ratings/pending-ui" element={<RatingsPending />} />
         <Route path="/tournaments/:id" element={<TournamentPublicPage />} />
         <Route path="/tournaments/:id/tv" element={<TournamentTvPage />} />

@@ -19,6 +19,8 @@ from app.routers import (
     notifications,
     tournaments_admin,
     tournaments_public,
+    calendar,
+    admin_calendar,
 )
 
 # =========================
@@ -80,6 +82,8 @@ app.include_router(notifications.router, tags=["Notifications"])
 app.include_router(notifications.admin_router, prefix="/admin", tags=["Admin - Notifications"])
 app.include_router(tournaments_admin.router, prefix="/admin", tags=["Admin - Tournaments"])
 app.include_router(tournaments_public.router, tags=["Public - Tournaments"])
+app.include_router(calendar.router, tags=["Calendar"])
+app.include_router(admin_calendar.router, prefix="/admin", tags=["Admin - Calendar"])
 
 # =========================
 # Serve Frontend (production)

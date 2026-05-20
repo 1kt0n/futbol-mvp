@@ -1116,6 +1116,17 @@ export default function App() {
               value={`${totalOcc}/${totalCap}`}
               tone={totalOcc >= totalCap && totalCap > 0 ? "warn" : "neutral"}
             />
+            <Link
+              to="/calendar"
+              data-testid="open-calendar"
+              className={cn(
+                "rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-200",
+                "hover:bg-emerald-500/25"
+              )}
+              title="Mi calendario"
+            >
+              <span className="mr-1">📅</span>Calendario
+            </Link>
             {isAdmin && (
               <Link
                 to="/admin"

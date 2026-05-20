@@ -9,12 +9,37 @@ from app.schemas import (
     CreateEventRequest,
     CreateCourtRequest,
     UpdateCourtRequest,
-    AssignCaptainRequest
+    AssignCaptainRequest,
+    UpdateEventVisibilityRequest,
 )
 from app.utils.datetime_parser import parse_client_datetime
 from app.utils.permissions import require_admin
 
 router = APIRouter()
+
+
+def _broadcast_global_event_to_bell(conn, event_title: str) -> None:
+    """Notificacion best-effort cuando un evento se marca como GLOBAL."""
+    try:
+        conn.execute(text("""
+            INSERT INTO public.notifications (
+                kind, title, message, action_url,
+                starts_at, expires_at, is_active, created_at, updated_at
+            )
+            VALUES (
+                'INFO',
+                'Nuevo en el calendario',
+                :message,
+                '/calendar',
+                now(),
+                now() + interval '48 hours',
+                true,
+                now(),
+                now()
+            )
+        """), {"message": event_title})
+    except Exception:
+        pass
 
 
 @router.post("/events")
@@ -41,6 +66,7 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alia
                 location_name,
                 close_at,
                 status,
+                visibility,
                 created_by_user_id,
                 created_at,
                 updated_at
@@ -51,16 +77,18 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alia
                 :location_name,
                 :close_at,
                 'OPEN',
+                :visibility,
                 :created_by_user_id,
                 now(),
                 now()
             )
-            RETURNING id, title, starts_at, location_name, status, close_at
+            RETURNING id, title, starts_at, location_name, status, close_at, visibility
         """), {
             "title": body.title,
             "starts_at": starts_at_value,
             "location_name": body.location_name,
             "close_at": close_at_value,
+            "visibility": body.visibility,
             "created_by_user_id": actor_user_id
         }).mappings().first()
 
@@ -70,12 +98,16 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alia
                 event_id, actor_user_id, action, metadata
             )
             VALUES (
-                :event_id, :actor_user_id, 'CREATE_EVENT', '{}'::jsonb
+                :event_id, :actor_user_id, 'CREATE_EVENT', CAST(:metadata AS jsonb)
             )
         """), {
             "event_id": event["id"],
-            "actor_user_id": actor_user_id
+            "actor_user_id": actor_user_id,
+            "metadata": json.dumps({"visibility": event["visibility"]}),
         })
+
+        if event["visibility"] == "GLOBAL":
+            _broadcast_global_event_to_bell(conn, event["title"])
 
         return {
             "event_id": str(event["id"]),
@@ -83,9 +115,63 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alia
             "starts_at": str(event["starts_at"]),
             "location_name": event["location_name"],
             "status": event["status"],
+            "visibility": event["visibility"],
             "close_at": str(event["close_at"]) if event["close_at"] else None,
             "message": f"Evento '{event['title']}' creado exitosamente con estado OPEN."
         }
+
+
+@router.patch("/events/{event_id}/visibility")
+def update_event_visibility(
+    event_id: str,
+    body: UpdateEventVisibilityRequest,
+    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+):
+    """
+    Cambia la visibilidad del evento (PRIVATE <-> GLOBAL).
+    Al pasar a GLOBAL, dispara una notificacion broadcast best-effort.
+    """
+    with engine.connect() as conn:
+        require_admin(conn, actor_user_id)
+
+        event = conn.execute(text("""
+            SELECT id, title, visibility FROM public.events WHERE id = :event_id
+        """), {"event_id": event_id}).mappings().first()
+
+        if not event:
+            raise HTTPException(status_code=404, detail="Evento no encontrado.")
+
+    previous = event["visibility"]
+    new_visibility = body.visibility
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE public.events
+            SET visibility = :visibility, updated_at = now()
+            WHERE id = :event_id
+        """), {"event_id": event_id, "visibility": new_visibility})
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (
+                event_id, actor_user_id, action, metadata
+            )
+            VALUES (
+                :event_id, :actor_user_id, 'UPDATE_EVENT_VISIBILITY', CAST(:metadata AS jsonb)
+            )
+        """), {
+            "event_id": event_id,
+            "actor_user_id": actor_user_id,
+            "metadata": json.dumps({"previous": previous, "next": new_visibility}),
+        })
+
+        if new_visibility == "GLOBAL" and previous != "GLOBAL":
+            _broadcast_global_event_to_bell(conn, event["title"])
+
+    return {
+        "event_id": event_id,
+        "visibility": new_visibility,
+        "message": f"Visibilidad actualizada a {new_visibility}.",
+    }
 
 
 @router.post("/events/{event_id}/open")
@@ -702,7 +788,7 @@ def get_event_detail(
         require_admin(conn, actor_user_id)
 
         event = conn.execute(text("""
-            SELECT id, title, starts_at, location_name, status, close_at
+            SELECT id, title, starts_at, location_name, status, close_at, visibility
             FROM public.events
             WHERE id = :event_id
         """), {"event_id": event_id}).mappings().first()
@@ -797,6 +883,7 @@ def get_event_detail(
                 "starts_at": str(event["starts_at"]),
                 "location_name": event["location_name"],
                 "status": event["status"],
+                "visibility": event["visibility"],
                 "close_at": str(event["close_at"]) if event["close_at"] else None,
             },
             "courts": courts_payload,
@@ -831,7 +918,7 @@ def list_events(
         where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
 
         query = f"""
-            SELECT id, title, starts_at, location_name, status, close_at, created_at
+            SELECT id, title, starts_at, location_name, status, visibility, close_at, created_at
             FROM public.events
             {where_clause}
             ORDER BY starts_at DESC
@@ -848,6 +935,7 @@ def list_events(
                     "starts_at": str(e["starts_at"]),
                     "location_name": e["location_name"],
                     "status": e["status"],
+                    "visibility": e["visibility"],
                     "close_at": str(e["close_at"]) if e["close_at"] else None,
                     "created_at": str(e["created_at"])
                 }

@@ -28,11 +28,22 @@ class PinLoginRequest(BaseModel):
 
 
 # ========== ADMIN EVENTS ==========
+EventVisibility = Literal["PRIVATE", "GLOBAL"]
+
+
 class CreateEventRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=120)
     starts_at: str = Field(..., description="ISO 8601 timestamp")
     location_name: str = Field(..., min_length=2, max_length=120)
     close_at: str | None = Field(None, description="ISO 8601 timestamp opcional")
+    visibility: EventVisibility = Field(
+        default="PRIVATE",
+        description="PRIVATE: solo aparece para los anotados. GLOBAL: aparece en el calendario de todos.",
+    )
+
+
+class UpdateEventVisibilityRequest(BaseModel):
+    visibility: EventVisibility
 
 
 class CreateCourtRequest(BaseModel):
@@ -320,3 +331,24 @@ class CreateNotificationRequest(BaseModel):
         le=30,
         description="Cantidad de dias de vigencia de la notificacion.",
     )
+
+
+# ========== CALENDAR ANNOUNCEMENTS ==========
+class CreateAnnouncementRequest(BaseModel):
+    title: str = Field(..., min_length=3, max_length=160)
+    description: str | None = Field(None, max_length=1200)
+    starts_at: str = Field(..., description="ISO 8601 timestamp")
+    ends_at: str | None = Field(None, description="ISO 8601 timestamp opcional")
+    location_name: str | None = Field(None, max_length=160)
+    action_url: str | None = Field(None, max_length=500)
+    action_label: str | None = Field(None, max_length=40)
+
+
+class UpdateAnnouncementRequest(BaseModel):
+    title: str | None = Field(None, min_length=3, max_length=160)
+    description: str | None = Field(None, max_length=1200)
+    starts_at: str | None = Field(None, description="ISO 8601 timestamp")
+    ends_at: str | None = Field(None, description="ISO 8601 timestamp opcional")
+    location_name: str | None = Field(None, max_length=160)
+    action_url: str | None = Field(None, max_length=500)
+    action_label: str | None = Field(None, max_length=40)
