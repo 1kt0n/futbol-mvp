@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { cn, apiFetch, Banner, StatPill } from './App.jsx'
 import TournamentsAdminTab from './TournamentsAdminTab.jsx'
 import AdminAnnouncementForm from './calendar/AdminAnnouncementForm.jsx'
+import AuditoriaTab from './audit/AuditoriaTab.jsx'
 
 function localDateTimeToIso(value) {
   const raw = String(value || '').trim()
@@ -65,10 +66,6 @@ export default function AdminPanel() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [showResetPin, setShowResetPin] = useState(false)
   const [showEditRoles, setShowEditRoles] = useState(false)
-
-  // Estado para Auditoría
-  const [auditLogs, setAuditLogs] = useState([])
-  const [auditFilters, setAuditFilters] = useState({ event_id: '', action: '' })
 
   // Modal de confirmación
   const [confirmModal, setConfirmModal] = useState(null)
@@ -155,27 +152,9 @@ export default function AdminPanel() {
     }
   }
 
-  // Load audit logs
-  async function loadAudit() {
-    setBusy(true)
-    try {
-      const params = new URLSearchParams()
-      if (auditFilters.event_id) params.append('event_id', auditFilters.event_id)
-      if (auditFilters.action) params.append('action', auditFilters.action)
-
-      const data = await apiFetch(`/admin/audit?${params.toString()}`)
-      setAuditLogs(data.logs || [])
-    } catch (err) {
-      setErr(err.message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   useEffect(() => {
     if (tab === 'eventos' && userRole) loadEvents()
     if (tab === 'usuarios' && userRole === 'admin') loadUsers()
-    if (tab === 'auditoria' && userRole === 'admin') loadAudit()
     // eslint-disable-next-line
   }, [tab, userRole])
 
@@ -621,13 +600,7 @@ export default function AdminPanel() {
           )}
 
           {tab === 'auditoria' && userRole === 'admin' && (
-            <AuditoriaTab
-              logs={auditLogs}
-              filters={auditFilters}
-              setFilters={setAuditFilters}
-              busy={busy}
-              onRefresh={loadAudit}
-            />
+            <AuditoriaTab />
           )}
 
           {tab === 'notificaciones' && userRole === 'admin' && (
@@ -1470,63 +1443,6 @@ function NotificationsTab() {
           </div>
         </div>
       </Modal>
-    </div>
-  )
-}
-
-function AuditoriaTab({ logs, filters, setFilters, busy, onRefresh }) {
-  return (
-    <div className="space-y-6">
-      {/* Filtros */}
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <input
-          type="text"
-          value={filters.action}
-          onChange={(e) => setFilters({ ...filters, action: e.target.value })}
-          placeholder="Filtrar por acción..."
-          className="flex-1 rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-white/20"
-        />
-        <button
-          onClick={onRefresh}
-          disabled={busy}
-          className="rounded-xl bg-white/10 hover:bg-white/20 px-4 py-2 font-semibold disabled:opacity-50"
-        >
-          {busy ? 'Cargando...' : 'Actualizar'}
-        </button>
-      </div>
-
-      {/* Tabla de logs */}
-      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead className="border-b border-white/10 bg-black/20">
-            <tr>
-              <th className="text-left p-3 font-semibold">Fecha</th>
-              <th className="text-left p-3 font-semibold">Actor</th>
-              <th className="text-left p-3 font-semibold">Acción</th>
-              <th className="text-left p-3 font-semibold">Metadata</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((log) => (
-              <tr key={log.id} className="border-b border-white/5 hover:bg-white/5">
-                <td className="p-3 text-white/60">
-                  {new Date(log.created_at).toLocaleString()}
-                </td>
-                <td className="p-3">{log.actor_name || log.actor_user_id.slice(0, 8)}</td>
-                <td className="p-3 text-emerald-300">{log.action}</td>
-                <td className="p-3 text-white/50 text-xs font-mono max-w-xs truncate">
-                  {JSON.stringify(log.metadata)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {logs.length === 0 && (
-          <div className="p-8 text-center text-white/50">
-            No hay logs de auditoría
-          </div>
-        )}
-      </div>
     </div>
   )
 }
