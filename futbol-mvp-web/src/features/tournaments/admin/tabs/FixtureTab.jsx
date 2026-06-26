@@ -50,7 +50,7 @@ function KnockoutFixture({ rounds, busy, onStartMatch, onOpenResult }) {
   return (
     <div className="flex gap-4 overflow-x-auto pb-2">
       {rounds.map(([round, ms]) => (
-        <div key={round} className="flex-shrink-0 min-w-[240px]">
+        <div key={round} className="flex-shrink-0 snap-start min-w-[78vw] max-w-[260px] sm:min-w-[220px]">
           <div className="mb-2 text-sm font-semibold text-white/60 uppercase">
             {ms.length === 1 ? "Final" : ms.length === 2 ? "Semifinal" : `Ronda ${round}`}
           </div>
@@ -137,9 +137,9 @@ function GroupsPlayoffsFixture({ matches, busy, onStartMatch, onOpenResult }) {
             <div className="rounded-xl border border-dashed border-white/20 bg-black/20 p-3 text-center text-xs text-white/50">
               Pendiente — los playoffs se activan al terminar la fase de grupos.
             </div>
-            <div className="flex gap-4 overflow-x-auto pb-2">
+            <div className="flex snap-x gap-4 overflow-x-auto pb-2">
               {sortedPlayoffRounds.map(([round, ms]) => (
-                <div key={round} className="flex-shrink-0 min-w-[240px]">
+                <div key={round} className="flex-shrink-0 snap-start min-w-[78vw] max-w-[260px] sm:min-w-[220px]">
                   <div className="mb-2 text-xs font-semibold text-white/40 uppercase">
                     {ms.length === 1 ? "Final" : ms.length === 2 ? "Semifinal" : `Ronda`}
                   </div>
@@ -155,9 +155,9 @@ function GroupsPlayoffsFixture({ matches, busy, onStartMatch, onOpenResult }) {
             </div>
           </div>
         ) : (
-          <div className="flex gap-4 overflow-x-auto pb-2">
+          <div className="flex snap-x gap-4 overflow-x-auto pb-2">
             {sortedPlayoffRounds.map(([round, ms]) => (
-              <div key={round} className="flex-shrink-0 min-w-[240px]">
+              <div key={round} className="flex-shrink-0 snap-start min-w-[78vw] max-w-[260px] sm:min-w-[220px]">
                 <div className="mb-2 text-sm font-semibold text-white/60 uppercase">
                   {ms.length === 1 ? "Final" : ms.length === 2 ? "Semifinal" : `Ronda`}
                 </div>

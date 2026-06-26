@@ -3,18 +3,18 @@ import Card from "../../../../design/ui/Card.jsx";
 function StandingsTable({ standings, advance }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[600px] text-sm">
+      <table className="w-full text-sm sm:min-w-[600px]">
         <caption className="sr-only">Tabla de posiciones</caption>
         <thead>
           <tr className="border-b border-white/10 text-xs uppercase tracking-wide text-white/60">
             <th scope="col" className="p-2 text-left">Pos</th>
             <th scope="col" className="p-2 text-left">Equipo</th>
             <th scope="col" className="p-2 text-right">PJ</th>
-            <th scope="col" className="p-2 text-right">PG</th>
-            <th scope="col" className="p-2 text-right">PE</th>
-            <th scope="col" className="p-2 text-right">PP</th>
-            <th scope="col" className="p-2 text-right">GF</th>
-            <th scope="col" className="p-2 text-right">GC</th>
+            <th scope="col" className="hidden p-2 text-right sm:table-cell">PG</th>
+            <th scope="col" className="hidden p-2 text-right sm:table-cell">PE</th>
+            <th scope="col" className="hidden p-2 text-right sm:table-cell">PP</th>
+            <th scope="col" className="hidden p-2 text-right sm:table-cell">GF</th>
+            <th scope="col" className="hidden p-2 text-right sm:table-cell">GC</th>
             <th scope="col" className="p-2 text-right">DG</th>
             <th scope="col" className="p-2 text-right font-semibold">PTS</th>
           </tr>
@@ -27,11 +27,11 @@ function StandingsTable({ standings, advance }) {
                 <td className="p-2 font-semibold">{idx + 1}</td>
                 <td className="p-2">{r.emoji ? `${r.emoji} ` : ""}{r.team_name}</td>
                 <td className="p-2 text-right">{r.pj}</td>
-                <td className="p-2 text-right">{r.pg}</td>
-                <td className="p-2 text-right">{r.pe}</td>
-                <td className="p-2 text-right">{r.pp}</td>
-                <td className="p-2 text-right">{r.gf}</td>
-                <td className="p-2 text-right">{r.gc}</td>
+                <td className="hidden p-2 text-right sm:table-cell">{r.pg}</td>
+                <td className="hidden p-2 text-right sm:table-cell">{r.pe}</td>
+                <td className="hidden p-2 text-right sm:table-cell">{r.pp}</td>
+                <td className="hidden p-2 text-right sm:table-cell">{r.gf}</td>
+                <td className="hidden p-2 text-right sm:table-cell">{r.gc}</td>
                 <td className="p-2 text-right">{r.dg}</td>
                 <td className="p-2 text-right font-bold">{r.pts}</td>
               </tr>

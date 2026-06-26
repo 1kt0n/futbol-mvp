@@ -187,16 +187,16 @@ export default function TournamentLive() {
               {data?.tiebreak_note && <div className="text-xs text-white/50">{data.tiebreak_note}</div>}
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+              <table className="w-full text-sm sm:min-w-[760px]">
                 <thead>
                   <tr className="border-b border-white/10 text-white/60">
-                    <th className="p-2 text-left">Equipo</th><th className="p-2 text-right">PTS</th><th className="p-2 text-right">PJ</th><th className="p-2 text-right">PG</th><th className="p-2 text-right">PE</th><th className="p-2 text-right">PP</th><th className="p-2 text-right">GF</th><th className="p-2 text-right">GC</th><th className="p-2 text-right">DG</th>
+                    <th className="p-2 text-left">Equipo</th><th className="p-2 text-right">PTS</th><th className="p-2 text-right">PJ</th><th className="hidden p-2 text-right sm:table-cell">PG</th><th className="hidden p-2 text-right sm:table-cell">PE</th><th className="hidden p-2 text-right sm:table-cell">PP</th><th className="hidden p-2 text-right sm:table-cell">GF</th><th className="hidden p-2 text-right sm:table-cell">GC</th><th className="p-2 text-right">DG</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data.standings || []).map((r) => (
                     <tr key={r.team_id} className="border-b border-white/5">
-                      <td className="p-2">{r.emoji ? `${r.emoji} ` : ""}{r.team_name}</td><td className="p-2 text-right font-semibold">{r.pts}</td><td className="p-2 text-right">{r.pj}</td><td className="p-2 text-right">{r.pg}</td><td className="p-2 text-right">{r.pe}</td><td className="p-2 text-right">{r.pp}</td><td className="p-2 text-right">{r.gf}</td><td className="p-2 text-right">{r.gc}</td><td className="p-2 text-right">{r.dg}</td>
+                      <td className="p-2">{r.emoji ? `${r.emoji} ` : ""}{r.team_name}</td><td className="p-2 text-right font-semibold">{r.pts}</td><td className="p-2 text-right">{r.pj}</td><td className="hidden p-2 text-right sm:table-cell">{r.pg}</td><td className="hidden p-2 text-right sm:table-cell">{r.pe}</td><td className="hidden p-2 text-right sm:table-cell">{r.pp}</td><td className="hidden p-2 text-right sm:table-cell">{r.gf}</td><td className="hidden p-2 text-right sm:table-cell">{r.gc}</td><td className="p-2 text-right">{r.dg}</td>
                     </tr>
                   ))}
                 </tbody>

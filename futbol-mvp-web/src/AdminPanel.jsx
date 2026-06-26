@@ -1025,68 +1025,117 @@ function UsuariosTab({ users, searchQuery, setSearchQuery, busy, onSearch, onCre
         </button>
       </div>
 
-      {/* Tabla de usuarios */}
-      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/5">
-        <table className="w-full min-w-[760px]">
-          <thead className="border-b border-white/10 bg-black/20">
-            <tr>
-              <th className="text-left p-4 font-semibold">Nombre</th>
-              <th className="text-left p-4 font-semibold">Teléfono</th>
-              <th className="text-left p-4 font-semibold">Estado</th>
-              <th className="text-left p-4 font-semibold">Roles</th>
-              <th className="text-left p-4 font-semibold">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
+      {/* Lista de usuarios — tarjetas en mobile, tabla en sm+ */}
+      {users.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/50">
+          No se encontraron usuarios
+        </div>
+      ) : (
+        <>
+          {/* Mobile: tarjetas */}
+          <div className="space-y-3 sm:hidden">
             {users.map((user) => (
-              <tr key={user.id} className="border-b border-white/5 hover:bg-white/5">
-                <td className="p-4">{user.full_name}</td>
-                <td className="p-4 text-white/60">{user.phone_e164}</td>
-                <td className="p-4">
+              <div key={user.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-semibold">{user.full_name}</div>
+                    <div className="mt-0.5 text-sm text-white/60">{user.phone_e164}</div>
+                  </div>
                   <span className={cn(
-                    "px-2 py-1 rounded-lg text-xs font-semibold",
+                    "shrink-0 rounded-lg px-2 py-1 text-xs font-semibold",
                     user.is_active
                       ? "bg-emerald-500/20 text-emerald-300"
                       : "bg-rose-500/20 text-rose-300"
                   )}>
                     {user.is_active ? 'Activo' : 'Inactivo'}
                   </span>
-                </td>
-                <td className="p-4 text-sm text-white/60">
-                  {user.roles.length > 0 ? user.roles.join(', ') : 'Sin roles'}
-                </td>
-                <td className="p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
-                      onClick={() => onResetPin(user)}
-                      className="text-xs px-3 py-1 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10"
-                    >
-                      Reset PIN
-                    </button>
-                    <button
-                      onClick={() => onToggleActive(user.id, user.is_active)}
-                      className="text-xs px-3 py-1 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10"
-                    >
-                      {user.is_active ? 'Desactivar' : 'Activar'}
-                    </button>
-                    <button
-                      onClick={() => onEditRoles(user)}
-                      className="text-xs px-3 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
-                    >
-                      Roles
-                    </button>
-                  </div>
-                </td>
-              </tr>
+                </div>
+                <div className="mt-2 text-sm text-white/60">
+                  Roles: {user.roles.length > 0 ? user.roles.join(', ') : 'Sin roles'}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => onResetPin(user)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10"
+                  >
+                    Reset PIN
+                  </button>
+                  <button
+                    onClick={() => onToggleActive(user.id, user.is_active)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10"
+                  >
+                    {user.is_active ? 'Desactivar' : 'Activar'}
+                  </button>
+                  <button
+                    onClick={() => onEditRoles(user)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                  >
+                    Roles
+                  </button>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
-        {users.length === 0 && (
-          <div className="p-8 text-center text-white/50">
-            No se encontraron usuarios
           </div>
-        )}
-      </div>
+
+          {/* Desktop: tabla */}
+          <div className="hidden overflow-x-auto rounded-2xl border border-white/10 bg-white/5 sm:block">
+            <table className="w-full">
+              <thead className="border-b border-white/10 bg-black/20">
+                <tr>
+                  <th className="text-left p-4 font-semibold">Nombre</th>
+                  <th className="text-left p-4 font-semibold">Teléfono</th>
+                  <th className="text-left p-4 font-semibold">Estado</th>
+                  <th className="text-left p-4 font-semibold">Roles</th>
+                  <th className="text-left p-4 font-semibold">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id} className="border-b border-white/5 hover:bg-white/5">
+                    <td className="p-4">{user.full_name}</td>
+                    <td className="p-4 text-white/60">{user.phone_e164}</td>
+                    <td className="p-4">
+                      <span className={cn(
+                        "px-2 py-1 rounded-lg text-xs font-semibold",
+                        user.is_active
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : "bg-rose-500/20 text-rose-300"
+                      )}>
+                        {user.is_active ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td className="p-4 text-sm text-white/60">
+                      {user.roles.length > 0 ? user.roles.join(', ') : 'Sin roles'}
+                    </td>
+                    <td className="p-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => onResetPin(user)}
+                          className="text-xs px-3 py-1 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10"
+                        >
+                          Reset PIN
+                        </button>
+                        <button
+                          onClick={() => onToggleActive(user.id, user.is_active)}
+                          className="text-xs px-3 py-1 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10"
+                        >
+                          {user.is_active ? 'Desactivar' : 'Activar'}
+                        </button>
+                        <button
+                          onClick={() => onEditRoles(user)}
+                          className="text-xs px-3 py-1 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                        >
+                          Roles
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   )
 }

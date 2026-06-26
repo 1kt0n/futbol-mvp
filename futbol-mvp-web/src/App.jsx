@@ -1104,9 +1104,11 @@ export default function App() {
             />
             <div>
               <div className="text-xl font-semibold">Tercer Tiempo FC (Canchas)</div>
-              <div className="mt-0.5 break-all text-xs text-white/60 sm:text-sm">
-                Actor: <code className="text-white/80">{actorUserId}</code>
-              </div>
+              {showDebug && (
+                <div className="mt-0.5 break-all text-xs text-white/60 sm:text-sm">
+                  Actor: <code className="text-white/80">{actorUserId}</code>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1155,7 +1157,7 @@ export default function App() {
               </button>
 
               {notificationsOpen && (
-                <div className="fixed left-3 right-3 top-24 z-50 max-h-[72vh] overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/30 backdrop-blur sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 sm:max-h-none">
+                <div className="fixed left-3 right-3 top-24 z-50 max-h-[80dvh] overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/30 backdrop-blur sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 sm:max-h-none">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="text-sm font-semibold text-white">Notificaciones</div>
                     <button
@@ -1171,7 +1173,7 @@ export default function App() {
                       No hay notificaciones.
                     </div>
                   ) : (
-                    <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1 sm:max-h-80">
+                    <div className="max-h-[64dvh] space-y-2 overflow-y-auto pr-1 sm:max-h-80">
                       {notifications.map((n) => (
                         <div key={n.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
                           <div className="text-sm font-semibold text-white">{n.title}</div>
@@ -1413,10 +1415,6 @@ export default function App() {
                       Confirmar invitado
                     </button>
                   </div>
-                </div>
-
-                <div className="mt-3 text-xs text-white/45">
-                  Nota: mover/baja se muestran, pero el backend bloquea si no sos Admin/Capitán.
                 </div>
               </div>
             )}
