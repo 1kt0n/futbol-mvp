@@ -2,10 +2,66 @@ from fastapi import HTTPException
 from sqlalchemy import text
 
 
+def is_super_admin(conn, actor_user_id: str) -> bool:
+    """True si el actor tiene el rol super_admin (comodin: tiene todos los permisos)."""
+    row = conn.execute(text("""
+        SELECT 1
+        FROM public.user_roles ur
+        JOIN public.roles r ON r.id = ur.role_id
+        WHERE ur.user_id = :actor_user_id
+          AND LOWER(r.code) = 'super_admin'
+        LIMIT 1
+    """), {"actor_user_id": actor_user_id}).first()
+    return bool(row)
+
+
+def get_effective_permissions(conn, actor_user_id: str) -> set[str]:
+    """
+    Devuelve el set de codigos de permiso efectivos del actor (union de sus roles).
+    super_admin -> {'*'} (comodin: tiene todo, incluso permisos que se agreguen luego).
+    """
+    if is_super_admin(conn, actor_user_id):
+        return {"*"}
+
+    rows = conn.execute(text("""
+        SELECT DISTINCT p.code
+        FROM public.user_roles ur
+        JOIN public.role_permissions rp ON rp.role_id = ur.role_id
+        JOIN public.permissions p ON p.id = rp.permission_id
+        WHERE ur.user_id = :actor_user_id
+    """), {"actor_user_id": actor_user_id}).mappings().all()
+    return {r["code"] for r in rows}
+
+
+def require_permission(conn, actor_user_id: str, permission_code: str) -> None:
+    """
+    Valida que el actor tenga el permiso indicado (via alguno de sus roles) o sea super_admin.
+    Lanza HTTPException 403 si no lo tiene.
+    """
+    if is_super_admin(conn, actor_user_id):
+        return
+
+    has_perm = conn.execute(text("""
+        SELECT 1
+        FROM public.user_roles ur
+        JOIN public.role_permissions rp ON rp.role_id = ur.role_id
+        JOIN public.permissions p ON p.id = rp.permission_id
+        WHERE ur.user_id = :actor_user_id
+          AND p.code = :permission_code
+        LIMIT 1
+    """), {"actor_user_id": actor_user_id, "permission_code": permission_code}).first()
+
+    if not has_perm:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Acceso denegado. Requiere el permiso '{permission_code}'."
+        )
+
+
 def require_admin(conn, actor_user_id: str) -> None:
     """
-    Valida que el actor sea admin o super_admin.
-    Lanza HTTPException 403 si no tiene permisos.
+    [Compat] Valida que el actor sea admin o super_admin.
+    Preferir require_permission con un permiso especifico para nuevos endpoints.
     """
     is_admin = conn.execute(text("""
         SELECT 1

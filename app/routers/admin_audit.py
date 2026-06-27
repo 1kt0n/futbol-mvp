@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 from app.settings import engine
 from app.utils.datetime_parser import parse_client_datetime
-from app.utils.permissions import require_admin
+from app.utils.permissions import require_permission
 
 router = APIRouter()
 
@@ -48,10 +48,14 @@ ACTION_CATEGORY: dict[str, str] = {
     # USUARIO
     "CREATE_USER_MANUAL": "USUARIO",
     "UPDATE_USER_STATUS": "USUARIO",
-    "UPDATE_USER_ROLES": "USUARIO",
     # NOTIFICACION
     "CREATE_NOTIFICATION": "NOTIFICACION",
     "DEACTIVATE_NOTIFICATION": "NOTIFICACION",
+    # ROLES (RBAC)
+    "UPDATE_USER_ROLES": "ROLES",
+    "CREATE_ROLE": "ROLES",
+    "UPDATE_ROLE": "ROLES",
+    "DELETE_ROLE": "ROLES",
 }
 
 # Acciones disparadas por el sistema (no por una persona); ocultas por default.
@@ -62,7 +66,7 @@ SYSTEM_ACTIONS: set[str] = {
 }
 
 VALID_CATEGORIES = {
-    "EVENTO", "CANCHA", "INSCRIPCION", "CAPITAN", "USUARIO", "NOTIFICACION", "SISTEMA",
+    "EVENTO", "CANCHA", "INSCRIPCION", "CAPITAN", "USUARIO", "NOTIFICACION", "ROLES", "SISTEMA",
 }
 
 # Llaves dentro de metadata que sabemos que son court UUIDs
@@ -175,7 +179,7 @@ def get_audit_logs(
     """
 
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'audit.view')
         rows = conn.execute(text(query), params).mappings().all()
 
         # Recolectar court_ids y user_ids referenciados en metadata para resolver en batch.
@@ -312,7 +316,7 @@ def get_audit_actors(
     Lista los admins que emitieron al menos un log (para el typeahead del filtro).
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'audit.view')
 
         rows = conn.execute(text("""
             SELECT DISTINCT eal.actor_user_id::text AS id, u.full_name AS name

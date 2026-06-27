@@ -21,6 +21,7 @@ from app.routers import (
     tournaments_public,
     calendar,
     admin_calendar,
+    admin_roles,
 )
 
 # =========================
@@ -84,6 +85,7 @@ app.include_router(tournaments_admin.router, prefix="/admin", tags=["Admin - Tou
 app.include_router(tournaments_public.router, tags=["Public - Tournaments"])
 app.include_router(calendar.router, tags=["Calendar"])
 app.include_router(admin_calendar.router, prefix="/admin", tags=["Admin - Calendar"])
+app.include_router(admin_roles.router, prefix="/admin", tags=["Admin - Roles"])
 
 # =========================
 # Serve Frontend (production)

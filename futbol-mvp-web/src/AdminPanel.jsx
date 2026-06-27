@@ -4,6 +4,19 @@ import { cn, apiFetch, Banner, StatPill } from './App.jsx'
 import TournamentsAdminTab from './TournamentsAdminTab.jsx'
 import AdminAnnouncementForm from './calendar/AdminAnnouncementForm.jsx'
 import AuditoriaTab from './audit/AuditoriaTab.jsx'
+import RolesPermisosTab from './admin/RolesPermisosTab.jsx'
+import { can, canAccessAdmin } from './permissions/can.js'
+
+// Tabs del panel: cada una se muestra si el usuario tiene su permiso.
+const ADMIN_TABS = [
+  { key: 'eventos', label: 'Eventos', perm: 'events.view', testid: 'admin-tab-eventos' },
+  { key: 'usuarios', label: 'Usuarios', perm: 'users.view', testid: 'admin-tab-usuarios' },
+  { key: 'auditoria', label: 'Auditoria', perm: 'audit.view', testid: 'admin-tab-auditoria' },
+  { key: 'notificaciones', label: 'Notificaciones', perm: 'notifications.view', testid: 'admin-tab-notificaciones' },
+  { key: 'torneos', label: 'Torneos', perm: 'tournaments.view', testid: 'admin-tab-torneos' },
+  { key: 'calendario', label: 'Calendario', perm: 'calendar.view', testid: 'admin-tab-calendario' },
+  { key: 'roles', label: 'Roles y Permisos', perm: 'roles.manage', testid: 'admin-tab-roles' },
+]
 
 function localDateTimeToIso(value) {
   const raw = String(value || '').trim()
@@ -48,7 +61,8 @@ export default function AdminPanel() {
   const [err, setErr] = useState('')
   const [toast, setToast] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [userRole, setUserRole] = useState(null) // 'admin' | 'captain' | null
+  const [permissions, setPermissions] = useState(null) // null = cargando, [] = sin permisos
+  const has = (code) => can(permissions || [], code)
 
   // Estado para Eventos
   const [eventsList, setEventsList] = useState([])
@@ -75,21 +89,24 @@ export default function AdminPanel() {
     async function checkAccess() {
       try {
         const me = await apiFetch('/me')
+        const perms = Array.isArray(me.permissions) ? me.permissions : []
 
-        if (me.is_admin) {
-          setUserRole('admin')
-          const focus = new URLSearchParams(window.location.search).get('focus')
-          if (focus === 'calendar') {
-            setTab('calendario')
-          }
-        } else {
-          // Chequear si es capitán
-          await apiFetch('/events/active')
-          // Simplificado: si hay evento activo y el usuario está asignado como capitán en alguna cancha
-          // (esto requeriría que /events/active incluya info de capitanes por cancha)
-          setUserRole('captain')
-          setTab('eventos')
+        if (!canAccessAdmin(perms)) {
+          setErr('Acceso denegado. No tenés permisos para el panel.')
+          setTimeout(() => navigate('/'), 2000)
+          return
         }
+
+        setPermissions(perms)
+
+        // Tab inicial: respetar ?focus=calendar si puede; si no, la primera visible.
+        const focus = new URLSearchParams(window.location.search).get('focus')
+        if (focus === 'calendar' && can(perms, 'calendar.view')) {
+          setTab('calendario')
+          return
+        }
+        const firstVisible = ADMIN_TABS.find((t) => can(perms, t.perm))
+        if (firstVisible) setTab(firstVisible.key)
       } catch {
         setErr('Acceso denegado. Requiere permisos de administrador.')
         setTimeout(() => navigate('/'), 2000)
@@ -153,10 +170,10 @@ export default function AdminPanel() {
   }
 
   useEffect(() => {
-    if (tab === 'eventos' && userRole) loadEvents()
-    if (tab === 'usuarios' && userRole === 'admin') loadUsers()
+    if (tab === 'eventos' && has('events.view')) loadEvents()
+    if (tab === 'usuarios' && has('users.view')) loadUsers()
     // eslint-disable-next-line
-  }, [tab, userRole])
+  }, [tab, permissions])
 
   // Handler: Crear evento
   async function handleCreateEvent(formData) {
@@ -433,13 +450,15 @@ export default function AdminPanel() {
   }
 
   // Si no hay permisos aún, mostrar loading
-  if (!userRole) {
+  if (!permissions) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white flex items-center justify-center">
         <div className="text-white/60">Verificando permisos...</div>
       </div>
     )
   }
+
+  const visibleTabs = ADMIN_TABS.filter((t) => has(t.perm))
 
   return (
     <div className="page-enter min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-950 to-black text-white">
@@ -450,7 +469,6 @@ export default function AdminPanel() {
             <h1 className="text-3xl font-bold">Panel de Administración</h1>
             <p className="text-white/60 mt-1">
               Gestión de eventos, usuarios y auditoría
-              {userRole === 'captain' && ' (Vista Capitán)'}
             </p>
           </div>
           <button
@@ -461,81 +479,23 @@ export default function AdminPanel() {
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs (data-driven por permisos) */}
         <div className="mb-6 flex gap-2 overflow-x-auto border-b border-white/10 pb-1">
-          <button
-            onClick={() => setTab('eventos')}
-            data-testid="admin-tab-eventos"
-            className={cn(
-              "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
-              tab === 'eventos'
-                ? "bg-white/10 border-b-2 border-emerald-400 text-white"
-                : "text-white/60 hover:bg-white/5 hover:text-white"
-            )}
-          >
-            Eventos
-          </button>
-          {userRole === 'admin' && (
-            <>
-              <button
-                onClick={() => setTab('usuarios')}
-                className={cn(
-                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
-                  tab === 'usuarios'
-                    ? "bg-white/10 border-b-2 border-emerald-400 text-white"
-                    : "text-white/60 hover:bg-white/5 hover:text-white"
-                )}
-              >
-                Usuarios
-              </button>
-              <button
-                onClick={() => setTab('auditoria')}
-                className={cn(
-                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
-                  tab === 'auditoria'
-                    ? "bg-white/10 border-b-2 border-emerald-400 text-white"
-                    : "text-white/60 hover:bg-white/5 hover:text-white"
-                )}
-              >
-                Auditoria
-              </button>
-              <button
-                onClick={() => setTab('notificaciones')}
-                className={cn(
-                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
-                  tab === 'notificaciones'
-                    ? "bg-white/10 border-b-2 border-emerald-400 text-white"
-                    : "text-white/60 hover:bg-white/5 hover:text-white"
-                )}
-              >
-                Notificaciones
-              </button>
-              <button
-                onClick={() => setTab('torneos')}
-                data-testid="admin-tab-torneos"
-                className={cn(
-                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
-                  tab === 'torneos'
-                    ? "bg-white/10 border-b-2 border-emerald-400 text-white"
-                    : "text-white/60 hover:bg-white/5 hover:text-white"
-                )}
-              >
-                Torneos
-              </button>
-              <button
-                onClick={() => setTab('calendario')}
-                data-testid="admin-tab-calendario"
-                className={cn(
-                  "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
-                  tab === 'calendario'
-                    ? "bg-white/10 border-b-2 border-emerald-400 text-white"
-                    : "text-white/60 hover:bg-white/5 hover:text-white"
-                )}
-              >
-                Calendario
-              </button>
-            </>
-          )}
+          {visibleTabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              data-testid={t.testid}
+              className={cn(
+                "whitespace-nowrap px-4 py-3 rounded-t-lg font-semibold transition-colors",
+                tab === t.key
+                  ? "bg-white/10 border-b-2 border-emerald-400 text-white"
+                  : "text-white/60 hover:bg-white/5 hover:text-white"
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
         {/* Error banner */}
@@ -554,14 +514,18 @@ export default function AdminPanel() {
 
         {/* Tab Content */}
         <div className="mt-6">
-          {tab === 'eventos' && (
+          {tab === 'eventos' && has('events.view') && (
             <EventosTab
               eventsList={eventsList}
               selectedEventId={selectedEventId}
               onSelectEvent={(id) => loadEventDetail(id)}
               activeEvent={activeEvent}
               busy={busy}
-              userRole={userRole}
+              perms={{
+                canCreateEvent: has('events.create'),
+                canManageEvent: has('events.manage'),
+                canManageCourts: has('courts.manage'),
+              }}
               onCreateEvent={() => setShowCreateEvent(true)}
               onCloseEvent={handleCloseEvent}
               onReopenEvent={handleReopenEvent}
@@ -579,7 +543,7 @@ export default function AdminPanel() {
             />
           )}
 
-          {tab === 'usuarios' && userRole === 'admin' && (
+          {tab === 'usuarios' && has('users.view') && (
             <UsuariosTab
               users={users}
               searchQuery={searchQuery}
@@ -599,20 +563,24 @@ export default function AdminPanel() {
             />
           )}
 
-          {tab === 'auditoria' && userRole === 'admin' && (
+          {tab === 'auditoria' && has('audit.view') && (
             <AuditoriaTab />
           )}
 
-          {tab === 'notificaciones' && userRole === 'admin' && (
+          {tab === 'notificaciones' && has('notifications.view') && (
             <NotificationsTab />
           )}
 
-          {tab === 'torneos' && userRole === 'admin' && (
+          {tab === 'torneos' && has('tournaments.view') && (
             <TournamentsAdminTab />
           )}
 
-          {tab === 'calendario' && userRole === 'admin' && (
+          {tab === 'calendario' && has('calendar.view') && (
             <CalendarAdminTab setToast={setToast} setErr={setErr} />
+          )}
+
+          {tab === 'roles' && has('roles.manage') && (
+            <RolesPermisosTab setToast={setToast} setErr={setErr} />
           )}
         </div>
 
@@ -720,7 +688,7 @@ function EventosTab({
   onSelectEvent,
   activeEvent,
   busy,
-  userRole,
+  perms,
   onCreateEvent,
   onCloseEvent,
   onReopenEvent,
@@ -753,9 +721,9 @@ function EventosTab({
 
   return (
     <div className="space-y-6" data-testid="admin-events-tab">
-      {/* Botones de acción */}
-      {userRole === 'admin' && (
-        <div className="flex gap-2 flex-wrap">
+      {/* Botones de acción (cada uno segun permiso) */}
+      <div className="flex gap-2 flex-wrap">
+        {perms.canCreateEvent && (
           <button
             onClick={onCreateEvent}
             data-testid="admin-event-create-btn"
@@ -763,8 +731,10 @@ function EventosTab({
           >
             + Crear Evento
           </button>
-          {event && (
-            <>
+        )}
+        {event && (
+          <>
+            {perms.canManageCourts && (
               <button
                 onClick={onCreateCourt}
                 data-testid="admin-event-create-court-btn"
@@ -772,54 +742,54 @@ function EventosTab({
               >
                 + Crear Cancha
               </button>
-              {event.status === 'OPEN' && (
-                <button
-                  onClick={() => onCloseEvent(event.id)}
-                  data-testid="admin-event-close-btn"
-                  className="rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 px-4 py-2 font-semibold"
-                >
-                  Cerrar Evento
-                </button>
-              )}
-              {event.status === 'CLOSED' && (
-                <>
-                  <button
-                    onClick={() => onReopenEvent(event.id)}
-                    data-testid="admin-event-reopen-btn"
-                    className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-4 py-2 font-semibold"
-                  >
-                    Reabrir Evento
-                  </button>
-                  <button
-                    onClick={() => onFinalizeEvent(event.id)}
-                    data-testid="admin-event-finalize-btn"
-                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-4 py-2 font-semibold"
-                  >
-                    Finalizar / Archivar
-                  </button>
-                </>
-              )}
-              {event.status === 'FINALIZED' && (
+            )}
+            {perms.canManageEvent && event.status === 'OPEN' && (
+              <button
+                onClick={() => onCloseEvent(event.id)}
+                data-testid="admin-event-close-btn"
+                className="rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 px-4 py-2 font-semibold"
+              >
+                Cerrar Evento
+              </button>
+            )}
+            {perms.canManageEvent && event.status === 'CLOSED' && (
+              <>
                 <button
                   onClick={() => onReopenEvent(event.id)}
-                  data-testid="admin-event-reactivate-btn"
+                  data-testid="admin-event-reopen-btn"
                   className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-4 py-2 font-semibold"
                 >
-                  Reactivar Evento
+                  Reabrir Evento
                 </button>
-              )}
-            </>
-          )}
-          <button
-            onClick={onRefresh}
-            disabled={busy}
-            data-testid="admin-events-refresh-btn"
-            className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 font-semibold disabled:opacity-50"
-          >
-            {busy ? 'Actualizando...' : 'Actualizar'}
-          </button>
-        </div>
-      )}
+                <button
+                  onClick={() => onFinalizeEvent(event.id)}
+                  data-testid="admin-event-finalize-btn"
+                  className="rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 px-4 py-2 font-semibold"
+                >
+                  Finalizar / Archivar
+                </button>
+              </>
+            )}
+            {perms.canManageEvent && event.status === 'FINALIZED' && (
+              <button
+                onClick={() => onReopenEvent(event.id)}
+                data-testid="admin-event-reactivate-btn"
+                className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 px-4 py-2 font-semibold"
+              >
+                Reactivar Evento
+              </button>
+            )}
+          </>
+        )}
+        <button
+          onClick={onRefresh}
+          disabled={busy}
+          data-testid="admin-events-refresh-btn"
+          className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-2 font-semibold disabled:opacity-50"
+        >
+          {busy ? 'Actualizando...' : 'Actualizar'}
+        </button>
+      </div>
 
       {/* Selector de eventos */}
       {eventsList.length > 0 && (
@@ -870,7 +840,7 @@ function EventosTab({
             </div>
             <div className="flex flex-col items-end gap-2">
               {getStatusBadge(event.status)}
-              {userRole === 'admin' && (
+              {perms.canManageEvent && (
                 <button
                   onClick={() => onToggleVisibility?.(event.id, event.visibility === 'GLOBAL' ? 'PRIVATE' : 'GLOBAL')}
                   data-testid="admin-event-visibility-toggle"
@@ -918,8 +888,8 @@ function EventosTab({
                     {court.players.length} jugadores confirmados
                   </div>
 
-                  {/* Botones de gestión de cancha - Solo admin */}
-                  {userRole === 'admin' && event.status !== 'FINALIZED' && (
+                  {/* Botones de gestión de cancha */}
+                  {perms.canManageCourts && event.status !== 'FINALIZED' && (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {court.is_open ? (
                         <button
@@ -1817,13 +1787,25 @@ function ResetPinForm({ user, onSubmit, busy }) {
 }
 
 function EditRolesForm({ user, onSubmit, busy }) {
-  const [selectedRoles, setSelectedRoles] = useState(user?.roles || [])
+  const [selectedRoles, setSelectedRoles] = useState(
+    (user?.roles || []).map((r) => r.toLowerCase())
+  )
+  const [roles, setRoles] = useState([])
+  const [loadingRoles, setLoadingRoles] = useState(true)
 
-  function toggleRole(role) {
+  useEffect(() => {
+    let alive = true
+    apiFetch('/admin/roles')
+      .then((data) => { if (alive) setRoles(data.items || []) })
+      .catch(() => { if (alive) setRoles([]) })
+      .finally(() => { if (alive) setLoadingRoles(false) })
+    return () => { alive = false }
+  }, [])
+
+  function toggleRole(code) {
+    const c = code.toLowerCase()
     setSelectedRoles(prev =>
-      prev.includes(role)
-        ? prev.filter(r => r !== role)
-        : [...prev, role]
+      prev.includes(c) ? prev.filter(r => r !== c) : [...prev, c]
     )
   }
 
@@ -1837,32 +1819,31 @@ function EditRolesForm({ user, onSubmit, busy }) {
       <p className="text-white/70">
         Editar roles de <strong>{user?.full_name}</strong>
       </p>
-      <div className="space-y-3">
-        <label className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-black/20 cursor-pointer hover:bg-white/5">
-          <input
-            type="checkbox"
-            checked={selectedRoles.map(r => r.toLowerCase()).includes('admin')}
-            onChange={() => toggleRole('admin')}
-            className="w-4 h-4 rounded border-white/20 bg-black/20 text-emerald-500 focus:ring-emerald-500/30"
-          />
-          <div>
-            <span className="text-sm font-semibold">Admin</span>
-            <p className="text-xs text-white/40">Puede gestionar eventos, canchas y usuarios</p>
-          </div>
-        </label>
-        <label className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-black/20 cursor-pointer hover:bg-white/5">
-          <input
-            type="checkbox"
-            checked={selectedRoles.map(r => r.toLowerCase()).includes('super_admin')}
-            onChange={() => toggleRole('super_admin')}
-            className="w-4 h-4 rounded border-white/20 bg-black/20 text-emerald-500 focus:ring-emerald-500/30"
-          />
-          <div>
-            <span className="text-sm font-semibold">Super Admin</span>
-            <p className="text-xs text-white/40">Acceso completo, puede asignar super_admin a otros</p>
-          </div>
-        </label>
-      </div>
+      {loadingRoles ? (
+        <p className="text-white/50 text-sm">Cargando roles...</p>
+      ) : (
+        <div className="space-y-3">
+          {roles.map((role) => (
+            <label
+              key={role.id}
+              className="flex items-center gap-3 p-3 rounded-xl border border-white/10 bg-black/20 cursor-pointer hover:bg-white/5"
+            >
+              <input
+                type="checkbox"
+                checked={selectedRoles.includes(role.code.toLowerCase())}
+                onChange={() => toggleRole(role.code)}
+                className="w-4 h-4 rounded border-white/20 bg-black/20 text-emerald-500 focus:ring-emerald-500/30"
+              />
+              <div>
+                <span className="text-sm font-semibold">{role.name}</span>
+                {role.description && (
+                  <p className="text-xs text-white/40">{role.description}</p>
+                )}
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
       <p className="text-xs text-white/40">Sin roles seleccionados = usuario regular (jugador)</p>
       <button
         type="submit"

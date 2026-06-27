@@ -17,6 +17,7 @@ from app.settings import (
 from app.schemas import PinRegisterRequest, PinLoginRequest, UpdateProfileRequest
 from app.utils.security import hash_pin, assert_pin
 from app.utils.phone import normalize_phone
+from app.utils.permissions import get_effective_permissions
 
 router = APIRouter()
 
@@ -182,6 +183,7 @@ def auth_me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
             "full_name": user["full_name"],
             "roles": [r["code"] for r in roles],
             "is_admin": any(r["code"].lower() in ("admin", "super_admin") for r in roles),
+            "permissions": sorted(get_effective_permissions(conn, actor_user_id)),
         }
 
 
@@ -222,6 +224,7 @@ def me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
 
         roles = [r["code"] for r in roles_rows] if roles_rows else []
         is_admin = any(x.lower() in ("admin", "super_admin") for x in roles)
+        permissions = sorted(get_effective_permissions(conn, actor_user_id))
 
         return {
             "user": {
@@ -236,6 +239,7 @@ def me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
             },
             "roles": roles,
             "is_admin": is_admin,
+            "permissions": permissions,
         }
 
 

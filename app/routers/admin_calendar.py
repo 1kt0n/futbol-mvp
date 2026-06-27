@@ -14,7 +14,7 @@ from sqlalchemy import text
 from app.settings import engine
 from app.schemas import CreateAnnouncementRequest, UpdateAnnouncementRequest
 from app.utils.datetime_parser import parse_client_datetime
-from app.utils.permissions import require_admin
+from app.utils.permissions import require_permission
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ def list_announcements(
     limit: int = 200,
 ):
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'calendar.view')
 
         where = "" if include_past else "WHERE starts_at >= now() - interval '7 days'"
         rows = conn.execute(text(f"""
@@ -102,7 +102,7 @@ def create_announcement(
         raise HTTPException(status_code=400, detail="ends_at debe ser posterior a starts_at.")
 
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'calendar.manage')
 
     with engine.begin() as conn:
         row = conn.execute(text("""
@@ -183,7 +183,7 @@ def update_announcement(
     updates.append("updated_at = now()")
 
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'calendar.manage')
 
     with engine.begin() as conn:
         row = conn.execute(text(f"""
@@ -207,7 +207,7 @@ def delete_announcement(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'calendar.manage')
 
     with engine.begin() as conn:
         row = conn.execute(text("""

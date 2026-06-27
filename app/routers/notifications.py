@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from app.settings import engine
 from app.schemas import CreateNotificationRequest
-from app.utils.permissions import require_admin
+from app.utils.permissions import require_permission
 from app.routers.ratings import get_pending_ratings
 
 router = APIRouter()
@@ -159,7 +159,7 @@ def list_admin_notifications(
     Lista notificaciones informativas para administracion.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'notifications.view')
 
         where_clause = ""
         params = {"limit": limit}
@@ -212,7 +212,7 @@ def create_notification(
     Crea una notificacion informativa global.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'notifications.create')
 
     with engine.begin() as conn:
         row = conn.execute(text("""
@@ -293,7 +293,7 @@ def deactivate_notification(
     Desactiva una notificacion informativa.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'notifications.delete')
 
     with engine.begin() as conn:
         row = conn.execute(text("""

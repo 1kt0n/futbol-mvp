@@ -13,7 +13,7 @@ from app.schemas import (
     UpdateEventVisibilityRequest,
 )
 from app.utils.datetime_parser import parse_client_datetime
-from app.utils.permissions import require_admin
+from app.utils.permissions import require_permission
 
 router = APIRouter()
 
@@ -49,7 +49,7 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alia
     El evento arranca con status='OPEN' siempre.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'events.create')
 
     try:
         starts_at_value = parse_client_datetime(body.starts_at, "starts_at", required=True)
@@ -132,7 +132,7 @@ def update_event_visibility(
     Al pasar a GLOBAL, dispara una notificacion broadcast best-effort.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'events.manage')
 
         event = conn.execute(text("""
             SELECT id, title, visibility FROM public.events WHERE id = :event_id
@@ -180,7 +180,7 @@ def open_event(event_id: str, actor_user_id: str = Header(..., alias="X-Actor-Us
     Abre un evento cerrado o finalizado. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'events.manage')
 
         # Verificar estado actual
         event = conn.execute(text("""
@@ -223,7 +223,7 @@ def close_event(event_id: str, actor_user_id: str = Header(..., alias="X-Actor-U
     Cierra un evento. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'events.manage')
 
         # Verificar estado actual
         event = conn.execute(text("""
@@ -266,7 +266,7 @@ def finalize_event(event_id: str, actor_user_id: str = Header(..., alias="X-Acto
     Un evento finalizado no aparece en la lista principal y no se puede gestionar.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'events.manage')
 
         # Verificar estado actual
         event = conn.execute(text("""
@@ -313,7 +313,7 @@ def create_court(
     Crea una nueva cancha en un evento. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'courts.manage')
 
         # Verificar que el evento existe
         event = conn.execute(text("""
@@ -376,7 +376,7 @@ def update_court(
     Si se reduce capacity, valida que no haya más jugadores CONFIRMED que la nueva capacidad.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'courts.manage')
 
         # Verificar que la cancha existe y pertenece al evento
         court = conn.execute(text("""
@@ -460,7 +460,7 @@ def delete_court(
     Solo se permite si no tiene inscripciones ni ratings asociados.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'courts.manage')
 
         court = conn.execute(text("""
             SELECT id, name
@@ -549,7 +549,7 @@ def assign_captain(
     Asigna un capitán a una cancha específica. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'courts.captains.manage')
 
         # Validar que el usuario existe y está activo
         user = conn.execute(text("""
@@ -619,7 +619,7 @@ def remove_captain(
     Quita un capitán de una cancha. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'courts.captains.manage')
 
         # Verificar que el capitán existe
         captain = conn.execute(text("""
@@ -679,7 +679,7 @@ def open_court(
     Abre una cancha cerrada. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'courts.manage')
 
         # Verificar que la cancha existe
         court = conn.execute(text("""
@@ -732,7 +732,7 @@ def close_court(
     Cierra una cancha manualmente. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'courts.manage')
 
         # Verificar que la cancha existe
         court = conn.execute(text("""
@@ -785,7 +785,7 @@ def get_event_detail(
     Solo admin/super_admin. Mismo formato que /events/active pero para cualquier evento.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'events.view')
 
         event = conn.execute(text("""
             SELECT id, title, starts_at, location_name, status, close_at, visibility
@@ -904,7 +904,7 @@ def list_events(
     Por defecto excluye eventos FINALIZED (salvo que se pida explícitamente).
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'events.view')
 
         where_conditions = []
         params = {"limit": limit}

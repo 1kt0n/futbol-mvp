@@ -5,6 +5,7 @@ import CalendarItem from "./CalendarItem.jsx";
 import CalendarItemSheet from "./CalendarItemSheet.jsx";
 import AdminCreateMenu from "./AdminCreateMenu.jsx";
 import AdminAnnouncementForm from "./AdminAnnouncementForm.jsx";
+import { usePermissions } from "../permissions/usePermissions.js";
 
 function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
@@ -20,7 +21,9 @@ export default function Calendar() {
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [announcementFormOpen, setAnnouncementFormOpen] = useState(false);
 
-  const isAdmin = !!data?.is_admin;
+  const { can } = usePermissions();
+  // El boton flotante de "agregar" requiere gestionar calendario o crear eventos.
+  const canCreate = can("calendar.manage") || can("events.create");
 
   const load = useCallback(async () => {
     setErr("");
@@ -126,7 +129,7 @@ export default function Calendar() {
       </div>
 
       {/* Admin FAB */}
-      {isAdmin && (
+      {canCreate && (
         <button
           onClick={() => setAdminMenuOpen(true)}
           aria-label="Agregar al calendario"

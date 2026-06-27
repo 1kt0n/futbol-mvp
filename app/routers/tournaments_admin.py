@@ -16,7 +16,7 @@ from app.schemas import (
 )
 from app.settings import engine
 from app.utils.datetime_parser import parse_client_datetime
-from app.utils.permissions import require_admin
+from app.utils.permissions import require_permission
 
 router = APIRouter()
 
@@ -523,7 +523,7 @@ def create_tournament(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.manage')
 
     if body.format == "KNOCKOUT" and not _is_power_of_two(body.teams_count):
         raise HTTPException(status_code=400, detail="KNOCKOUT requiere teams_count 4, 8 o 16.")
@@ -602,7 +602,7 @@ def list_tournaments(
     limit: int = Query(50, ge=1, le=500),
 ):
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.view')
 
         where = []
         params = {"limit": limit}
@@ -654,7 +654,7 @@ def get_tournament_detail(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.view')
         tournament = _get_tournament(conn, tournament_id)
         teams, matches = _match_payload(conn, tournament_id)
         members = conn.execute(
@@ -741,7 +741,7 @@ def update_tournament_config(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.manage')
         tournament = _get_tournament(conn, tournament_id)
         if tournament["status"] != "DRAFT":
             raise HTTPException(status_code=400, detail="Solo se puede editar config en DRAFT.")
@@ -795,7 +795,7 @@ def update_tournament_status(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.manage')
         tournament = _get_tournament(conn, tournament_id)
         current = tournament["status"]
         requested = body.status
@@ -825,7 +825,7 @@ def delete_tournament(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.manage')
         tournament = _get_tournament(conn, tournament_id)
         if tournament["status"] not in ("DRAFT", "ARCHIVED"):
             raise HTTPException(status_code=400, detail="Solo se pueden eliminar torneos en DRAFT o ARCHIVED.")
@@ -845,7 +845,7 @@ def create_team(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.manage')
         tournament = _get_tournament(conn, tournament_id)
         if tournament["status"] != "DRAFT":
             raise HTTPException(status_code=400, detail="Solo se pueden crear equipos en DRAFT.")
@@ -885,7 +885,7 @@ def list_teams(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.view')
         _get_tournament(conn, tournament_id)
         teams, _ = _team_map(conn, tournament_id)
         return {
@@ -911,7 +911,7 @@ def delete_team(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.manage')
         tournament = _get_tournament(conn, tournament_id)
         if tournament["status"] != "DRAFT":
             raise HTTPException(status_code=400, detail="Solo se pueden eliminar equipos en DRAFT.")
@@ -945,7 +945,7 @@ def add_member(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.manage')
         tournament = _get_tournament(conn, tournament_id)
         if tournament["status"] != "DRAFT":
             raise HTTPException(status_code=400, detail="Solo se pueden editar miembros en DRAFT.")
@@ -1001,7 +1001,7 @@ def list_members(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.view')
         _get_tournament(conn, tournament_id)
         team = conn.execute(
             text("SELECT id FROM public.tournament_teams WHERE id = :team_id AND tournament_id = :tournament_id"),
@@ -1046,7 +1046,7 @@ def generate_fixture(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.manage')
         tournament = _get_tournament(conn, tournament_id)
         if tournament["status"] != "DRAFT":
             raise HTTPException(status_code=400, detail="Solo se puede generar fixture en DRAFT.")
@@ -1154,7 +1154,7 @@ def start_match(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.matches.manage')
         tournament = _get_tournament(conn, tournament_id)
         if tournament["status"] != "LIVE":
             raise HTTPException(status_code=400, detail="Solo se puede iniciar partido cuando el torneo esta LIVE.")
@@ -1213,7 +1213,7 @@ def patch_score(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.matches.manage')
         _get_tournament(conn, tournament_id)
         match = conn.execute(
             text(
@@ -1259,7 +1259,7 @@ def finish_match(
     actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
 ):
     with engine.begin() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'tournaments.matches.manage')
         tournament = _get_tournament(conn, tournament_id)
         match = conn.execute(
             text(

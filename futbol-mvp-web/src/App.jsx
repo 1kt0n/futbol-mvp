@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import AuthLayout from "./features/auth/AuthLayout.jsx";
 import BrandHero from "./features/auth/BrandHero.jsx";
 import AuthFlowCard, { InstallPwaButton } from "./features/auth/AuthFlowCard.jsx";
+import { can, canAccessAdmin } from "./permissions/can.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -613,7 +614,9 @@ export default function App() {
   const [selectedCourtId, setSelectedCourtId] = useState("");
   const [guestName, setGuestName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [permissions, setPermissions] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const canManageReg = can(permissions, "registrations.manage");
 
   // Multi-event support
   const [openEvents, setOpenEvents] = useState([]);
@@ -796,15 +799,18 @@ export default function App() {
     async function fetchCurrentUser() {
       if (!canUse) {
         setIsAdmin(false);
+        setPermissions([]);
         setCurrentUser(null);
         return;
       }
       try {
         const me = await apiFetch('/me');
         setIsAdmin(me.is_admin || false);
+        setPermissions(Array.isArray(me.permissions) ? me.permissions : []);
         setCurrentUser(me.user || null);
       } catch {
         setIsAdmin(false);
+        setPermissions([]);
         setCurrentUser(null);
       }
     }
@@ -1129,7 +1135,7 @@ export default function App() {
             >
               <span className="mr-1">📅</span>Mi Calendario
             </Link>
-            {isAdmin && (
+            {canAccessAdmin(permissions) && (
               <Link
                 to="/admin"
                 data-testid="open-admin-panel"
@@ -1353,7 +1359,7 @@ export default function App() {
                   onCancel={cancelReg}
                   onMove={moveReg}
                   onPlayerClick={handleOpenPlayerCard}
-                  isAdmin={isAdmin}
+                  isAdmin={canManageReg}
                   dragRef={dragRef}
                 />
               ))}

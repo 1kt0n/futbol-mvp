@@ -82,7 +82,21 @@ class ResetPinRequest(BaseModel):
 
 
 class UpdateUserRolesRequest(BaseModel):
-    roles: list[str] = Field(..., description="Lista de codigos de roles: ['admin', 'super_admin']")
+    roles: list[str] = Field(..., description="Lista de codigos de roles")
+
+
+# ========== ADMIN ROLES / PERMISSIONS (RBAC) ==========
+class CreateRoleRequest(BaseModel):
+    code: str = Field(..., min_length=2, max_length=40, description="Codigo unico (slug), ej. gestor_notis")
+    name: str = Field(..., min_length=2, max_length=60, description="Nombre para mostrar")
+    description: str | None = Field(None, max_length=200)
+    permissions: list[str] = Field(default_factory=list, description="Codigos de permisos del rol")
+
+
+class UpdateRoleRequest(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=60)
+    description: str | None = Field(None, max_length=200)
+    permissions: list[str] | None = Field(None, description="Si se envia, reemplaza el set de permisos del rol")
 
 
 # ========== PROFILE ==========

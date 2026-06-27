@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.settings import engine
 from app.schemas import CreateUserRequest, UpdateUserRequest, ResetPinRequest, UpdateUserRolesRequest
-from app.utils.permissions import require_admin
+from app.utils.permissions import require_permission
 from app.utils.security import hash_pin, assert_pin
 from app.utils.phone import normalize_phone
 
@@ -22,7 +22,7 @@ def search_users(
     Busca usuarios por nombre o teléfono. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'users.view')
 
         # Construir WHERE dinámicamente
         where_clause = "WHERE 1=1"
@@ -80,7 +80,7 @@ def get_user_detail(
     Obtiene detalle completo de un usuario. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'users.view')
 
         user = conn.execute(text("""
             SELECT
@@ -120,7 +120,7 @@ def create_user(
     Crea un usuario manualmente. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'users.create')
 
     phone_e164 = normalize_phone(body.phone)
     if not phone_e164:
@@ -172,43 +172,40 @@ def create_user(
             # Asignar roles si se proporcionaron
             assigned_roles = []
             if body.roles:
-                valid_roles = ["admin", "super_admin"]
-                for role_code in body.roles:
-                    if role_code.lower() not in valid_roles:
+                # Si se intenta asignar super_admin, verificar que el actor es super_admin
+                if any(rc.lower() == "super_admin" for rc in body.roles):
+                    actor_roles = conn.execute(text("""
+                        SELECT r.code
+                        FROM public.user_roles ur
+                        JOIN public.roles r ON r.id = ur.role_id
+                        WHERE ur.user_id = :actor_user_id
+                    """), {"actor_user_id": actor_user_id}).mappings().all()
+                    if "super_admin" not in [r["code"].lower() for r in actor_roles]:
                         raise HTTPException(
-                            status_code=400,
-                            detail=f"Rol inválido: {role_code}. Los roles válidos son: admin, super_admin"
+                            status_code=403,
+                            detail="Solo un super_admin puede asignar el rol super_admin."
                         )
 
-                    # Si se intenta asignar super_admin, verificar que el actor es super_admin
-                    if role_code.lower() == "super_admin":
-                        actor_roles = conn.execute(text("""
-                            SELECT r.code
-                            FROM public.user_roles ur
-                            JOIN public.roles r ON r.id = ur.role_id
-                            WHERE ur.user_id = :actor_user_id
-                        """), {"actor_user_id": actor_user_id}).mappings().all()
-
-                        actor_role_codes = [r["code"].lower() for r in actor_roles]
-                        if "super_admin" not in actor_role_codes:
-                            raise HTTPException(
-                                status_code=403,
-                                detail="Solo un super_admin puede asignar el rol super_admin."
-                            )
-
+                for role_code in body.roles:
+                    # Validar contra la tabla de roles (no una lista hardcodeada)
                     role = conn.execute(text("""
                         SELECT id FROM public.roles WHERE LOWER(code) = LOWER(:code)
                     """), {"code": role_code}).mappings().first()
 
-                    if role:
-                        conn.execute(text("""
-                            INSERT INTO public.user_roles (user_id, role_id, created_at)
-                            VALUES (:user_id, :role_id, now())
-                        """), {
-                            "user_id": user["id"],
-                            "role_id": role["id"]
-                        })
-                        assigned_roles.append(role_code)
+                    if not role:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Rol inválido: {role_code}."
+                        )
+
+                    conn.execute(text("""
+                        INSERT INTO public.user_roles (user_id, role_id, created_at)
+                        VALUES (:user_id, :role_id, now())
+                    """), {
+                        "user_id": user["id"],
+                        "role_id": role["id"]
+                    })
+                    assigned_roles.append(role_code)
 
             # Audit log
             conn.execute(text("""
@@ -247,7 +244,7 @@ def update_user(
     Actualiza el estado de un usuario (activar/desactivar). Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'users.manage')
 
         user = conn.execute(text("""
             SELECT id FROM public.users WHERE id = :id
@@ -296,7 +293,7 @@ def reset_user_pin(
     Resetea el PIN de un usuario. Solo admin/super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'users.manage')
 
         user = conn.execute(text("""
             SELECT id, full_name FROM public.users WHERE id = :id
@@ -351,7 +348,7 @@ def update_user_roles(
     Para asignar super_admin, el actor debe ser super_admin.
     """
     with engine.connect() as conn:
-        require_admin(conn, actor_user_id)
+        require_permission(conn, actor_user_id, 'users.roles.assign')
 
         # Validar que el usuario existe
         user = conn.execute(text("""
@@ -361,13 +358,15 @@ def update_user_roles(
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
-        # Validar que todos los roles existen
-        valid_roles = ["admin", "super_admin"]
+        # Validar que todos los roles existen en la tabla de roles
         for role_code in body.roles:
-            if role_code.lower() not in valid_roles:
+            exists = conn.execute(text("""
+                SELECT 1 FROM public.roles WHERE LOWER(code) = LOWER(:code) LIMIT 1
+            """), {"code": role_code}).first()
+            if not exists:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Rol inválido: {role_code}. Los roles válidos son: admin, super_admin"
+                    detail=f"Rol inválido: {role_code}."
                 )
 
         # Si se intenta asignar super_admin, verificar que el actor es super_admin
