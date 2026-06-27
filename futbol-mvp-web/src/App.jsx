@@ -312,12 +312,30 @@ function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardDa
             </div>
 
             <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-              <span className="font-semibold text-amber-200">
-                {`⭐ ${Number(cardData?.rating?.avg ?? 0).toFixed(1)}`}
-              </span>
-              <span className="ml-2 text-white/60">
-                {`${cardData?.rating?.votes ?? 0} voto${(cardData?.rating?.votes ?? 0) === 1 ? "" : "s"}`}
-              </span>
+              {cardData?.rating?.calibrating ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
+                    En calibración
+                  </span>
+                  <span className="text-white/60">
+                    {`${cardData?.rating?.votes ?? 0} de ${cardData?.rating?.min_voters ?? 3} votos`}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-amber-200">
+                    {`⭐ ${Number(cardData?.rating?.score ?? cardData?.rating?.avg ?? 0).toFixed(1)}`}
+                  </span>
+                  <span className="text-white/60">
+                    {`${cardData?.rating?.votes ?? 0} voto${(cardData?.rating?.votes ?? 0) === 1 ? "" : "s"}`}
+                  </span>
+                  {cardData?.rating?.suggested_level ? (
+                    <span className="rounded-full border border-sky-400/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-200">
+                      {PLAYER_LEVEL_LABELS[cardData.rating.suggested_level] || cardData.rating.suggested_level}
+                    </span>
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
         </div>

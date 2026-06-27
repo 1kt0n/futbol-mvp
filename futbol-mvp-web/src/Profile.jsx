@@ -15,6 +15,10 @@ const PLAYER_LEVEL_OPTIONS = [
   { value: "COMPETITIVO", label: "Competitivo" },
 ];
 
+const PLAYER_LEVEL_LABELS = Object.fromEntries(
+  PLAYER_LEVEL_OPTIONS.map((o) => [o.value, o.label])
+);
+
 function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
 }
@@ -530,15 +534,29 @@ export default function Profile() {
               <div className="text-xs font-semibold uppercase tracking-wide text-white/50">
                 Indicador colaborativo
               </div>
-              {userRating?.participates && userRating.total_votes > 0 ? (
-                <div className="mt-2 flex items-center gap-3">
+              {userRating?.participates && !userRating.calibrating && userRating.score != null ? (
+                <div className="mt-2 flex flex-wrap items-center gap-3">
                   <div className="text-2xl font-semibold text-amber-200">
                     <span className="mr-1 text-amber-300">{"\u2605"}</span>
-                    {userRating.avg_rating.toFixed(1)}
+                    {Number(userRating.score).toFixed(1)}
                   </div>
                   <div className="text-xs text-white/60">
                     Basado en {userRating.total_votes} voto{userRating.total_votes !== 1 ? "s" : ""}.
                   </div>
+                  {userRating.suggested_level ? (
+                    <span className="rounded-full border border-sky-400/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-sky-200">
+                      Nivel sugerido: {PLAYER_LEVEL_LABELS[userRating.suggested_level] || userRating.suggested_level}
+                    </span>
+                  ) : null}
+                </div>
+              ) : userRating?.participates && userRating.total_votes > 0 ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
+                    En calibraci\u00f3n
+                  </span>
+                  <span className="text-xs text-white/60">
+                    {userRating.total_votes} de {userRating.min_voters ?? 3} votos para mostrar tu indicador.
+                  </span>
                 </div>
               ) : (
                 <div className="mt-2 text-xs text-white/60">

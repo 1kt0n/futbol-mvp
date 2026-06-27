@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.settings import engine
 from app.schemas import RegisterRequest, GuestRequest, MoveRequest, PlayerCardsResponse
+from app.utils.scoring import score_payload, MIN_DISTINCT_VOTERS
 
 router = APIRouter()
 
@@ -386,24 +387,31 @@ def get_player_cards(
         attrs_map = {}
 
         if metrics_user_ids:
+            global_mean = conn.execute(text("""
+                SELECT AVG(rating) FROM public.player_ratings WHERE is_hidden = false
+            """)).scalar()
+
             rating_rows = conn.execute(text("""
                 SELECT
                   target_user_id,
-                  ROUND(AVG(rating)::numeric, 1) AS avg_rating,
-                  COUNT(*)                       AS votes
+                  ROUND(AVG(rating)::numeric, 1)   AS avg_rating,
+                  COALESCE(SUM(rating), 0)         AS sum_rating,
+                  COUNT(*)                         AS votes,
+                  COUNT(DISTINCT voter_user_id)    AS voters
                 FROM public.player_ratings
                 WHERE target_user_id = ANY(CAST(:target_ids AS uuid[]))
                   AND is_hidden = false
                 GROUP BY target_user_id
             """), {"target_ids": metrics_user_ids}).mappings().all()
 
-            ratings_map = {
-                str(r["target_user_id"]): {
+            ratings_map = {}
+            for r in rating_rows:
+                payload = score_payload(r["votes"], r["voters"], r["sum_rating"], global_mean)
+                ratings_map[str(r["target_user_id"])] = {
                     "avg": float(r["avg_rating"]) if r["avg_rating"] is not None else 0.0,
                     "votes": int(r["votes"] or 0),
+                    **payload,
                 }
-                for r in rating_rows
-            }
 
             attr_rows = conn.execute(text("""
                 SELECT
@@ -431,7 +439,11 @@ def get_player_cards(
             if card.get("subject_type") != "USER" or not card.get("participates"):
                 continue
             uid = card["user_id"]
-            card["rating"] = ratings_map.get(uid, {"avg": 0.0, "votes": 0})
+            card["rating"] = ratings_map.get(uid, {
+                "avg": 0.0, "votes": 0, "voters": 0,
+                "score": None, "calibrating": True,
+                "min_voters": MIN_DISTINCT_VOTERS, "suggested_level": None,
+            })
             card["top_attributes"] = (attrs_map.get(uid) or [])[:4]
 
         return {
