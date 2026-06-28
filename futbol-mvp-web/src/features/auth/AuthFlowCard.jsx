@@ -127,9 +127,14 @@ export default function AuthFlowCard({
     return "Completa tus datos para crear tu cuenta.";
   }, [step, loginMode]);
 
+  // Limpiar errores SOLO al cambiar de paso o de modo. NO incluir `clearError`
+  // en las deps: al pasarse como arrow inline cambia de identidad en cada render
+  // y dispararía el efecto en cada render, borrando el mensaje recién seteado
+  // (p. ej. "PIN incorrecto. Te quedan 2 intentos.") antes de mostrarse.
   useEffect(() => {
     clearError?.();
-  }, [step, loginMode, clearError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, loginMode]);
 
   function goBack() {
     if (step === "phone") setStep("mode");
