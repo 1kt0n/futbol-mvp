@@ -8,7 +8,8 @@ public.notifications con action_url=/calendar para que aparezca tambien en la be
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 
 from app.settings import engine
@@ -66,7 +67,7 @@ def _broadcast_to_bell(conn, title: str, message: str) -> None:
 
 @router.get("/calendar/announcements")
 def list_announcements(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     include_past: bool = False,
     limit: int = 200,
 ):
@@ -90,7 +91,7 @@ def list_announcements(
 @router.post("/calendar/announcements")
 def create_announcement(
     body: CreateAnnouncementRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     try:
         starts_at = parse_client_datetime(body.starts_at, "starts_at", required=True)
@@ -143,7 +144,7 @@ def create_announcement(
 def update_announcement(
     announcement_id: str,
     body: UpdateAnnouncementRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     try:
         starts_at = parse_client_datetime(body.starts_at, "starts_at") if body.starts_at else None
@@ -204,7 +205,7 @@ def update_announcement(
 @router.delete("/calendar/announcements/{announcement_id}")
 def delete_announcement(
     announcement_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, 'calendar.manage')

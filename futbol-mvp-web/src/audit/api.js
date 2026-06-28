@@ -1,3 +1,5 @@
+import { handleAuthFailure } from "../authSession.js";
+
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_API_BASE_URL ||
@@ -20,6 +22,11 @@ export async function apiFetch(path, { method = "GET", body } = {}) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  if (res.status === 401) {
+    handleAuthFailure();
+    throw new Error("Sesión expirada.");
+  }
 
   const contentType = res.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");

@@ -1,15 +1,32 @@
 import os
+import hashlib
+import logging
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from supabase import create_client, Client
 
 load_dotenv()
 
+logger = logging.getLogger("uvicorn.error")
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL no está definida en el .env")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+# Secreto para firmar los tokens de sesión (ver app/utils/auth_token.py).
+# Si no se setea AUTH_SECRET, se deriva de DATABASE_URL (estable entre reinicios
+# y secreto, ya que contiene la password de la DB) para que el deploy no se
+# rompa. RECOMENDADO setear AUTH_SECRET explícito en Railway:
+#   python -c "import secrets; print(secrets.token_hex(32))"
+AUTH_SECRET = os.getenv("AUTH_SECRET")
+if not AUTH_SECRET:
+    AUTH_SECRET = hashlib.sha256(DATABASE_URL.encode("utf-8")).hexdigest()
+    logger.warning(
+        "AUTH_SECRET no está seteada; usando secreto derivado de DATABASE_URL. "
+        "Setear AUTH_SECRET explícito en producción."
+    )
 
 # CORS: configurable via env var (comma-separated) o defaults para desarrollo
 _cors_env = os.getenv("CORS_ORIGINS", "")

@@ -1,11 +1,13 @@
 import logging
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 
 from app.settings import engine
 from app.schemas import CreateNotificationRequest
 from app.utils.permissions import require_permission
+from app.utils.ratelimit import rate_limit
 from app.routers.ratings import get_pending_ratings
 
 router = APIRouter()
@@ -19,7 +21,7 @@ def _fmt_ts(value):
 
 @router.get("/notifications")
 def get_notifications(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     limit: int = Query(50, ge=1, le=200),
 ):
     """
@@ -107,7 +109,7 @@ def get_notifications(
 @router.post("/notifications/{notification_id}/dismiss")
 def dismiss_notification(
     notification_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     """
     Descarta una notificacion informativa para el usuario actual.
@@ -151,7 +153,7 @@ def dismiss_notification(
 
 @admin_router.get("/notifications")
 def list_admin_notifications(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     include_inactive: bool = False,
     limit: int = Query(100, ge=1, le=500),
 ):
@@ -206,11 +208,20 @@ def list_admin_notifications(
 @admin_router.post("/notifications")
 def create_notification(
     body: CreateNotificationRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     """
     Crea una notificacion informativa global.
     """
+    title = body.title.strip()
+    message = body.message.strip()
+
+    # Anti-ráfaga: máx 10 notificaciones / 5 min por actor.
+    rate_limit(f"notif:{actor_user_id}", max_hits=10, window_seconds=300)
+    # Anti-duplicado: misma notificación (título+mensaje) no se repite en 60 s.
+    dup_key = f"notif-dup:{actor_user_id}:{hash((title, message))}"
+    rate_limit(dup_key, max_hits=1, window_seconds=60)
+
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, 'notifications.create')
 
@@ -242,8 +253,8 @@ def create_notification(
             )
             RETURNING id, title, message, action_url, starts_at, expires_at
         """), {
-            "title": body.title.strip(),
-            "message": body.message.strip(),
+            "title": title,
+            "message": message,
             "action_url": body.action_url.strip() if body.action_url else None,
             "expires_in_days": body.expires_in_days,
             "actor_user_id": actor_user_id,
@@ -287,7 +298,7 @@ def create_notification(
 @admin_router.delete("/notifications/{notification_id}")
 def deactivate_notification(
     notification_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     """
     Desactiva una notificacion informativa.

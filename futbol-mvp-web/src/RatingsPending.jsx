@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { handleAuthFailure } from "./authSession.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -43,6 +44,11 @@ async function apiFetch(path, { method = "GET", body } = {}) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  if (res.status === 401) {
+    handleAuthFailure();
+    throw new Error("Sesión expirada.");
+  }
 
   const contentType = res.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
