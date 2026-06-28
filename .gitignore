@@ -46,3 +46,5 @@ static/
 # Misc
 # =====================
 *.log
+# Scripts forenses / ad-hoc locales
+scripts/forense.sql
