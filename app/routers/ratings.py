@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.schemas import SaveRatingsRequest
 from app.settings import engine
-from app.utils.scoring import score_payload
+from app.utils.scoring import score_payload, RECENCY_DECAY_PER_DAY, ALL_ATTRIBUTES
 
 router = APIRouter()
 
@@ -437,20 +437,26 @@ def get_user_rating(
                 """
                 SELECT
                     COALESCE(AVG(rating), 0) AS avg_rating,
-                    COALESCE(SUM(rating), 0) AS sum_rating,
                     COUNT(*) AS total_votes,
                     COUNT(DISTINCT voter_user_id) AS voters,
+                    COALESCE(SUM(
+                        rating * exp(-:decay * EXTRACT(EPOCH FROM (now() - created_at)) / 86400.0)
+                    ), 0) AS weighted_sum,
+                    COALESCE(SUM(
+                        exp(-:decay * EXTRACT(EPOCH FROM (now() - created_at)) / 86400.0)
+                    ), 0) AS weight_total,
                     (SELECT AVG(rating) FROM public.player_ratings WHERE is_hidden = false) AS global_mean
                 FROM public.player_ratings
                 WHERE target_user_id = :user_id
                   AND is_hidden = false
                 """
             ),
-            {"user_id": user_id},
+            {"user_id": user_id, "decay": RECENCY_DECAY_PER_DAY},
         ).mappings().first()
 
         payload = score_payload(
-            result["total_votes"], result["voters"], result["sum_rating"], result["global_mean"]
+            result["total_votes"], result["voters"], result["weighted_sum"],
+            result["weight_total"], result["avg_rating"], result["global_mean"],
         )
 
         return {
@@ -498,12 +504,23 @@ def get_user_attributes(
             {"user_id": user_id, "limit": limit},
         ).mappings().all()
 
+        counts = {str(r["attribute"]): int(r["cnt"]) for r in rows}
+        total_votes = conn.execute(
+            text("""
+                SELECT COUNT(*) FROM public.player_ratings
+                WHERE target_user_id = :user_id AND is_hidden = false
+            """),
+            {"user_id": user_id},
+        ).scalar() or 0
+
         return {
             "participates": True,
             "top": [
                 {"attribute": str(r["attribute"]), "count": int(r["cnt"])}
                 for r in rows
             ],
+            # Perfil de 6 ejes para el radar (M5).
+            "profile": attribute_profile(counts, total_votes),
         }
 
 

@@ -4,6 +4,7 @@ import AuthLayout from "./features/auth/AuthLayout.jsx";
 import BrandHero from "./features/auth/BrandHero.jsx";
 import AuthFlowCard, { InstallPwaButton } from "./features/auth/AuthFlowCard.jsx";
 import { can, canAccessAdmin } from "./permissions/can.js";
+import AttributeRadar from "./components/AttributeRadar.jsx";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -219,6 +220,23 @@ function StatPill({ label, value, tone = "neutral" }) {
   );
 }
 
+// Indicador de "forma" (M2): tendencia reciente del jugador.
+function FormArrow({ form }) {
+  if (!form || form === "flat") return null;
+  const up = form === "up";
+  return (
+    <span
+      title={up ? "En alza" : "En baja"}
+      className={cn(
+        "text-xs font-bold",
+        up ? "text-emerald-300" : "text-rose-300"
+      )}
+    >
+      {up ? "▲" : "▼"}
+    </span>
+  );
+}
+
 function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardData }) {
   if (!open) return null;
 
@@ -295,23 +313,13 @@ function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardDa
         <div className="space-y-3">
           <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-white/50">Perfil de juego</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {(cardData?.top_attributes || []).length > 0 ? (
-                cardData.top_attributes.map((attr) => (
-                  <span
-                    key={`${attr.code}-${attr.count}`}
-                    className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200"
-                  >
-                    {ATTRIBUTE_LABELS[attr.code] || attr.code}
-                    <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">{attr.count}</span>
-                  </span>
-                ))
-              ) : (
-                <span className="text-sm text-white/60">Todavia no hay atributos suficientes.</span>
-              )}
+
+            {/* Radar de atributos (M5) */}
+            <div className="mt-2">
+              <AttributeRadar profile={cardData?.attribute_profile} size={220} />
             </div>
 
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+            <div className="mt-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
               {cardData?.rating?.calibrating ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
@@ -326,6 +334,7 @@ function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardDa
                   <span className="font-semibold text-amber-200">
                     {`⭐ ${Number(cardData?.rating?.score ?? cardData?.rating?.avg ?? 0).toFixed(1)}`}
                   </span>
+                  <FormArrow form={cardData?.rating?.form} />
                   <span className="text-white/60">
                     {`${cardData?.rating?.votes ?? 0} voto${(cardData?.rating?.votes ?? 0) === 1 ? "" : "s"}`}
                   </span>

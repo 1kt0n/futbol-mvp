@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.settings import engine
 from app.schemas import RegisterRequest, GuestRequest, MoveRequest, PlayerCardsResponse
-from app.utils.scoring import score_payload, MIN_DISTINCT_VOTERS
+from app.utils.scoring import score_payload, attribute_profile, MIN_DISTINCT_VOTERS, RECENCY_DECAY_PER_DAY
 
 router = APIRouter()
 
@@ -395,18 +395,22 @@ def get_player_cards(
                 SELECT
                   target_user_id,
                   ROUND(AVG(rating)::numeric, 1)   AS avg_rating,
-                  COALESCE(SUM(rating), 0)         AS sum_rating,
                   COUNT(*)                         AS votes,
-                  COUNT(DISTINCT voter_user_id)    AS voters
+                  COUNT(DISTINCT voter_user_id)    AS voters,
+                  COALESCE(SUM(rating * exp(-:decay * EXTRACT(EPOCH FROM (now() - created_at)) / 86400.0)), 0) AS weighted_sum,
+                  COALESCE(SUM(exp(-:decay * EXTRACT(EPOCH FROM (now() - created_at)) / 86400.0)), 0)          AS weight_total
                 FROM public.player_ratings
                 WHERE target_user_id = ANY(CAST(:target_ids AS uuid[]))
                   AND is_hidden = false
                 GROUP BY target_user_id
-            """), {"target_ids": metrics_user_ids}).mappings().all()
+            """), {"target_ids": metrics_user_ids, "decay": RECENCY_DECAY_PER_DAY}).mappings().all()
 
             ratings_map = {}
             for r in rating_rows:
-                payload = score_payload(r["votes"], r["voters"], r["sum_rating"], global_mean)
+                payload = score_payload(
+                    r["votes"], r["voters"], r["weighted_sum"],
+                    r["weight_total"], r["avg_rating"], global_mean,
+                )
                 ratings_map[str(r["target_user_id"])] = {
                     "avg": float(r["avg_rating"]) if r["avg_rating"] is not None else 0.0,
                     "votes": int(r["votes"] or 0),
@@ -442,9 +446,12 @@ def get_player_cards(
             card["rating"] = ratings_map.get(uid, {
                 "avg": 0.0, "votes": 0, "voters": 0,
                 "score": None, "calibrating": True,
-                "min_voters": MIN_DISTINCT_VOTERS, "suggested_level": None,
+                "min_voters": MIN_DISTINCT_VOTERS, "suggested_level": None, "form": None,
             })
             card["top_attributes"] = (attrs_map.get(uid) or [])[:4]
+            # Perfil de 6 ejes para el radar (M5).
+            counts = {a["code"]: a["count"] for a in (attrs_map.get(uid) or [])}
+            card["attribute_profile"] = attribute_profile(counts, card["rating"].get("votes", 0))
 
         return {
             "viewer": {

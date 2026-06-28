@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import AttributeRadar from "./components/AttributeRadar.jsx";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -127,6 +128,7 @@ export default function Profile() {
 
   const [userRating, setUserRating] = useState(null);
   const [attributesTop, setAttributesTop] = useState([]);
+  const [attributesProfile, setAttributesProfile] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [rankingMessage, setRankingMessage] = useState("");
 
@@ -158,6 +160,7 @@ export default function Profile() {
 
           setUserRating(ratingRes?.participates ? ratingRes : null);
           setAttributesTop(attrsRes?.participates ? attrsRes.top || [] : []);
+          setAttributesProfile(attrsRes?.participates ? attrsRes.profile || [] : []);
           setPendingCount(pendingRes.total_pending || 0);
           setRankingMessage(
             ratingRes?.participates
@@ -213,6 +216,7 @@ export default function Profile() {
       ]);
       setUserRating(ratingRes?.participates ? ratingRes : null);
       setAttributesTop(attrsRes?.participates ? attrsRes.top || [] : []);
+      setAttributesProfile(attrsRes?.participates ? attrsRes.profile || [] : []);
       setPendingCount(pendingRes.total_pending || 0);
       setRankingMessage(
         ratingRes?.participates
@@ -518,10 +522,13 @@ export default function Profile() {
                 Atributos destacados
               </div>
               {attributesTop.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {attributesTop.map((item) => (
-                    <AttributePill key={item.attribute} name={item.attribute} count={item.count} />
-                  ))}
+                <div className="space-y-3">
+                  <AttributeRadar profile={attributesProfile} size={240} />
+                  <div className="flex flex-wrap gap-2">
+                    {attributesTop.map((item) => (
+                      <AttributePill key={item.attribute} name={item.attribute} count={item.count} />
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <div className="rounded-xl border border-white/10 bg-black/10 px-3 py-3 text-sm text-white/60">
