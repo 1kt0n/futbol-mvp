@@ -89,12 +89,29 @@ export default function AuthFlowCard({
   setFullName,
   onLogin,
   onRegister,
+  authState = { state: "ok" },
+  onPhoneContinue,
+  onRequestUnlock,
+  unlockRequested = false,
+  resetPin = "",
+  setResetPin,
+  onResetPin,
   actorDraft,
   setActorDraft,
   onSaveActor,
   showDebug = false,
 }) {
   const [step, setStep] = useState("mode");
+
+  const isLogin = loginMode === "login";
+  const accountState = isLogin ? authState?.state || "ok" : "ok";
+  const isLocked = accountState === "locked";
+  const mustReset = accountState === "must_reset";
+
+  async function continueFromPhone() {
+    await onPhoneContinue?.();
+    setStep("pin");
+  }
 
   const title = useMemo(() => {
     if (step === "mode") return "Bienvenido";
@@ -195,8 +212,8 @@ export default function AuthFlowCard({
               <button
                 type="button"
                 data-testid="auth-phone-next-btn"
-                onClick={() => setStep("pin")}
-                disabled={!phone.trim()}
+                onClick={continueFromPhone}
+                disabled={!phone.trim() || busy}
                 className="focus-ring flex-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40"
               >
                 Continuar
@@ -207,42 +224,120 @@ export default function AuthFlowCard({
 
         {/* ── Step: PIN ── */}
         <Slide show={step === "pin"}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="auth-pin-input" className="text-xs font-semibold uppercase tracking-wide text-white/50">
-                PIN (4 o 6 dígitos)
-              </label>
-              <input
-                id="auth-pin-input"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D+/g, "").slice(0, 6))}
-                placeholder="••••"
-                inputMode="numeric"
-                autoFocus
-                data-testid="auth-pin-input"
-                className="focus-ring mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3.5 text-base tracking-[0.3em] text-white placeholder:text-white/25"
-              />
-            </div>
-            <div className="flex gap-2">
+          {isLogin && isLocked ? (
+            /* Cuenta bloqueada → pedir desbloqueo a administradores */
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+                <div className="font-semibold">Cuenta bloqueada</div>
+                <p className="mt-1 text-amber-100/80">
+                  Superaste el máximo de intentos. Podés esperar unos minutos o solicitar el
+                  desbloqueo a un administrador.
+                </p>
+              </div>
+              {unlockRequested ? (
+                <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                  Solicitud enviada. Cuando un administrador la apruebe vas a poder definir un PIN nuevo.
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  data-testid="auth-request-unlock-btn"
+                  onClick={onRequestUnlock}
+                  disabled={busy}
+                  className="focus-ring w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-amber-400 disabled:opacity-40"
+                >
+                  {busy ? "Enviando..." : "Solicitar desbloqueo con administradores"}
+                </button>
+              )}
               <button
                 type="button"
                 data-testid="auth-back-btn"
                 onClick={goBack}
-                className="focus-ring rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm transition-colors hover:bg-white/10"
+                className="focus-ring w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm transition-colors hover:bg-white/10"
               >
                 Atras
               </button>
-              <button
-                type="button"
-                data-testid={loginMode === "login" ? "auth-login-submit" : "auth-register-next-btn"}
-                onClick={submitPinStep}
-                disabled={busy || !(/^\d{4}$|^\d{6}$/.test(pin.trim()))}
-                className="focus-ring flex-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40"
-              >
-                {busy ? "Validando..." : loginMode === "login" ? "Entrar" : "Continuar"}
-              </button>
             </div>
-          </div>
+          ) : isLogin && mustReset ? (
+            /* Desbloqueo aprobado → definir PIN nuevo */
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                Tu desbloqueo fue aprobado. Definí un PIN nuevo para entrar.
+              </div>
+              <div>
+                <label htmlFor="auth-reset-pin-input" className="text-xs font-semibold uppercase tracking-wide text-white/50">
+                  Nuevo PIN (4 o 6 dígitos)
+                </label>
+                <input
+                  id="auth-reset-pin-input"
+                  value={resetPin}
+                  onChange={(e) => setResetPin?.(e.target.value.replace(/\D+/g, "").slice(0, 6))}
+                  placeholder="••••"
+                  inputMode="numeric"
+                  autoFocus
+                  data-testid="auth-reset-pin-input"
+                  className="focus-ring mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3.5 text-base tracking-[0.3em] text-white placeholder:text-white/25"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  data-testid="auth-back-btn"
+                  onClick={goBack}
+                  className="focus-ring rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm transition-colors hover:bg-white/10"
+                >
+                  Atras
+                </button>
+                <button
+                  type="button"
+                  data-testid="auth-reset-pin-submit"
+                  onClick={onResetPin}
+                  disabled={busy || !(/^\d{4}$|^\d{6}$/.test((resetPin || "").trim()))}
+                  className="focus-ring flex-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40"
+                >
+                  {busy ? "Guardando..." : "Definir PIN y entrar"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Ingreso normal de PIN (login) o creación de PIN (registro) */
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="auth-pin-input" className="text-xs font-semibold uppercase tracking-wide text-white/50">
+                  PIN (4 o 6 dígitos)
+                </label>
+                <input
+                  id="auth-pin-input"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D+/g, "").slice(0, 6))}
+                  placeholder="••••"
+                  inputMode="numeric"
+                  autoFocus
+                  data-testid="auth-pin-input"
+                  className="focus-ring mt-2 w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3.5 text-base tracking-[0.3em] text-white placeholder:text-white/25"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  data-testid="auth-back-btn"
+                  onClick={goBack}
+                  className="focus-ring rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm transition-colors hover:bg-white/10"
+                >
+                  Atras
+                </button>
+                <button
+                  type="button"
+                  data-testid={loginMode === "login" ? "auth-login-submit" : "auth-register-next-btn"}
+                  onClick={submitPinStep}
+                  disabled={busy || !(/^\d{4}$|^\d{6}$/.test(pin.trim()))}
+                  className="focus-ring flex-1 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40"
+                >
+                  {busy ? "Validando..." : loginMode === "login" ? "Entrar" : "Continuar"}
+                </button>
+              </div>
+            </div>
+          )}
         </Slide>
 
         {/* ── Step: Profile (register only) ── */}

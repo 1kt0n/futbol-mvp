@@ -632,6 +632,10 @@ export default function App() {
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
   const [fullName, setFullName] = useState("");
+  // Recuperación de PIN: estado de la cuenta del teléfono ingresado.
+  const [authState, setAuthState] = useState({ state: "ok" });
+  const [resetPin, setResetPin] = useState("");
+  const [unlockRequested, setUnlockRequested] = useState(false);
 
   const [actorUserId, setActorUserId] = useState(getActorId());
   const [actorDraft, setActorDraft] = useState(getActorId());
@@ -715,6 +719,78 @@ export default function App() {
       await load();
     } catch (e) {
       setErr(e.message || "No se pudo iniciar sesión.");
+      // Tras un fallo, refrescar estado: puede haber quedado bloqueada.
+      await refreshAuthStatus(p);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Consulta el estado de la cuenta (ok / locked / must_reset / inactive / unknown).
+  async function refreshAuthStatus(phoneValue) {
+    const p = (phoneValue ?? phone).trim();
+    if (!p) return { state: "ok" };
+    try {
+      const r = await apiFetchPublic(`/auth/pin/status`, {
+        method: "POST",
+        body: { phone: p },
+      });
+      setAuthState(r || { state: "ok" });
+      return r;
+    } catch {
+      setAuthState({ state: "ok" });
+      return { state: "ok" };
+    }
+  }
+
+  // Paso "Continuar" del teléfono (solo login): trae el estado antes del PIN.
+  async function onPhoneContinue() {
+    setUnlockRequested(false);
+    setResetPin("");
+    if (loginMode === "login") {
+      await refreshAuthStatus(phone);
+    }
+  }
+
+  async function onRequestUnlock() {
+    setErr("");
+    setBusy(true);
+    try {
+      await apiFetchPublic(`/auth/unlock-request`, {
+        method: "POST",
+        body: { phone: phone.trim() },
+      });
+      setUnlockRequested(true);
+      setToast({ kind: "success", title: "Solicitud enviada", text: "Un administrador la revisará pronto." });
+    } catch (e) {
+      setErr(e.message || "No se pudo enviar la solicitud.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onResetPin() {
+    setErr("");
+    const p = phone.trim();
+    const np = resetPin.trim();
+    if (!/^\d{4}$|^\d{6}$/.test(np)) return setErr("PIN inválido. Usá 4 o 6 dígitos.");
+    setBusy(true);
+    try {
+      const r = await apiFetchPublic(`/auth/pin/reset`, {
+        method: "POST",
+        body: { phone: p, pin: np },
+      });
+      const actor = String(r.actor_user_id || "").trim();
+      if (!actor) throw new Error("No se pudo definir el PIN.");
+      setActorId(actor);
+      localStorage.setItem("actor_me", JSON.stringify(r.me || null));
+      setActorUserId(actor);
+      setResetPin("");
+      setAuthState({ state: "ok" });
+      setToast({ kind: "success", title: "PIN actualizado", text: r.me?.full_name || "Listo" });
+      await load();
+    } catch (e) {
+      setErr(e.message || "No se pudo definir el PIN.");
     } finally {
       setBusy(false);
     }
@@ -1106,6 +1182,13 @@ export default function App() {
             setFullName={setFullName}
             onLogin={onPinLogin}
             onRegister={onPinRegister}
+            authState={authState}
+            onPhoneContinue={onPhoneContinue}
+            onRequestUnlock={onRequestUnlock}
+            unlockRequested={unlockRequested}
+            resetPin={resetPin}
+            setResetPin={setResetPin}
+            onResetPin={onResetPin}
             actorDraft={actorDraft}
             setActorDraft={setActorDraft}
             onSaveActor={onSaveActor}

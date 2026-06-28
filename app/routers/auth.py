@@ -1,6 +1,7 @@
 import secrets
 import re
 import io
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -14,7 +15,13 @@ from app.settings import (
     AVATAR_MAX_MB,
     SUPABASE_URL,
 )
-from app.schemas import PinRegisterRequest, PinLoginRequest, UpdateProfileRequest
+from app.schemas import (
+    PinRegisterRequest,
+    PinLoginRequest,
+    UpdateProfileRequest,
+    PhoneOnlyRequest,
+    PinResetRequest,
+)
 from app.utils.security import hash_pin, assert_pin
 from app.utils.phone import normalize_phone
 from app.utils.permissions import get_effective_permissions
@@ -23,6 +30,14 @@ from app.utils.deps import get_actor_user_id
 from app.utils.ratelimit import rate_limit, client_ip
 
 router = APIRouter()
+
+# Política de bloqueo de PIN.
+MAX_PIN_ATTEMPTS = 3
+LOCK_MINUTES = 5
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def validate_email(email: str) -> bool:
@@ -119,13 +134,14 @@ def pin_login(body: PinLoginRequest, request: Request):
     phone_login = normalize_phone(body.phone)
     pin = assert_pin(body.pin)
 
-    # Anti fuerza-bruta del PIN: máx 8 intentos / 5 min por (teléfono + IP).
+    # Anti fuerza-bruta extra por IP (además del lockout por cuenta de abajo).
     ip = client_ip(request)
-    rate_limit(f"login:{phone_login}:{ip}", max_hits=8, window_seconds=300)
+    rate_limit(f"login:{ip}", max_hits=30, window_seconds=300)
 
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         user = conn.execute(text("""
-            select id, full_name, is_active, pin_salt, pin_hash
+            select id, full_name, is_active, pin_salt, pin_hash,
+                   failed_pin_attempts, locked_until, must_reset_pin
             from public.users
             where phone_login = :p
             limit 1
@@ -137,12 +153,55 @@ def pin_login(body: PinLoginRequest, request: Request):
         if user.get("is_active") is False:
             raise HTTPException(status_code=403, detail="Usuario inactivo.")
 
+        if user.get("must_reset_pin"):
+            raise HTTPException(
+                status_code=409,
+                detail="Un administrador aprobó tu desbloqueo. Definí un PIN nuevo para continuar.",
+            )
+
+        # ¿Bloqueado?
+        locked_until = user.get("locked_until")
+        if locked_until is not None:
+            remaining = (locked_until - _now_utc()).total_seconds()
+            if remaining > 0:
+                mins = max(1, int((remaining + 59) // 60))
+                raise HTTPException(
+                    status_code=423,
+                    detail=f"Cuenta bloqueada por demasiados intentos. Probá en {mins} min o pedí desbloqueo.",
+                )
+
         if not user["pin_salt"] or not user["pin_hash"]:
             raise HTTPException(status_code=400, detail="El usuario no tiene PIN configurado.")
 
         calc = hash_pin(pin, user["pin_salt"])
         if calc != user["pin_hash"]:
-            raise HTTPException(status_code=401, detail="PIN incorrecto.")
+            attempts = int(user.get("failed_pin_attempts") or 0) + 1
+            if attempts >= MAX_PIN_ATTEMPTS:
+                conn.execute(text("""
+                    update public.users
+                    set failed_pin_attempts = :attempts,
+                        locked_until = now() + (:lock_minutes * interval '1 minute'),
+                        updated_at = now()
+                    where id = :id
+                """), {"attempts": attempts, "lock_minutes": LOCK_MINUTES, "id": user["id"]})
+                raise HTTPException(
+                    status_code=423,
+                    detail=f"Demasiados intentos. Cuenta bloqueada por {LOCK_MINUTES} minutos. Pedí desbloqueo a un administrador.",
+                )
+            conn.execute(text("""
+                update public.users
+                set failed_pin_attempts = :attempts, updated_at = now()
+                where id = :id
+            """), {"attempts": attempts, "id": user["id"]})
+            left = MAX_PIN_ATTEMPTS - attempts
+            raise HTTPException(status_code=401, detail=f"PIN incorrecto. Te queda{'n' if left != 1 else ''} {left} intento{'s' if left != 1 else ''}.")
+
+        # PIN correcto: limpiar contador/bloqueo.
+        conn.execute(text("""
+            update public.users
+            set failed_pin_attempts = 0, locked_until = null, updated_at = now()
+            where id = :id
+        """), {"id": user["id"]})
 
         roles_rows = conn.execute(text("""
             select r.code
@@ -163,6 +222,124 @@ def pin_login(body: PinLoginRequest, request: Request):
                 "is_admin": is_admin,
             }
         }
+
+
+@router.post("/auth/pin/status")
+def pin_status(body: PhoneOnlyRequest, request: Request):
+    """
+    Estado de la cuenta para un teléfono, para que el frontend sepa qué mostrar
+    en el paso del PIN: ingreso normal, bloqueada, o 'definí un PIN nuevo'.
+    Devuelve siempre 200 (no filtra si el teléfono existe más allá de 'unknown').
+    """
+    rate_limit(f"status:{client_ip(request)}", max_hits=30, window_seconds=300)
+    phone_login = normalize_phone(body.phone)
+
+    with engine.connect() as conn:
+        user = conn.execute(text("""
+            select is_active, locked_until, must_reset_pin
+            from public.users
+            where phone_login = :p
+            limit 1
+        """), {"p": phone_login}).mappings().first()
+
+    if not user:
+        return {"state": "unknown"}
+    if user.get("is_active") is False:
+        return {"state": "inactive"}
+    if user.get("must_reset_pin"):
+        return {"state": "must_reset"}
+    locked_until = user.get("locked_until")
+    if locked_until is not None and locked_until > _now_utc():
+        return {"state": "locked", "locked_until": locked_until.isoformat()}
+    return {"state": "ok"}
+
+
+@router.post("/auth/unlock-request")
+def unlock_request(body: PhoneOnlyRequest, request: Request):
+    """
+    El usuario bloqueado pide desbloqueo. Crea una solicitud PENDING que el
+    administrador resuelve. Idempotente: si ya hay una PENDING, no duplica.
+    """
+    rate_limit(f"unlock-req:{client_ip(request)}", max_hits=10, window_seconds=3600)
+    phone_login = normalize_phone(body.phone)
+
+    with engine.begin() as conn:
+        user = conn.execute(text("""
+            select id from public.users where phone_login = :p limit 1
+        """), {"p": phone_login}).mappings().first()
+
+        # Respuesta uniforme para no filtrar si el teléfono existe.
+        if not user:
+            return {"message": "Si el número está registrado, tu solicitud quedó pendiente de aprobación."}
+
+        existing = conn.execute(text("""
+            select 1 from public.pin_unlock_requests
+            where user_id = :uid and status = 'PENDING' limit 1
+        """), {"uid": user["id"]}).first()
+
+        if not existing:
+            conn.execute(text("""
+                insert into public.pin_unlock_requests (user_id, status)
+                values (:uid, 'PENDING')
+            """), {"uid": user["id"]})
+
+    return {"message": "Si el número está registrado, tu solicitud quedó pendiente de aprobación."}
+
+
+@router.post("/auth/pin/reset")
+def pin_reset(body: PinResetRequest, request: Request):
+    """
+    Define un PIN nuevo. Solo permitido si un admin aprobó el desbloqueo
+    (must_reset_pin = true). Consume el flag y deja al usuario logueado.
+    """
+    rate_limit(f"pin-reset:{client_ip(request)}", max_hits=10, window_seconds=3600)
+    phone_login = normalize_phone(body.phone)
+    pin = assert_pin(body.pin)
+
+    with engine.begin() as conn:
+        user = conn.execute(text("""
+            select id, full_name, is_active, must_reset_pin
+            from public.users
+            where phone_login = :p
+            limit 1
+        """), {"p": phone_login}).mappings().first()
+
+        if not user or not user.get("must_reset_pin"):
+            raise HTTPException(
+                status_code=403,
+                detail="No hay un desbloqueo aprobado para este número. Pedí desbloqueo a un administrador.",
+            )
+        if user.get("is_active") is False:
+            raise HTTPException(status_code=403, detail="Usuario inactivo.")
+
+        salt_hex = secrets.token_hex(16)
+        pin_hash = hash_pin(pin, salt_hex)
+        conn.execute(text("""
+            update public.users
+            set pin_salt = :salt, pin_hash = :hash,
+                must_reset_pin = false, failed_pin_attempts = 0, locked_until = null,
+                updated_at = now()
+            where id = :id
+        """), {"salt": salt_hex, "hash": pin_hash, "id": user["id"]})
+
+        roles_rows = conn.execute(text("""
+            select r.code
+            from public.user_roles ur
+            join public.roles r on r.id = ur.role_id
+            where ur.user_id = :id
+        """), {"id": user["id"]}).mappings().all()
+        roles = [r["code"] for r in roles_rows] if roles_rows else []
+        is_admin = any(x.lower() in ("admin", "super_admin") for x in roles)
+
+    return {
+        "actor_user_id": issue_token(str(user["id"])),
+        "me": {
+            "id": str(user["id"]),
+            "full_name": user["full_name"],
+            "roles": roles,
+            "is_admin": is_admin,
+        },
+    }
 
 
 @router.get("/auth/me")

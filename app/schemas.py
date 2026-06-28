@@ -27,6 +27,16 @@ class PinLoginRequest(BaseModel):
     pin: str = Field(..., min_length=4, max_length=6)
 
 
+class PhoneOnlyRequest(BaseModel):
+    phone: str = Field(..., min_length=6, max_length=30)
+
+
+class PinResetRequest(BaseModel):
+    """Definir un PIN nuevo tras desbloqueo aprobado por un admin."""
+    phone: str = Field(..., min_length=6, max_length=30)
+    pin: str = Field(..., min_length=4, max_length=6)
+
+
 # ========== ADMIN EVENTS ==========
 EventVisibility = Literal["PRIVATE", "GLOBAL"]
 

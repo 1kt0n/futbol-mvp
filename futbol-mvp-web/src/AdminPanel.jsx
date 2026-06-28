@@ -11,6 +11,7 @@ import { can, canAccessAdmin } from './permissions/can.js'
 const ADMIN_TABS = [
   { key: 'eventos', label: 'Eventos', perm: 'events.view', testid: 'admin-tab-eventos' },
   { key: 'usuarios', label: 'Usuarios', perm: 'users.view', testid: 'admin-tab-usuarios' },
+  { key: 'desbloqueos', label: 'Desbloqueos', perm: 'users.unlock', testid: 'admin-tab-desbloqueos' },
   { key: 'auditoria', label: 'Auditoria', perm: 'audit.view', testid: 'admin-tab-auditoria' },
   { key: 'notificaciones', label: 'Notificaciones', perm: 'notifications.view', testid: 'admin-tab-notificaciones' },
   { key: 'torneos', label: 'Torneos', perm: 'tournaments.view', testid: 'admin-tab-torneos' },
@@ -563,6 +564,10 @@ export default function AdminPanel() {
             />
           )}
 
+          {tab === 'desbloqueos' && has('users.unlock') && (
+            <UnlockRequestsTab setToast={setToast} setErr={setErr} />
+          )}
+
           {tab === 'auditoria' && has('audit.view') && (
             <AuditoriaTab />
           )}
@@ -1106,6 +1111,91 @@ function UsuariosTab({ users, searchQuery, setSearchQuery, busy, onSearch, onCre
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function UnlockRequestsTab({ setToast, setErr }) {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [actingId, setActingId] = useState(null)
+
+  async function load() {
+    setLoading(true)
+    try {
+      const data = await apiFetch('/admin/unlock-requests')
+      setItems(Array.isArray(data?.requests) ? data.requests : [])
+    } catch (e) {
+      setErr?.(e.message || 'No se pudieron cargar las solicitudes.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function resolve(id, action) {
+    setActingId(id)
+    try {
+      await apiFetch(`/admin/unlock-requests/${id}/${action}`, { method: 'POST' })
+      setToast?.(action === 'approve' ? 'PIN desbloqueado' : 'Solicitud rechazada')
+      setItems((prev) => prev.filter((x) => x.id !== id))
+    } catch (e) {
+      setErr?.(e.message || 'No se pudo resolver la solicitud.')
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  if (loading) {
+    return <div className="py-10 text-center text-sm text-white/40">Cargando solicitudes…</div>
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-sm text-white/50">
+        No hay solicitudes de desbloqueo pendientes.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="text-sm text-white/60">
+        {items.length} solicitud{items.length !== 1 ? 'es' : ''} pendiente{items.length !== 1 ? 's' : ''} de desbloqueo.
+      </div>
+      {items.map((r) => (
+        <div
+          key={r.id}
+          data-testid="unlock-request-row"
+          className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <div className="font-semibold text-white">{r.full_name || 'Sin nombre'}</div>
+            <div className="text-sm text-white/50">{r.phone || 'Sin teléfono'}</div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              data-testid="unlock-approve-btn"
+              onClick={() => resolve(r.id, 'approve')}
+              disabled={actingId === r.id}
+              className="focus-ring rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40"
+            >
+              {actingId === r.id ? '…' : 'Desbloquear pin'}
+            </button>
+            <button
+              type="button"
+              data-testid="unlock-deny-btn"
+              onClick={() => resolve(r.id, 'deny')}
+              disabled={actingId === r.id}
+              className="focus-ring rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10 disabled:opacity-40"
+            >
+              No desbloquear
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

@@ -433,3 +433,98 @@ def update_user_roles(
         "roles": body.roles,
         "message": "Roles actualizados exitosamente."
     }
+
+
+# ============================================================
+# Solicitudes de desbloqueo de PIN (buzón de administradores)
+# ============================================================
+
+@router.get("/unlock-requests")
+def list_unlock_requests(actor_user_id: str = Depends(get_actor_user_id)):
+    """Lista las solicitudes de desbloqueo PENDIENTES con datos del usuario."""
+    with engine.connect() as conn:
+        require_permission(conn, actor_user_id, "users.unlock")
+        rows = conn.execute(text("""
+            SELECT r.id, r.created_at, u.id AS user_id, u.full_name, u.phone_e164
+            FROM public.pin_unlock_requests r
+            JOIN public.users u ON u.id = r.user_id
+            WHERE r.status = 'PENDING'
+            ORDER BY r.created_at ASC
+        """)).mappings().all()
+
+    return {
+        "requests": [
+            {
+                "id": str(x["id"]),
+                "user_id": str(x["user_id"]),
+                "full_name": x["full_name"],
+                "phone": x["phone_e164"],
+                "created_at": x["created_at"].isoformat() if x["created_at"] else None,
+            }
+            for x in rows
+        ]
+    }
+
+
+@router.post("/unlock-requests/{request_id}/approve")
+def approve_unlock_request(request_id: str, actor_user_id: str = Depends(get_actor_user_id)):
+    """Aprueba: el usuario podrá definir un PIN nuevo en su próximo ingreso."""
+    with engine.begin() as conn:
+        require_permission(conn, actor_user_id, "users.unlock")
+
+        req = conn.execute(text("""
+            SELECT id, user_id FROM public.pin_unlock_requests
+            WHERE id = :id AND status = 'PENDING'
+            FOR UPDATE
+        """), {"id": request_id}).mappings().first()
+        if not req:
+            raise HTTPException(status_code=404, detail="Solicitud no encontrada o ya resuelta.")
+
+        conn.execute(text("""
+            UPDATE public.users
+            SET must_reset_pin = true, failed_pin_attempts = 0, locked_until = null, updated_at = now()
+            WHERE id = :uid
+        """), {"uid": req["user_id"]})
+
+        conn.execute(text("""
+            UPDATE public.pin_unlock_requests
+            SET status = 'APPROVED', resolved_at = now(), resolved_by_user_id = :actor
+            WHERE id = :id
+        """), {"id": request_id, "actor": actor_user_id})
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+            VALUES (NULL, :actor, 'APPROVE_PIN_UNLOCK',
+                    jsonb_build_object('request_id', :id, 'user_id', :uid))
+        """), {"actor": actor_user_id, "id": request_id, "uid": str(req["user_id"])})
+
+    return {"message": "Desbloqueo aprobado. El usuario podrá definir un PIN nuevo."}
+
+
+@router.post("/unlock-requests/{request_id}/deny")
+def deny_unlock_request(request_id: str, actor_user_id: str = Depends(get_actor_user_id)):
+    """Rechaza la solicitud de desbloqueo."""
+    with engine.begin() as conn:
+        require_permission(conn, actor_user_id, "users.unlock")
+
+        req = conn.execute(text("""
+            SELECT id, user_id FROM public.pin_unlock_requests
+            WHERE id = :id AND status = 'PENDING'
+            FOR UPDATE
+        """), {"id": request_id}).mappings().first()
+        if not req:
+            raise HTTPException(status_code=404, detail="Solicitud no encontrada o ya resuelta.")
+
+        conn.execute(text("""
+            UPDATE public.pin_unlock_requests
+            SET status = 'DENIED', resolved_at = now(), resolved_by_user_id = :actor
+            WHERE id = :id
+        """), {"id": request_id, "actor": actor_user_id})
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+            VALUES (NULL, :actor, 'DENY_PIN_UNLOCK',
+                    jsonb_build_object('request_id', :id, 'user_id', :uid))
+        """), {"actor": actor_user_id, "id": request_id, "uid": str(req["user_id"])})
+
+    return {"message": "Solicitud rechazada."}
