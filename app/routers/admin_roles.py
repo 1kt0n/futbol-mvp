@@ -9,7 +9,8 @@ no se pueden editar ni borrar.
 
 import logging
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 
 from app.settings import engine
@@ -29,7 +30,7 @@ def _audit(conn, actor_user_id: str, action: str, metadata_sql: str, params: dic
 
 
 @router.get("/permissions")
-def list_permissions(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def list_permissions(actor_user_id: str = Depends(get_actor_user_id)):
     """Catalogo de permisos disponibles, agrupado por categoria."""
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, "roles.manage")
@@ -52,7 +53,7 @@ def list_permissions(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
 
 
 @router.get("/roles")
-def list_roles(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def list_roles(actor_user_id: str = Depends(get_actor_user_id)):
     """Lista los roles con sus permisos. super_admin se reporta como comodin (todos)."""
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, "roles.manage")
@@ -115,7 +116,7 @@ def _set_role_permissions(conn, role_id: str, permission_codes: list[str]) -> No
 
 
 @router.post("/roles")
-def create_role(body: CreateRoleRequest, actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def create_role(body: CreateRoleRequest, actor_user_id: str = Depends(get_actor_user_id)):
     """Crea un rol nuevo con su set de permisos."""
     code = body.code.strip().lower().replace(" ", "_")
     with engine.connect() as conn:
@@ -143,7 +144,7 @@ def create_role(body: CreateRoleRequest, actor_user_id: str = Header(..., alias=
 
 
 @router.patch("/roles/{role_id}")
-def update_role(role_id: str, body: UpdateRoleRequest, actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def update_role(role_id: str, body: UpdateRoleRequest, actor_user_id: str = Depends(get_actor_user_id)):
     """Actualiza nombre/descripcion y, si se envia, el set de permisos. Bloquea roles de sistema."""
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, "roles.manage")
@@ -175,7 +176,7 @@ def update_role(role_id: str, body: UpdateRoleRequest, actor_user_id: str = Head
 
 
 @router.delete("/roles/{role_id}")
-def delete_role(role_id: str, actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def delete_role(role_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     """Elimina un rol (y sus asignaciones). Bloquea roles de sistema."""
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, "roles.manage")

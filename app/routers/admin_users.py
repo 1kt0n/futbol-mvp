@@ -1,5 +1,7 @@
+import json
 import secrets
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -14,7 +16,7 @@ router = APIRouter()
 
 @router.get("/users")
 def search_users(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     query: str | None = None,
     limit: int = 50
 ):
@@ -74,7 +76,7 @@ def search_users(
 @router.get("/users/{id}")
 def get_user_detail(
     id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Obtiene detalle completo de un usuario. Solo admin/super_admin.
@@ -114,7 +116,7 @@ def get_user_detail(
 @router.post("/users")
 def create_user(
     body: CreateUserRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Crea un usuario manualmente. Solo admin/super_admin.
@@ -213,11 +215,13 @@ def create_user(
                     event_id, actor_user_id, action, metadata
                 )
                 VALUES (
-                    NULL, :actor_user_id, 'CREATE_USER_MANUAL', CAST(:metadata AS jsonb)
+                    NULL, :actor_user_id, 'CREATE_USER_MANUAL',
+                    jsonb_build_object('user_id', :user_id, 'roles', CAST(:roles AS jsonb))
                 )
             """), {
                 "actor_user_id": actor_user_id,
-                "metadata": f'{{"user_id": "{user["id"]}", "roles": {assigned_roles}}}'.replace("'", '"')
+                "user_id": str(user["id"]),
+                "roles": json.dumps(assigned_roles),
             })
 
             return {
@@ -238,7 +242,7 @@ def create_user(
 def update_user(
     id: str,
     body: UpdateUserRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Actualiza el estado de un usuario (activar/desactivar). Solo admin/super_admin.
@@ -269,11 +273,13 @@ def update_user(
                 event_id, actor_user_id, action, metadata
             )
             VALUES (
-                NULL, :actor_user_id, 'UPDATE_USER_STATUS', CAST(:metadata AS jsonb)
+                NULL, :actor_user_id, 'UPDATE_USER_STATUS',
+                jsonb_build_object('user_id', :user_id, 'is_active', :is_active)
             )
         """), {
             "actor_user_id": actor_user_id,
-            "metadata": f'{{"user_id": "{id}", "is_active": {str(body.is_active).lower()}}}'
+            "user_id": str(id),
+            "is_active": bool(body.is_active),
         })
 
     return {
@@ -287,7 +293,7 @@ def update_user(
 def reset_user_pin(
     id: str,
     body: ResetPinRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Resetea el PIN de un usuario. Solo admin/super_admin.
@@ -324,11 +330,12 @@ def reset_user_pin(
                 event_id, actor_user_id, action, metadata
             )
             VALUES (
-                NULL, :actor_user_id, 'RESET_PIN', CAST(:metadata AS jsonb)
+                NULL, :actor_user_id, 'RESET_PIN',
+                jsonb_build_object('user_id', :user_id)
             )
         """), {
             "actor_user_id": actor_user_id,
-            "metadata": f'{{"user_id": "{id}"}}'
+            "user_id": str(id),
         })
 
     return {
@@ -341,7 +348,7 @@ def reset_user_pin(
 def update_user_roles(
     id: str,
     body: UpdateUserRolesRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Actualiza los roles de un usuario. Solo admin/super_admin.
@@ -412,11 +419,13 @@ def update_user_roles(
                 event_id, actor_user_id, action, metadata
             )
             VALUES (
-                NULL, :actor_user_id, 'UPDATE_USER_ROLES', CAST(:metadata AS jsonb)
+                NULL, :actor_user_id, 'UPDATE_USER_ROLES',
+                jsonb_build_object('user_id', :user_id, 'roles', CAST(:roles AS jsonb))
             )
         """), {
             "actor_user_id": actor_user_id,
-            "metadata": f'{{"user_id": "{id}", "roles": {body.roles}}}'.replace("'", '"')
+            "user_id": str(id),
+            "roles": json.dumps(list(body.roles)),
         })
 
     return {

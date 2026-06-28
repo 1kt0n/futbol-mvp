@@ -2,7 +2,8 @@ import math
 import secrets
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -520,7 +521,7 @@ def compute_round_robin_standings(conn, tournament_id: str):
 @router.post("/tournaments")
 def create_tournament(
     body: TournamentCreateRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, 'tournaments.manage')
@@ -597,7 +598,7 @@ def create_tournament(
 
 @router.get("/tournaments")
 def list_tournaments(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     status: str | None = None,
     limit: int = Query(50, ge=1, le=500),
 ):
@@ -651,7 +652,7 @@ def list_tournaments(
 @router.get("/tournaments/{tournament_id}")
 def get_tournament_detail(
     tournament_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, 'tournaments.view')
@@ -738,7 +739,7 @@ def get_tournament_detail(
 def update_tournament_config(
     tournament_id: str,
     body: TournamentUpdateRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.manage')
@@ -792,7 +793,7 @@ def update_tournament_config(
 def update_tournament_status(
     tournament_id: str,
     body: TournamentUpdateStatusRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.manage')
@@ -822,7 +823,7 @@ def update_tournament_status(
 @router.delete("/tournaments/{tournament_id}")
 def delete_tournament(
     tournament_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.manage')
@@ -842,7 +843,7 @@ def delete_tournament(
 def create_team(
     tournament_id: str,
     body: TournamentCreateTeamRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.manage')
@@ -882,7 +883,7 @@ def create_team(
 @router.get("/tournaments/{tournament_id}/teams")
 def list_teams(
     tournament_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, 'tournaments.view')
@@ -908,7 +909,7 @@ def list_teams(
 def delete_team(
     tournament_id: str,
     team_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.manage')
@@ -942,7 +943,7 @@ def add_member(
     tournament_id: str,
     team_id: str,
     body: TournamentCreateMemberRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.manage')
@@ -998,7 +999,7 @@ def add_member(
 def list_members(
     tournament_id: str,
     team_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, 'tournaments.view')
@@ -1043,7 +1044,7 @@ def list_members(
 @router.post("/tournaments/{tournament_id}/generate-fixture")
 def generate_fixture(
     tournament_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.manage')
@@ -1151,7 +1152,7 @@ def generate_fixture(
 def start_match(
     tournament_id: str,
     match_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.matches.manage')
@@ -1210,7 +1211,7 @@ def patch_score(
     tournament_id: str,
     match_id: str,
     body: TournamentScorePatchRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.matches.manage')
@@ -1256,7 +1257,7 @@ def patch_score(
 def finish_match(
     tournament_id: str,
     match_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     with engine.begin() as conn:
         require_permission(conn, actor_user_id, 'tournaments.matches.manage')

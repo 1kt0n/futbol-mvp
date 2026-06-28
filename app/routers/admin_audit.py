@@ -11,7 +11,8 @@ para el typeahead del filtro.
 
 from typing import Iterable
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 
 from app.settings import engine
@@ -97,7 +98,7 @@ def _coerce_uuid_strs(values: Iterable) -> set[str]:
 
 @router.get("/audit")
 def get_audit_logs(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     event_id: str | None = None,
     action: str | None = None,
     actor_user_id_filter: str | None = None,
@@ -310,7 +311,7 @@ def get_audit_logs(
 
 @router.get("/audit/actors")
 def get_audit_actors(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     """
     Lista los admins que emitieron al menos un log (para el typeahead del filtro).

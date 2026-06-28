@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Depends, Request
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.settings import engine
 from app.schemas import RegisterRequest, GuestRequest, MoveRequest, PlayerCardsResponse
 from app.utils.scoring import score_payload, attribute_profile, MIN_DISTINCT_VOTERS, RECENCY_DECAY_PER_DAY
+from app.utils.ratelimit import rate_limit, client_ip
 
 router = APIRouter()
 
@@ -80,11 +82,12 @@ def check_and_auto_close_court(event_id: str, court_id: str, actor_user_id: str)
 
             conn.execute(text("""
                 INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
-                VALUES (:event_id, :actor_user_id, 'AUTO_CLOSE_COURT', CAST(:metadata AS jsonb))
+                VALUES (:event_id, :actor_user_id, 'AUTO_CLOSE_COURT',
+                        jsonb_build_object('court_id', :court_id, 'reason', 'capacity_reached'))
             """), {
                 "event_id": event_id,
                 "actor_user_id": actor_user_id,
-                "metadata": f'{{"court_id": "{court_id}", "reason": "capacity_reached"}}'
+                "court_id": str(court_id),
             })
 
         # 2. Verificar si TODAS las canchas están cerradas o llenas
@@ -127,7 +130,7 @@ def check_and_auto_close_court(event_id: str, court_id: str, actor_user_id: str)
 # =========================
 
 @router.get("/events/open")
-def list_open_events(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def list_open_events(actor_user_id: str = Depends(get_actor_user_id)):
     """
     Devuelve la lista de todos los eventos OPEN o CLOSED (sin FINALIZED).
     Solo metadata básica, sin detalle de canchas/jugadores.
@@ -157,7 +160,7 @@ def list_open_events(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
 
 @router.get("/events/active")
 def get_active_event(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     event_id: str | None = None,
 ):
     """
@@ -295,7 +298,7 @@ def get_active_event(
 def get_player_cards(
     event_id: str,
     court_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     """
     Devuelve cards de jugadores de una cancha, respetando privacy por ranking_opt_in.
@@ -466,7 +469,7 @@ def get_player_cards(
 def register_user(
     event_id: str,
     body: RegisterRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     El actor (header) se auto-anota en el evento.
@@ -558,12 +561,22 @@ def register_user(
 def register_guest(
     event_id: str,
     body: GuestRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    request: Request,
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Registra un invitado en una cancha (sin sobrecupo).
     Límite: 10 invitados por actor/evento.
     """
+    # Anti-ráfaga: máx 15 invitados / minuto por actor e IP (además del cap de 10).
+    rate_limit(f"guest:{actor_user_id}", max_hits=15, window_seconds=60)
+    rate_limit(f"guest-ip:{client_ip(request)}", max_hits=20, window_seconds=60)
+
+    # Validación de nombre de invitado.
+    guest_name = (body.guest_name or "").strip()
+    if len(guest_name) < 2 or len(guest_name) > 60:
+        raise HTTPException(status_code=400, detail="Nombre de invitado inválido (2 a 60 caracteres).")
+
     with engine.begin() as conn:
         event = conn.execute(text("""
             select id, status
@@ -625,7 +638,7 @@ def register_guest(
             "event_id": event_id,
             "court_id": body.court_id,
             "created_by_user_id": actor_user_id,
-            "guest_name": body.guest_name.strip(),
+            "guest_name": guest_name,
         }).mappings().first()
 
         conn.execute(text("""
@@ -659,7 +672,7 @@ def register_guest(
 def move_registration(
     registration_id: str,
     body: MoveRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Mueve una inscripción CONFIRMED de una cancha a otra.
@@ -739,13 +752,15 @@ def move_registration(
               event_id, actor_user_id, action, target_registration_id, metadata
             )
             values (
-              :event_id, :actor_user_id, 'MOVE_REGISTRATION', :target_registration_id, CAST(:metadata AS jsonb)
+              :event_id, :actor_user_id, 'MOVE_REGISTRATION', :target_registration_id,
+              jsonb_build_object('from_court_id', :from_court_id, 'to_court_id', :to_court_id)
             )
         """), {
             "event_id": event_id,
             "actor_user_id": actor_user_id,
             "target_registration_id": registration_id,
-            "metadata": f'{{"from_court_id":"{from_court_id}","to_court_id":"{body.to_court_id}"}}'
+            "from_court_id": str(from_court_id),
+            "to_court_id": str(body.to_court_id),
         })
 
         # Promover WAITLIST a la cancha liberada
@@ -816,7 +831,7 @@ def move_registration(
 @router.post("/registrations/{registration_id}/cancel")
 def cancel_registration(
     registration_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Cancela una inscripción.

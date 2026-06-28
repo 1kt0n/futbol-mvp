@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AttributeRadar from "./components/AttributeRadar.jsx";
+import { handleAuthFailure } from "./authSession.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -48,6 +49,11 @@ async function apiFetch(path, { method = "GET", body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  if (res.status === 401) {
+    handleAuthFailure();
+    throw new Error("Sesión expirada.");
+  }
+
   const contentType = res.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
   const data = isJson ? await res.json().catch(() => null) : await res.text().catch(() => "");
@@ -71,6 +77,11 @@ async function apiUpload(path, file) {
     headers: { "X-Actor-User-Id": actor },
     body: formData,
   });
+
+  if (res.status === 401) {
+    handleAuthFailure();
+    throw new Error("Sesión expirada.");
+  }
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {

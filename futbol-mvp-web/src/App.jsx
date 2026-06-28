@@ -5,6 +5,7 @@ import BrandHero from "./features/auth/BrandHero.jsx";
 import AuthFlowCard, { InstallPwaButton } from "./features/auth/AuthFlowCard.jsx";
 import { can, canAccessAdmin } from "./permissions/can.js";
 import AttributeRadar from "./components/AttributeRadar.jsx";
+import { handleAuthFailure } from "./authSession.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -98,6 +99,11 @@ async function apiFetch(path, { method = "GET", body, actorOverride } = {}) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  if (res.status === 401) {
+    handleAuthFailure();
+    throw new Error("Sesión expirada.");
+  }
 
   const contentType = res.headers.get("content-type") || "";
   const isJson = contentType.includes("application/json");
@@ -896,11 +902,7 @@ export default function App() {
 
     setErr("");
     if (!candidate) {
-      setErr("Pegá tu Actor ID.");
-      return;
-    }
-    if (!isUuid(candidate)) {
-      setErr("Formato inválido. Pegá un UUID válido.");
+      setErr("Pegá tu token de sesión.");
       return;
     }
 

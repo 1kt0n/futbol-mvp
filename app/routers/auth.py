@@ -1,7 +1,7 @@
 import secrets
 import re
 import io
-from fastapi import APIRouter, HTTPException, Header, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from PIL import Image, ImageOps
@@ -18,6 +18,9 @@ from app.schemas import PinRegisterRequest, PinLoginRequest, UpdateProfileReques
 from app.utils.security import hash_pin, assert_pin
 from app.utils.phone import normalize_phone
 from app.utils.permissions import get_effective_permissions
+from app.utils.auth_token import issue_token
+from app.utils.deps import get_actor_user_id
+from app.utils.ratelimit import rate_limit, client_ip
 
 router = APIRouter()
 
@@ -31,7 +34,7 @@ def validate_email(email: str) -> bool:
 
 
 @router.post("/auth/pin/register")
-def pin_register(body: PinRegisterRequest):
+def pin_register(body: PinRegisterRequest, request: Request):
     """
     Registra un nuevo usuario con PIN.
     """
@@ -41,6 +44,9 @@ def pin_register(body: PinRegisterRequest):
 
     if not phone_e164:
         raise HTTPException(status_code=400, detail="Teléfono inválido.")
+
+    # Anti-abuso: máx 5 registros / hora por IP (evita creación masiva de cuentas).
+    rate_limit(f"register:{client_ip(request)}", max_hits=5, window_seconds=3600)
 
     salt_hex = secrets.token_hex(16)
     pin_hash = hash_pin(pin, salt_hex)
@@ -94,7 +100,7 @@ def pin_register(body: PinRegisterRequest):
         is_admin = any(x.lower() in ("admin", "super_admin") for x in roles)
 
         return {
-            "actor_user_id": str(user["id"]),
+            "actor_user_id": issue_token(str(user["id"])),
             "me": {
                 "id": str(user["id"]),
                 "full_name": user["full_name"],
@@ -106,12 +112,16 @@ def pin_register(body: PinRegisterRequest):
 
 
 @router.post("/auth/pin/login")
-def pin_login(body: PinLoginRequest):
+def pin_login(body: PinLoginRequest, request: Request):
     """
     Login con teléfono y PIN.
     """
     phone_login = normalize_phone(body.phone)
     pin = assert_pin(body.pin)
+
+    # Anti fuerza-bruta del PIN: máx 8 intentos / 5 min por (teléfono + IP).
+    ip = client_ip(request)
+    rate_limit(f"login:{phone_login}:{ip}", max_hits=8, window_seconds=300)
 
     with engine.connect() as conn:
         user = conn.execute(text("""
@@ -145,7 +155,7 @@ def pin_login(body: PinLoginRequest):
         is_admin = any(x.lower() in ("admin", "super_admin") for x in roles)
 
         return {
-            "actor_user_id": str(user["id"]),
+            "actor_user_id": issue_token(str(user["id"])),
             "me": {
                 "id": str(user["id"]),
                 "full_name": user["full_name"],
@@ -156,7 +166,7 @@ def pin_login(body: PinLoginRequest):
 
 
 @router.get("/auth/me")
-def auth_me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def auth_me(actor_user_id: str = Depends(get_actor_user_id)):
     """
     Devuelve info básica del usuario autenticado.
     """
@@ -188,7 +198,7 @@ def auth_me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
 
 
 @router.get("/me")
-def me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def me(actor_user_id: str = Depends(get_actor_user_id)):
     """
     Valida el Actor ID contra la DB y devuelve identidad + roles.
     """
@@ -246,7 +256,7 @@ def me(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
 @router.patch("/me")
 def update_profile(
     body: UpdateProfileRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Actualiza datos del perfil del usuario autenticado.
@@ -307,7 +317,7 @@ def update_profile(
 @router.post("/me/avatar")
 async def upload_avatar(
     file: UploadFile = File(...),
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Sube un avatar para el usuario. Convierte a WebP optimizado.
@@ -386,7 +396,7 @@ async def upload_avatar(
 
 
 @router.delete("/me/avatar")
-def delete_avatar(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def delete_avatar(actor_user_id: str = Depends(get_actor_user_id)):
     """
     Elimina el avatar del usuario.
     """

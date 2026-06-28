@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { can as canFn, canAccessAdmin } from "./can.js";
+import { handleAuthFailure } from "../authSession.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -32,6 +33,10 @@ export function usePermissions() {
         const res = await fetch(`${API_BASE}/me`, {
           headers: { "X-Actor-User-Id": actor },
         });
+        if (res.status === 401) {
+          handleAuthFailure();
+          return;
+        }
         const data = await res.json().catch(() => null);
         if (alive) setPermissions(res.ok && Array.isArray(data?.permissions) ? data.permissions : []);
       } catch {

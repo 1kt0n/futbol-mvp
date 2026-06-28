@@ -1,7 +1,8 @@
+import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -9,6 +10,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.settings import CORS_ORIGINS, engine
+from app.utils.auth_token import verify_token
+from app.utils.ratelimit import client_ip
 from app.routers import (
     auth,
     events,
@@ -30,27 +33,52 @@ from app.routers import (
 
 app = FastAPI(title="Futbol MVP API")
 
+logger = logging.getLogger("uvicorn.error")
+access_logger = logging.getLogger("futbol.access")
+
 # =========================
 # CORS Middleware
 # =========================
-
+# No combinar allow_credentials=True con "*"; restringir a orígenes/headers
+# concretos. La app autentica por header (no cookies), así que no necesitamos
+# credentials cross-origin.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Actor-User-Id"],
 )
+
+
+# =========================
+# Forensic access log
+# =========================
+# Registra cada request mutante con IP, User-Agent y el actor REAL (derivado del
+# token verificado, no del valor crudo). Railway retiene estos logs → trazabilidad
+# de quién hizo qué, que antes no existía.
+@app.middleware("http")
+async def forensic_access_log(request: Request, call_next):
+    response = await call_next(request)
+    try:
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            actor = verify_token(request.headers.get("X-Actor-User-Id", "")) or "-"
+            access_logger.info(
+                "req method=%s path=%s status=%s ip=%s actor=%s ua=%r",
+                request.method,
+                request.url.path,
+                response.status_code,
+                client_ip(request),
+                actor,
+                request.headers.get("user-agent", "-"),
+            )
+    except Exception:
+        pass
+    return response
 
 # =========================
 # Health Check Endpoints
 # =========================
-
-@app.get("/__whoami")
-def whoami():
-    """Marca de agua para verificar versión del código"""
-    return {"whoami": "app/main.py v2026-01-27 refactored"}
-
 
 @app.get("/health")
 def health():
@@ -60,13 +88,14 @@ def health():
 
 @app.get("/db-check")
 def db_check():
-    """Verifica conectividad con la base de datos"""
+    """Verifica conectividad con la base de datos (sin filtrar detalles internos)."""
     try:
         with engine.connect() as conn:
-            res = conn.execute(text("select now() as now")).mappings().first()
-        return {"db": "ok", "now": str(res["now"])}
-    except SQLAlchemyError as e:
-        return {"db": "error", "detail": str(e)}
+            conn.execute(text("select 1"))
+        return {"db": "ok"}
+    except SQLAlchemyError:
+        logger.exception("db-check failed")
+        return {"db": "error"}
 
 
 # =========================

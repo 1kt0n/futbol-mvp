@@ -1,7 +1,8 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 
 from app.schemas import SaveRatingsRequest
@@ -87,7 +88,7 @@ def _parse_attributes(value):
 
 
 @router.get("/ratings/pending")
-def get_pending_ratings(actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def get_pending_ratings(actor_user_id: str = Depends(get_actor_user_id)):
     """
     Devuelve los votos pendientes agrupados por cancha.
     Incluye solo eventos FINALIZED recientes (ultimos 7 dias)
@@ -238,7 +239,7 @@ def get_pending_ratings(actor_user_id: str = Header(..., alias="X-Actor-User-Id"
 @router.post("/ratings")
 def save_ratings(
     body: SaveRatingsRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     """
     Guarda calificaciones (parcial). Upsert por unique constraint.
@@ -422,7 +423,7 @@ def save_ratings(
 @router.get("/users/{user_id}/rating")
 def get_user_rating(
     user_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     """Rating promedio y total de votos recibidos."""
     with engine.connect() as conn:
@@ -472,7 +473,7 @@ def get_user_rating(
 @router.get("/users/{user_id}/ratings/attributes")
 def get_user_attributes(
     user_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     limit: int = Query(6, ge=1, le=20),
 ):
     """Top de atributos recibidos para un usuario."""
@@ -527,7 +528,7 @@ def get_user_attributes(
 @router.get("/users/{user_id}/ratings/comments")
 def get_user_comments(
     user_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=50),
 ):

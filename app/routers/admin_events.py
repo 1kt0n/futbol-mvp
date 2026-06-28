@@ -1,6 +1,7 @@
 import json
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -43,7 +44,7 @@ def _broadcast_global_event_to_bell(conn, event_title: str) -> None:
 
 
 @router.post("/events")
-def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def create_event(body: CreateEventRequest, actor_user_id: str = Depends(get_actor_user_id)):
     """
     Crea un nuevo evento. Solo admin/super_admin.
     El evento arranca con status='OPEN' siempre.
@@ -125,7 +126,7 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Header(..., alia
 def update_event_visibility(
     event_id: str,
     body: UpdateEventVisibilityRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
 ):
     """
     Cambia la visibilidad del evento (PRIVATE <-> GLOBAL).
@@ -175,7 +176,7 @@ def update_event_visibility(
 
 
 @router.post("/events/{event_id}/open")
-def open_event(event_id: str, actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def open_event(event_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     """
     Abre un evento cerrado o finalizado. Solo admin/super_admin.
     """
@@ -218,7 +219,7 @@ def open_event(event_id: str, actor_user_id: str = Header(..., alias="X-Actor-Us
 
 
 @router.post("/events/{event_id}/close")
-def close_event(event_id: str, actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def close_event(event_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     """
     Cierra un evento. Solo admin/super_admin.
     """
@@ -260,7 +261,7 @@ def close_event(event_id: str, actor_user_id: str = Header(..., alias="X-Actor-U
 
 
 @router.post("/events/{event_id}/finalize")
-def finalize_event(event_id: str, actor_user_id: str = Header(..., alias="X-Actor-User-Id")):
+def finalize_event(event_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     """
     Finaliza un evento (lo archiva). Solo admin/super_admin.
     Un evento finalizado no aparece en la lista principal y no se puede gestionar.
@@ -307,7 +308,7 @@ def finalize_event(event_id: str, actor_user_id: str = Header(..., alias="X-Acto
 def create_court(
     event_id: str,
     body: CreateCourtRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Crea una nueva cancha en un evento. Solo admin/super_admin.
@@ -369,7 +370,7 @@ def update_court(
     event_id: str,
     court_id: str,
     body: UpdateCourtRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Actualiza una cancha. Solo admin/super_admin.
@@ -453,7 +454,7 @@ def update_court(
 def delete_court(
     event_id: str,
     court_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Elimina una cancha de un evento. Solo admin/super_admin.
@@ -543,7 +544,7 @@ def assign_captain(
     event_id: str,
     court_id: str,
     body: AssignCaptainRequest,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Asigna un capitán a una cancha específica. Solo admin/super_admin.
@@ -613,7 +614,7 @@ def remove_captain(
     event_id: str,
     court_id: str,
     user_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Quita un capitán de una cancha. Solo admin/super_admin.
@@ -673,7 +674,7 @@ def remove_captain(
 def open_court(
     event_id: str,
     court_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Abre una cancha cerrada. Solo admin/super_admin.
@@ -726,7 +727,7 @@ def open_court(
 def close_court(
     event_id: str,
     court_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Cierra una cancha manualmente. Solo admin/super_admin.
@@ -778,7 +779,7 @@ def close_court(
 @router.get("/events/{event_id}/detail")
 def get_event_detail(
     event_id: str,
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id")
+    actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
     Devuelve el detalle completo de un evento: evento + canchas + jugadores + waitlist.
@@ -893,7 +894,7 @@ def get_event_detail(
 
 @router.get("/events")
 def list_events(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     status: str | None = None,
     include_finalized: bool = False,
     limit: int = 50

@@ -15,7 +15,8 @@ independientemente del browser del usuario.
 from datetime import datetime, timedelta
 import logging
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 
 from app.settings import engine
@@ -72,7 +73,7 @@ def _is_admin(conn, user_id: str) -> bool:
 
 @router.get("/me/calendar")
 def get_my_calendar(
-    actor_user_id: str = Header(..., alias="X-Actor-User-Id"),
+    actor_user_id: str = Depends(get_actor_user_id),
     include_past: bool = Query(False, description="Si true, devuelve eventos pasados en lugar de proximos."),
     from_: str | None = Query(None, alias="from", description="ISO 8601 limite inferior opcional."),
     to: str | None = Query(None, description="ISO 8601 limite superior opcional."),
