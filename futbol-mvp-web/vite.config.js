@@ -35,10 +35,14 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//, /^\/me/, /^\/events/, /^\/auth/, /^\/admin-api/],
         runtimeCaching: [
           {
-            urlPattern: ({ request }) => request.destination === 'image' || request.destination === 'style' || request.destination === 'script',
+            // Solo imágenes con CacheFirst. El JS/CSS lleva hash inmutable y lo
+            // precachea workbox con revisión, así que NO debe ir por CacheFirst
+            // (si no, el bundle viejo queda pegado hasta 30 días y la gente no
+            // recibe las actualizaciones).
+            urlPattern: ({ request }) => request.destination === 'image',
             handler: 'CacheFirst',
             options: {
-              cacheName: 'static-assets-v1',
+              cacheName: 'static-images-v2',
               expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 30 },
             },
           },
