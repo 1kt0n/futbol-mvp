@@ -138,7 +138,8 @@ def pin_login(body: PinLoginRequest, request: Request):
     ip = client_ip(request)
     rate_limit(f"login:{ip}", max_hits=30, window_seconds=300)
 
-    with engine.begin() as conn:
+    # Lectura inicial (solo lectura, sin transacción de escritura).
+    with engine.connect() as conn:
         user = conn.execute(text("""
             select id, full_name, is_active, pin_salt, pin_hash,
                    failed_pin_attempts, locked_until, must_reset_pin
@@ -147,56 +148,67 @@ def pin_login(body: PinLoginRequest, request: Request):
             limit 1
         """), {"p": phone_login}).mappings().first()
 
-        if not user:
-            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
-        if user.get("is_active") is False:
-            raise HTTPException(status_code=403, detail="Usuario inactivo.")
+    if user.get("is_active") is False:
+        raise HTTPException(status_code=403, detail="Usuario inactivo.")
 
-        if user.get("must_reset_pin"):
+    if user.get("must_reset_pin"):
+        raise HTTPException(
+            status_code=409,
+            detail="Un administrador aprobó tu desbloqueo. Definí un PIN nuevo para continuar.",
+        )
+
+    # ¿Bloqueado?
+    locked_until = user.get("locked_until")
+    if locked_until is not None:
+        remaining = (locked_until - _now_utc()).total_seconds()
+        if remaining > 0:
+            mins = max(1, int((remaining + 59) // 60))
             raise HTTPException(
-                status_code=409,
-                detail="Un administrador aprobó tu desbloqueo. Definí un PIN nuevo para continuar.",
+                status_code=423,
+                detail=f"Cuenta bloqueada por demasiados intentos. Probá en {mins} min o pedí desbloqueo.",
             )
 
-        # ¿Bloqueado?
-        locked_until = user.get("locked_until")
-        if locked_until is not None:
-            remaining = (locked_until - _now_utc()).total_seconds()
-            if remaining > 0:
-                mins = max(1, int((remaining + 59) // 60))
-                raise HTTPException(
-                    status_code=423,
-                    detail=f"Cuenta bloqueada por demasiados intentos. Probá en {mins} min o pedí desbloqueo.",
-                )
+    if not user["pin_salt"] or not user["pin_hash"]:
+        raise HTTPException(status_code=400, detail="El usuario no tiene PIN configurado.")
 
-        if not user["pin_salt"] or not user["pin_hash"]:
-            raise HTTPException(status_code=400, detail="El usuario no tiene PIN configurado.")
-
-        calc = hash_pin(pin, user["pin_salt"])
-        if calc != user["pin_hash"]:
-            attempts = int(user.get("failed_pin_attempts") or 0) + 1
-            if attempts >= MAX_PIN_ATTEMPTS:
-                conn.execute(text("""
+    calc = hash_pin(pin, user["pin_salt"])
+    if calc != user["pin_hash"]:
+        attempts = int(user.get("failed_pin_attempts") or 0) + 1
+        locked = attempts >= MAX_PIN_ATTEMPTS
+        # IMPORTANTE: persistir el contador/bloqueo en su PROPIA transacción y
+        # COMMITEAR antes de lanzar el error. Si el UPDATE viviera dentro de un
+        # `with engine.begin()` que termina con `raise`, el rollback revertiría
+        # el incremento y el contador nunca subiría (bug: "siempre 2 intentos").
+        with engine.begin() as wconn:
+            if locked:
+                wconn.execute(text("""
                     update public.users
                     set failed_pin_attempts = :attempts,
                         locked_until = now() + (:lock_minutes * interval '1 minute'),
                         updated_at = now()
                     where id = :id
                 """), {"attempts": attempts, "lock_minutes": LOCK_MINUTES, "id": user["id"]})
-                raise HTTPException(
-                    status_code=423,
-                    detail=f"Demasiados intentos. Cuenta bloqueada por {LOCK_MINUTES} minutos. Pedí desbloqueo a un administrador.",
-                )
-            conn.execute(text("""
-                update public.users
-                set failed_pin_attempts = :attempts, updated_at = now()
-                where id = :id
-            """), {"attempts": attempts, "id": user["id"]})
-            left = MAX_PIN_ATTEMPTS - attempts
-            raise HTTPException(status_code=401, detail=f"PIN incorrecto. Te queda{'n' if left != 1 else ''} {left} intento{'s' if left != 1 else ''}.")
+            else:
+                wconn.execute(text("""
+                    update public.users
+                    set failed_pin_attempts = :attempts, updated_at = now()
+                    where id = :id
+                """), {"attempts": attempts, "id": user["id"]})
 
-        # PIN correcto: limpiar contador/bloqueo.
+        if locked:
+            raise HTTPException(
+                status_code=423,
+                detail=f"Demasiados intentos. Cuenta bloqueada por {LOCK_MINUTES} minutos. Pedí desbloqueo a un administrador.",
+            )
+        left = MAX_PIN_ATTEMPTS - attempts
+        raise HTTPException(status_code=401, detail=f"PIN incorrecto. Te queda{'n' if left != 1 else ''} {left} intento{'s' if left != 1 else ''}.")
+
+    # PIN correcto: limpiar contador/bloqueo y traer roles (esta transacción
+    # commitea normal porque no lanza excepción).
+    with engine.begin() as conn:
         conn.execute(text("""
             update public.users
             set failed_pin_attempts = 0, locked_until = null, updated_at = now()
@@ -210,18 +222,18 @@ def pin_login(body: PinLoginRequest, request: Request):
             where ur.user_id = :id
         """), {"id": user["id"]}).mappings().all()
 
-        roles = [r["code"] for r in roles_rows] if roles_rows else []
-        is_admin = any(x.lower() in ("admin", "super_admin") for x in roles)
+    roles = [r["code"] for r in roles_rows] if roles_rows else []
+    is_admin = any(x.lower() in ("admin", "super_admin") for x in roles)
 
-        return {
-            "actor_user_id": issue_token(str(user["id"])),
-            "me": {
-                "id": str(user["id"]),
-                "full_name": user["full_name"],
-                "roles": roles,
-                "is_admin": is_admin,
-            }
+    return {
+        "actor_user_id": issue_token(str(user["id"])),
+        "me": {
+            "id": str(user["id"]),
+            "full_name": user["full_name"],
+            "roles": roles,
+            "is_admin": is_admin,
         }
+    }
 
 
 @router.post("/auth/pin/status")
