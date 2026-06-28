@@ -495,7 +495,7 @@ def approve_unlock_request(request_id: str, actor_user_id: str = Depends(get_act
         conn.execute(text("""
             INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
             VALUES (NULL, :actor, 'APPROVE_PIN_UNLOCK',
-                    jsonb_build_object('request_id', :id, 'user_id', :uid))
+                    jsonb_build_object('request_id', :id::text, 'user_id', :uid::text))
         """), {"actor": actor_user_id, "id": request_id, "uid": str(req["user_id"])})
 
     return {"message": "Desbloqueo aprobado. El usuario podrá definir un PIN nuevo."}
@@ -524,7 +524,7 @@ def deny_unlock_request(request_id: str, actor_user_id: str = Depends(get_actor_
         conn.execute(text("""
             INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
             VALUES (NULL, :actor, 'DENY_PIN_UNLOCK',
-                    jsonb_build_object('request_id', :id, 'user_id', :uid))
+                    jsonb_build_object('request_id', :id::text, 'user_id', :uid::text))
         """), {"actor": actor_user_id, "id": request_id, "uid": str(req["user_id"])})
 
     return {"message": "Solicitud rechazada."}
