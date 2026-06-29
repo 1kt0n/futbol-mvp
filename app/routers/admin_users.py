@@ -217,8 +217,8 @@ def create_user(
                     event_id, actor_user_id, action, metadata
                 )
                 VALUES (
-                    NULL, :actor_user_id, 'CREATE_USER_MANUAL',
-                    jsonb_build_object('user_id', :user_id, 'roles', CAST(:roles AS jsonb))
+                    NULL, CAST(:actor_user_id AS uuid), 'CREATE_USER_MANUAL',
+                    jsonb_build_object('user_id', CAST(:user_id AS text), 'roles', CAST(:roles AS jsonb))
                 )
             """), {
                 "actor_user_id": actor_user_id,
@@ -275,8 +275,8 @@ def update_user(
                 event_id, actor_user_id, action, metadata
             )
             VALUES (
-                NULL, :actor_user_id, 'UPDATE_USER_STATUS',
-                jsonb_build_object('user_id', :user_id, 'is_active', :is_active)
+                NULL, CAST(:actor_user_id AS uuid), 'UPDATE_USER_STATUS',
+                jsonb_build_object('user_id', CAST(:user_id AS text), 'is_active', CAST(:is_active AS boolean))
             )
         """), {
             "actor_user_id": actor_user_id,
@@ -332,8 +332,8 @@ def reset_user_pin(
                 event_id, actor_user_id, action, metadata
             )
             VALUES (
-                NULL, :actor_user_id, 'RESET_PIN',
-                jsonb_build_object('user_id', :user_id)
+                NULL, CAST(:actor_user_id AS uuid), 'RESET_PIN',
+                jsonb_build_object('user_id', CAST(:user_id AS text))
             )
         """), {
             "actor_user_id": actor_user_id,
@@ -421,8 +421,8 @@ def update_user_roles(
                 event_id, actor_user_id, action, metadata
             )
             VALUES (
-                NULL, :actor_user_id, 'UPDATE_USER_ROLES',
-                jsonb_build_object('user_id', :user_id, 'roles', CAST(:roles AS jsonb))
+                NULL, CAST(:actor_user_id AS uuid), 'UPDATE_USER_ROLES',
+                jsonb_build_object('user_id', CAST(:user_id AS text), 'roles', CAST(:roles AS jsonb))
             )
         """), {
             "actor_user_id": actor_user_id,
