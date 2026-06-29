@@ -688,6 +688,20 @@ export default function App() {
     if (canUse) setAuthHydrating(false);
   }, [canUse]);
 
+  // Auto-detección de desbloqueo (producto B): mientras la cuenta esté bloqueada
+  // y el usuario haya pedido desbloqueo, sondear el estado cada 15s. Cuando un
+  // admin lo apruebe, `status` pasa a "must_reset" y la pantalla cambia sola a
+  // "Definí tu PIN nuevo" — sin que nadie tenga que avisarle a mano.
+  useEffect(() => {
+    if (canUse) return;
+    if (!unlockRequested) return;
+    if (authState?.state !== "locked") return;
+    if (!phone.trim()) return;
+    const id = setInterval(() => { refreshAuthStatus(phone); }, 15000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canUse, unlockRequested, authState?.state, phone]);
+
 
 
   async function onPinLogin() {

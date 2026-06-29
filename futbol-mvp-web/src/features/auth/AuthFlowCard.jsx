@@ -242,6 +242,7 @@ export default function AuthFlowCard({
               {unlockRequested ? (
                 <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
                   Solicitud enviada. Cuando un administrador la apruebe vas a poder definir un PIN nuevo.
+                  <span className="mt-1 block text-emerald-100/70">Dejá esta pantalla abierta: se actualiza sola.</span>
                 </div>
               ) : (
                 <button

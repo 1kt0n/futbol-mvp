@@ -1138,13 +1138,30 @@ function UnlockRequestsTab({ setToast, setErr }) {
     setActingId(id)
     try {
       await apiFetch(`/admin/unlock-requests/${id}/${action}`, { method: 'POST' })
-      setToast?.(action === 'approve' ? 'PIN desbloqueado' : 'Solicitud rechazada')
-      setItems((prev) => prev.filter((x) => x.id !== id))
+      if (action === 'approve') {
+        setToast?.('PIN desbloqueado')
+        // No quitamos la fila: la marcamos como aprobada para ofrecer avisar por WhatsApp.
+        setItems((prev) => prev.map((x) => (x.id === id ? { ...x, _approved: true } : x)))
+      } else {
+        setToast?.('Solicitud rechazada')
+        setItems((prev) => prev.filter((x) => x.id !== id))
+      }
     } catch (e) {
       setErr?.(e.message || 'No se pudo resolver la solicitud.')
     } finally {
       setActingId(null)
     }
+  }
+
+  function dismiss(id) {
+    setItems((prev) => prev.filter((x) => x.id !== id))
+  }
+
+  // Link click-to-chat de WhatsApp con el mensaje listo (producto A).
+  function waLink(r) {
+    const digits = String(r.phone || '').replace(/\D+/g, '')
+    const msg = `Hola ${r.full_name || ''}, ya te desbloqueamos el PIN en Tercer Tiempo FC. Entrá a la app y definí un PIN nuevo para ingresar. 🔓`
+    return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
   }
 
   if (loading) {
@@ -1173,27 +1190,51 @@ function UnlockRequestsTab({ setToast, setErr }) {
           <div>
             <div className="font-semibold text-white">{r.full_name || 'Sin nombre'}</div>
             <div className="text-sm text-white/50">{r.phone || 'Sin teléfono'}</div>
+            {r._approved && (
+              <div className="mt-1 text-xs font-semibold text-emerald-300">Desbloqueado ✅ — avisale que defina un PIN nuevo</div>
+            )}
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              data-testid="unlock-approve-btn"
-              onClick={() => resolve(r.id, 'approve')}
-              disabled={actingId === r.id}
-              className="focus-ring rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40"
-            >
-              {actingId === r.id ? '…' : 'Desbloquear pin'}
-            </button>
-            <button
-              type="button"
-              data-testid="unlock-deny-btn"
-              onClick={() => resolve(r.id, 'deny')}
-              disabled={actingId === r.id}
-              className="focus-ring rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10 disabled:opacity-40"
-            >
-              No desbloquear
-            </button>
-          </div>
+          {r._approved ? (
+            <div className="flex gap-2">
+              <a
+                href={waLink(r)}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="unlock-whatsapp-link"
+                className="focus-ring rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-emerald-400"
+              >
+                Avisar por WhatsApp
+              </a>
+              <button
+                type="button"
+                onClick={() => dismiss(r.id)}
+                className="focus-ring rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+              >
+                Listo
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="unlock-approve-btn"
+                onClick={() => resolve(r.id, 'approve')}
+                disabled={actingId === r.id}
+                className="focus-ring rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40"
+              >
+                {actingId === r.id ? '…' : 'Desbloquear pin'}
+              </button>
+              <button
+                type="button"
+                data-testid="unlock-deny-btn"
+                onClick={() => resolve(r.id, 'deny')}
+                disabled={actingId === r.id}
+                className="focus-ring rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10 disabled:opacity-40"
+              >
+                No desbloquear
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </div>
