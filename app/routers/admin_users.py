@@ -504,9 +504,9 @@ def approve_unlock_request(request_id: str, actor_user_id: str = Depends(get_act
             """), {"actor": actor_user_id, "id": request_id, "uid": target_user_id})
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("approve_unlock_request failed")
-        raise HTTPException(status_code=500, detail=f"DEBUG approve: {type(e).__name__}: {str(e)[:400]}")
+        raise HTTPException(status_code=500, detail="No se pudo aprobar el desbloqueo.")
 
     return {"message": "Desbloqueo aprobado. El usuario podrá definir un PIN nuevo."}
 
@@ -514,27 +514,35 @@ def approve_unlock_request(request_id: str, actor_user_id: str = Depends(get_act
 @router.post("/unlock-requests/{request_id}/deny")
 def deny_unlock_request(request_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     """Rechaza la solicitud de desbloqueo."""
-    with engine.begin() as conn:
-        require_permission(conn, actor_user_id, "users.unlock")
+    try:
+        with engine.begin() as conn:
+            require_permission(conn, actor_user_id, "users.unlock")
 
-        req = conn.execute(text("""
-            SELECT id, user_id FROM public.pin_unlock_requests
-            WHERE id = :id AND status = 'PENDING'
-            FOR UPDATE
-        """), {"id": request_id}).mappings().first()
-        if not req:
-            raise HTTPException(status_code=404, detail="Solicitud no encontrada o ya resuelta.")
+            req = conn.execute(text("""
+                SELECT id, user_id FROM public.pin_unlock_requests
+                WHERE id = CAST(:id AS uuid) AND status = 'PENDING'
+                FOR UPDATE
+            """), {"id": request_id}).mappings().first()
+            if not req:
+                raise HTTPException(status_code=404, detail="Solicitud no encontrada o ya resuelta.")
 
-        conn.execute(text("""
-            UPDATE public.pin_unlock_requests
-            SET status = 'DENIED', resolved_at = now(), resolved_by_user_id = :actor
-            WHERE id = :id
-        """), {"id": request_id, "actor": actor_user_id})
+            target_user_id = str(req["user_id"])
 
-        conn.execute(text("""
-            INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
-            VALUES (NULL, :actor, 'DENY_PIN_UNLOCK',
-                    jsonb_build_object('request_id', :id::text, 'user_id', :uid::text))
-        """), {"actor": actor_user_id, "id": request_id, "uid": str(req["user_id"])})
+            conn.execute(text("""
+                UPDATE public.pin_unlock_requests
+                SET status = 'DENIED', resolved_at = now(), resolved_by_user_id = CAST(:actor AS uuid)
+                WHERE id = CAST(:id AS uuid)
+            """), {"id": request_id, "actor": actor_user_id})
+
+            conn.execute(text("""
+                INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+                VALUES (NULL, CAST(:actor AS uuid), 'DENY_PIN_UNLOCK',
+                        jsonb_build_object('request_id', CAST(:id AS text), 'user_id', CAST(:uid AS text)))
+            """), {"actor": actor_user_id, "id": request_id, "uid": target_user_id})
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("deny_unlock_request failed")
+        raise HTTPException(status_code=500, detail="No se pudo rechazar la solicitud.")
 
     return {"message": "Solicitud rechazada."}
