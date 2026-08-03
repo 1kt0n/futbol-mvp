@@ -24,6 +24,14 @@ const CATEGORY_LABEL = {
   OTRO: "Otro",
 };
 
+const FIELD_LABEL = {
+  title: "título",
+  description: "descripción",
+  starts_at: "fecha",
+  location_name: "ubicación",
+  close_at: "cierre",
+};
+
 function actorOrSystem(log) {
   return <span className={bold()}>{log.actor?.name || "Sistema"}</span>;
 }
@@ -57,6 +65,26 @@ const TEMPLATES = {
     render: (log) => (
       <>{actorOrSystem(log)} finalizó el evento <span className={ital()}>{log.event?.title}</span></>
     ),
+  },
+  UPDATE_EVENT: {
+    icon: "✏️", tone: "info",
+    render: (log) => {
+      const fields = Array.isArray(log.metadata?.changed_fields)
+        ? log.metadata.changed_fields.map((f) => FIELD_LABEL[f] || f)
+        : [];
+      return (
+        <>
+          {actorOrSystem(log)} editó el evento{" "}
+          <span className={ital()}>{log.event?.title}</span>
+          {fields.length > 0 && (
+            <>
+              {" "}
+              (<span className={bold()}>{fields.join(", ")}</span>)
+            </>
+          )}
+        </>
+      );
+    },
   },
   UPDATE_EVENT_VISIBILITY: {
     icon: "🌐", tone: "info",

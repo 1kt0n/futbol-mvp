@@ -147,7 +147,7 @@ def get_my_calendar(
                 NULL::text AS tournament_name,
                 NULL::text AS team_id,
                 NULL::text AS team_name,
-                NULL::text AS description,
+                e.description AS description,
                 NULL::text AS action_url,
                 NULL::text AS action_label
             FROM public.event_registrations r
@@ -179,7 +179,7 @@ def get_my_calendar(
                 NULL::text AS tournament_name,
                 NULL::text AS team_id,
                 NULL::text AS team_name,
-                NULL::text AS description,
+                e.description AS description,
                 NULL::text AS action_url,
                 NULL::text AS action_label
             FROM public.events e
@@ -346,6 +346,7 @@ def get_my_calendar(
             event_id = r["source_id"]
             counts = counts_by_event.get(event_id) or {"capacity_total": 0, "occupied_total": 0}
             item["counts"] = counts
+            item["description"] = r["description"]
             item["is_global"] = (r["visibility"] == "GLOBAL")
 
             is_registered = bool(r["registration_id"])

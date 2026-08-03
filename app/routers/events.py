@@ -172,14 +172,14 @@ def get_active_event(
     with engine.connect() as conn:
         if event_id:
             event = conn.execute(text("""
-                select id, title, starts_at, location_name, status, close_at
+                select id, title, description, starts_at, location_name, status, close_at
                 from public.events
                 where id = :event_id
                   and status IN ('OPEN', 'CLOSED')
             """), {"event_id": event_id}).mappings().first()
         else:
             event = conn.execute(text("""
-                select id, title, starts_at, location_name, status, close_at
+                select id, title, description, starts_at, location_name, status, close_at
                 from public.events
                 where status IN ('OPEN', 'CLOSED')
                 order by starts_at desc
@@ -284,6 +284,7 @@ def get_active_event(
             "event": {
                 "id": str(event["id"]),
                 "title": event["title"],
+                "description": event["description"],
                 "starts_at": str(event["starts_at"]),
                 "location_name": event["location_name"],
                 "status": event["status"],

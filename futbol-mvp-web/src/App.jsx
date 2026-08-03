@@ -1433,6 +1433,14 @@ export default function App() {
                   <div className="truncate text-lg font-semibold text-white" data-testid="event-active-title">{event.title}</div>
                   <div className="mt-1 text-sm text-white/60">{event.location_name}</div>
                   <div className="mt-1 text-sm text-white/60">Empieza: {fmtStart(event.starts_at)}</div>
+                  {event.description && (
+                    <p
+                      className="mt-2 whitespace-pre-line text-sm text-white/70"
+                      data-testid="event-active-description"
+                    >
+                      {event.description}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2" data-testid="event-active-header">
                   <StatPill

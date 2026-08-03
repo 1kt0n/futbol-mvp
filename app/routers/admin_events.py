@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from app.settings import engine
 from app.schemas import (
     CreateEventRequest,
+    UpdateEventRequest,
     CreateCourtRequest,
     UpdateCourtRequest,
     AssignCaptainRequest,
@@ -17,6 +18,12 @@ from app.utils.datetime_parser import parse_client_datetime
 from app.utils.permissions import require_permission
 
 router = APIRouter()
+
+
+def _clean_description(value: str | None) -> str | None:
+    """Normaliza la descripcion: vacio/espacios -> NULL."""
+    cleaned = (value or "").strip()
+    return cleaned or None
 
 
 def _broadcast_global_event_to_bell(conn, event_title: str) -> None:
@@ -63,6 +70,7 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Depends(get_acto
         event = conn.execute(text("""
             INSERT INTO public.events (
                 title,
+                description,
                 starts_at,
                 location_name,
                 close_at,
@@ -74,6 +82,7 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Depends(get_acto
             )
             VALUES (
                 :title,
+                :description,
                 :starts_at,
                 :location_name,
                 :close_at,
@@ -83,9 +92,10 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Depends(get_acto
                 now(),
                 now()
             )
-            RETURNING id, title, starts_at, location_name, status, close_at, visibility
+            RETURNING id, title, description, starts_at, location_name, status, close_at, visibility
         """), {
             "title": body.title,
+            "description": _clean_description(body.description),
             "starts_at": starts_at_value,
             "location_name": body.location_name,
             "close_at": close_at_value,
@@ -113,6 +123,7 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Depends(get_acto
         return {
             "event_id": str(event["id"]),
             "title": event["title"],
+            "description": event["description"],
             "starts_at": str(event["starts_at"]),
             "location_name": event["location_name"],
             "status": event["status"],
@@ -120,6 +131,134 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Depends(get_acto
             "close_at": str(event["close_at"]) if event["close_at"] else None,
             "message": f"Evento '{event['title']}' creado exitosamente con estado OPEN."
         }
+
+
+@router.patch("/events/{event_id}")
+def update_event(
+    event_id: str,
+    body: UpdateEventRequest,
+    actor_user_id: str = Depends(get_actor_user_id),
+):
+    """
+    Edita los datos de un evento ya creado: titulo, descripcion, fecha, lugar y cierre.
+    Solo se modifican los campos presentes en el body (PATCH parcial).
+    No toca canchas, inscripciones ni visibilidad (esa tiene su propio endpoint).
+    """
+    sent = body.model_fields_set
+
+    with engine.connect() as conn:
+        require_permission(conn, actor_user_id, 'events.manage')
+
+        current = conn.execute(text("""
+            SELECT id, title, description, starts_at, location_name, close_at, status, visibility
+            FROM public.events
+            WHERE id = :event_id
+        """), {"event_id": event_id}).mappings().first()
+
+        if not current:
+            raise HTTPException(status_code=404, detail="Evento no encontrado.")
+
+    # Cada entrada: (columna, valor nuevo). Solo se incluyen los campos enviados.
+    incoming: list[tuple[str, object]] = []
+
+    if "title" in sent:
+        if not (body.title or "").strip():
+            raise HTTPException(status_code=400, detail="El titulo no puede quedar vacio.")
+        incoming.append(("title", body.title.strip()))
+
+    if "description" in sent:
+        incoming.append(("description", _clean_description(body.description)))
+
+    if "location_name" in sent:
+        if not (body.location_name or "").strip():
+            raise HTTPException(status_code=400, detail="La ubicacion no puede quedar vacia.")
+        incoming.append(("location_name", body.location_name.strip()))
+
+    if "starts_at" in sent:
+        if not (body.starts_at or "").strip():
+            raise HTTPException(status_code=400, detail="La fecha de inicio no puede quedar vacia.")
+        try:
+            incoming.append(("starts_at", parse_client_datetime(body.starts_at, "starts_at", required=True)))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if "close_at" in sent:
+        try:
+            incoming.append(("close_at", parse_client_datetime(body.close_at, "close_at")))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not incoming:
+        raise HTTPException(status_code=400, detail="No se especificaron campos para actualizar.")
+
+    # Solo tocamos (y auditamos) lo que realmente cambia: el form manda siempre
+    # todos los campos, y no queremos ensuciar la auditoria con no-ops.
+    updates = []
+    params: dict = {"event_id": event_id}
+    changes: dict = {}
+
+    for column, new_value in incoming:
+        old_value = current[column]
+        if new_value == old_value:
+            continue
+        updates.append(f"{column} = :{column}")
+        params[column] = new_value
+        changes[column] = {
+            "previous": str(old_value) if old_value is not None else None,
+            "next": str(new_value) if new_value is not None else None,
+        }
+
+    if not changes:
+        return {
+            "event_id": str(current["id"]),
+            "title": current["title"],
+            "description": current["description"],
+            "starts_at": str(current["starts_at"]),
+            "location_name": current["location_name"],
+            "status": current["status"],
+            "visibility": current["visibility"],
+            "close_at": str(current["close_at"]) if current["close_at"] else None,
+            "changed_fields": [],
+            "message": "No hubo cambios para guardar.",
+        }
+
+    updates.append("updated_at = now()")
+    update_sql = f"UPDATE public.events SET {', '.join(updates)} WHERE id = :event_id"
+
+    with engine.begin() as conn:
+        updated = conn.execute(
+            text(update_sql + " RETURNING id, title, description, starts_at, location_name, status, close_at, visibility"),
+            params,
+        ).mappings().first()
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (
+                event_id, actor_user_id, action, metadata
+            )
+            VALUES (
+                :event_id, :actor_user_id, 'UPDATE_EVENT', CAST(:metadata AS jsonb)
+            )
+        """), {
+            "event_id": event_id,
+            "actor_user_id": actor_user_id,
+            "metadata": json.dumps({
+                "changed_fields": sorted(changes.keys()),
+                "changes": changes,
+            }),
+        })
+
+    return {
+        "event_id": str(updated["id"]),
+        "title": updated["title"],
+        "description": updated["description"],
+        "starts_at": str(updated["starts_at"]),
+        "location_name": updated["location_name"],
+        "status": updated["status"],
+        "visibility": updated["visibility"],
+        "close_at": str(updated["close_at"]) if updated["close_at"] else None,
+        "changed_fields": sorted(changes.keys()),
+        "message": "Evento actualizado exitosamente.",
+    }
 
 
 @router.patch("/events/{event_id}/visibility")
@@ -789,7 +928,7 @@ def get_event_detail(
         require_permission(conn, actor_user_id, 'events.view')
 
         event = conn.execute(text("""
-            SELECT id, title, starts_at, location_name, status, close_at, visibility
+            SELECT id, title, description, starts_at, location_name, status, close_at, visibility
             FROM public.events
             WHERE id = :event_id
         """), {"event_id": event_id}).mappings().first()
@@ -881,6 +1020,7 @@ def get_event_detail(
             "event": {
                 "id": str(event["id"]),
                 "title": event["title"],
+                "description": event["description"],
                 "starts_at": str(event["starts_at"]),
                 "location_name": event["location_name"],
                 "status": event["status"],
@@ -919,7 +1059,7 @@ def list_events(
         where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
 
         query = f"""
-            SELECT id, title, starts_at, location_name, status, visibility, close_at, created_at
+            SELECT id, title, description, starts_at, location_name, status, visibility, close_at, created_at
             FROM public.events
             {where_clause}
             ORDER BY starts_at DESC
@@ -933,6 +1073,7 @@ def list_events(
                 {
                     "id": str(e["id"]),
                     "title": e["title"],
+                    "description": e["description"],
                     "starts_at": str(e["starts_at"]),
                     "location_name": e["location_name"],
                     "status": e["status"],

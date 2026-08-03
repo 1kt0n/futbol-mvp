@@ -43,6 +43,7 @@ EventVisibility = Literal["PRIVATE", "GLOBAL"]
 
 class CreateEventRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=120)
+    description: str | None = Field(None, max_length=1200)
     starts_at: str = Field(..., description="ISO 8601 timestamp")
     location_name: str = Field(..., min_length=2, max_length=120)
     close_at: str | None = Field(None, description="ISO 8601 timestamp opcional")
@@ -50,6 +51,18 @@ class CreateEventRequest(BaseModel):
         default="PRIVATE",
         description="PRIVATE: solo aparece para los anotados. GLOBAL: aparece en el calendario de todos.",
     )
+
+
+class UpdateEventRequest(BaseModel):
+    """
+    Edicion de un evento ya creado. Solo se tocan los campos presentes en el body:
+    mandar `description: null` o `close_at: null` los limpia, omitirlos los deja igual.
+    """
+    title: str | None = Field(None, min_length=3, max_length=120)
+    description: str | None = Field(None, max_length=1200)
+    starts_at: str | None = Field(None, description="ISO 8601 timestamp")
+    location_name: str | None = Field(None, min_length=2, max_length=120)
+    close_at: str | None = Field(None, description="ISO 8601 timestamp opcional")
 
 
 class UpdateEventVisibilityRequest(BaseModel):

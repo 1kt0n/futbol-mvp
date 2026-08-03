@@ -27,6 +27,16 @@ function localDateTimeToIso(value) {
   return date.toISOString()
 }
 
+// Inverso de localDateTimeToIso: llena un <input type="datetime-local"> con hora local.
+function isoToLocalDateTime(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 // Modal genérico reutilizable
 function Modal({ isOpen, onClose, title, children }) {
   if (!isOpen) return null
@@ -69,6 +79,7 @@ export default function AdminPanel() {
   const [eventsList, setEventsList] = useState([])
   const [activeEvent, setActiveEvent] = useState(null)
   const [showCreateEvent, setShowCreateEvent] = useState(false)
+  const [showEditEvent, setShowEditEvent] = useState(false)
   const [showCreateCourt, setShowCreateCourt] = useState(false)
   const [showEditCourt, setShowEditCourt] = useState(false)
   const [selectedEventId, setSelectedEventId] = useState(null)
@@ -192,6 +203,37 @@ export default function AdminPanel() {
       })
       setToast('Evento creado exitosamente')
       setShowCreateEvent(false)
+      await loadEvents()
+    } catch (err) {
+      setErr(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Handler: Editar evento (titulo, descripcion, fecha, lugar y cierre)
+  async function handleUpdateEvent(eventId, formData) {
+    setBusy(true)
+    try {
+      const startsAtIso = localDateTimeToIso(formData.starts_at)
+      if (!startsAtIso) {
+        setErr('La fecha de inicio no es válida.')
+        return
+      }
+      // Mandamos siempre los 5 campos: null en description/close_at los limpia.
+      const payload = {
+        title: formData.title.trim(),
+        description: formData.description?.trim() || null,
+        location_name: formData.location_name.trim(),
+        starts_at: startsAtIso,
+        close_at: localDateTimeToIso(formData.close_at),
+      }
+      await apiFetch(`/admin/events/${eventId}`, {
+        method: 'PATCH',
+        body: payload,
+      })
+      setToast('Evento actualizado')
+      setShowEditEvent(false)
       await loadEvents()
     } catch (err) {
       setErr(err.message)
@@ -528,6 +570,7 @@ export default function AdminPanel() {
                 canManageCourts: has('courts.manage'),
               }}
               onCreateEvent={() => setShowCreateEvent(true)}
+              onEditEvent={() => setShowEditEvent(true)}
               onCloseEvent={handleCloseEvent}
               onReopenEvent={handleReopenEvent}
               onFinalizeEvent={handleFinalizeEvent}
@@ -591,7 +634,19 @@ export default function AdminPanel() {
 
         {/* Modals */}
         <Modal isOpen={showCreateEvent} onClose={() => setShowCreateEvent(false)} title="Crear Evento">
-          <CreateEventForm onSubmit={handleCreateEvent} busy={busy} />
+          <EventForm onSubmit={handleCreateEvent} busy={busy} />
+        </Modal>
+
+        <Modal isOpen={showEditEvent} onClose={() => setShowEditEvent(false)} title="Editar Evento">
+          <EventForm
+            key={activeEvent?.event?.id || 'edit-event'}
+            onSubmit={(data) => handleUpdateEvent(activeEvent?.event?.id, data)}
+            busy={busy}
+            initialData={activeEvent?.event || null}
+            submitLabel="Guardar cambios"
+            busyLabel="Guardando..."
+            testIdPrefix="admin-edit-event"
+          />
         </Modal>
 
         <Modal isOpen={showCreateCourt} onClose={() => setShowCreateCourt(false)} title="Crear Cancha">
@@ -695,6 +750,7 @@ function EventosTab({
   busy,
   perms,
   onCreateEvent,
+  onEditEvent,
   onCloseEvent,
   onReopenEvent,
   onFinalizeEvent,
@@ -739,6 +795,15 @@ function EventosTab({
         )}
         {event && (
           <>
+            {perms.canManageEvent && (
+              <button
+                onClick={onEditEvent}
+                data-testid="admin-event-edit-btn"
+                className="rounded-xl border border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 px-4 py-2 font-semibold"
+              >
+                ✏️ Editar Evento
+              </button>
+            )}
             {perms.canManageCourts && (
               <button
                 onClick={onCreateCourt}
@@ -842,6 +907,19 @@ function EventosTab({
               <p className="text-white/50 text-sm mt-1">
                 Inicia: {new Date(event.starts_at).toLocaleString()}
               </p>
+              {event.close_at && (
+                <p className="text-white/50 text-sm mt-1">
+                  Cierra inscripciones: {new Date(event.close_at).toLocaleString()}
+                </p>
+              )}
+              {event.description && (
+                <p
+                  className="mt-3 max-w-prose whitespace-pre-line text-sm text-white/70"
+                  data-testid="admin-event-active-description"
+                >
+                  {event.description}
+                </p>
+              )}
             </div>
             <div className="flex flex-col items-end gap-2">
               {getStatusBadge(event.status)}
@@ -1599,13 +1677,30 @@ function NotificationsTab() {
 
 // ==================== FORM COMPONENTS ====================
 
-function CreateEventForm({ onSubmit, busy }) {
-  const [formData, setFormData] = useState({
-    title: '',
-    starts_at: '',
-    location_name: '',
-    visibility: 'PRIVATE',
-  })
+function eventFormValues(event) {
+  return {
+    title: event?.title || '',
+    description: event?.description || '',
+    starts_at: isoToLocalDateTime(event?.starts_at),
+    location_name: event?.location_name || '',
+    close_at: isoToLocalDateTime(event?.close_at),
+    visibility: event?.visibility || 'PRIVATE',
+  }
+}
+
+// Formulario compartido para crear y editar eventos.
+// En modo edición la visibilidad no se toca acá (tiene su propio toggle en el detalle).
+function EventForm({
+  onSubmit,
+  busy,
+  initialData = null,
+  submitLabel = 'Crear Evento',
+  busyLabel = 'Creando...',
+  testIdPrefix = 'admin-create-event',
+}) {
+  const isEdit = Boolean(initialData)
+  // El modal desmonta el form al cerrarse, asi que alcanza con inicializar el estado.
+  const [formData, setFormData] = useState(() => eventFormValues(initialData))
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -1620,10 +1715,29 @@ function CreateEventForm({ onSubmit, busy }) {
           type="text"
           value={formData.title}
           onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          data-testid="admin-create-event-title-input"
+          data-testid={`${testIdPrefix}-title-input`}
           required
+          minLength={3}
+          maxLength={120}
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          Descripción <span className="font-normal text-white/40">(opcional)</span>
+        </label>
+        <textarea
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          data-testid={`${testIdPrefix}-description-input`}
+          rows={3}
+          maxLength={1200}
+          placeholder="Detalles del partido: qué llevar, cómo se arman los equipos, etc."
+          className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+        />
+        <p className="mt-1 text-xs text-white/40">
+          Se muestra en el detalle del evento y en "Mi Calendario".
+        </p>
       </div>
       <div>
         <label className="block text-sm font-semibold mb-2">Fecha/Hora de inicio</label>
@@ -1631,7 +1745,7 @@ function CreateEventForm({ onSubmit, busy }) {
           type="datetime-local"
           value={formData.starts_at}
           onChange={(e) => setFormData({ ...formData, starts_at: e.target.value })}
-          data-testid="admin-create-event-starts-at-input"
+          data-testid={`${testIdPrefix}-starts-at-input`}
           required
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
@@ -1642,33 +1756,49 @@ function CreateEventForm({ onSubmit, busy }) {
           type="text"
           value={formData.location_name}
           onChange={(e) => setFormData({ ...formData, location_name: e.target.value })}
-          data-testid="admin-create-event-location-input"
+          data-testid={`${testIdPrefix}-location-input`}
           required
+          minLength={2}
+          maxLength={120}
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
       </div>
-      <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3 cursor-pointer">
+      <div>
+        <label className="block text-sm font-semibold mb-2">
+          Cierre de inscripciones <span className="font-normal text-white/40">(opcional)</span>
+        </label>
         <input
-          type="checkbox"
-          checked={formData.visibility === 'GLOBAL'}
-          onChange={(e) => setFormData({ ...formData, visibility: e.target.checked ? 'GLOBAL' : 'PRIVATE' })}
-          data-testid="admin-create-event-visibility-input"
-          className="mt-1 h-4 w-4"
+          type="datetime-local"
+          value={formData.close_at}
+          onChange={(e) => setFormData({ ...formData, close_at: e.target.value })}
+          data-testid={`${testIdPrefix}-close-at-input`}
+          className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
-        <span className="text-sm text-white/80">
-          <span className="font-semibold">Mostrar en el calendario de todos</span>
-          <span className="block text-xs text-white/50 mt-0.5">
-            Aparecera en "Mi Calendario" de todos los jugadores con boton para anotarse.
+      </div>
+      {!isEdit && (
+        <label className="flex items-start gap-3 rounded-xl border border-white/10 bg-black/20 px-4 py-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formData.visibility === 'GLOBAL'}
+            onChange={(e) => setFormData({ ...formData, visibility: e.target.checked ? 'GLOBAL' : 'PRIVATE' })}
+            data-testid={`${testIdPrefix}-visibility-input`}
+            className="mt-1 h-4 w-4"
+          />
+          <span className="text-sm text-white/80">
+            <span className="font-semibold">Mostrar en el calendario de todos</span>
+            <span className="block text-xs text-white/50 mt-0.5">
+              Aparecera en "Mi Calendario" de todos los jugadores con boton para anotarse.
+            </span>
           </span>
-        </span>
-      </label>
+        </label>
+      )}
       <button
         type="submit"
         disabled={busy}
-        data-testid="admin-create-event-submit-btn"
+        data-testid={`${testIdPrefix}-submit-btn`}
         className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
       >
-        {busy ? 'Creando...' : 'Crear Evento'}
+        {busy ? busyLabel : submitLabel}
       </button>
     </form>
   )
