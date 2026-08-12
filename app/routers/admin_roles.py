@@ -137,7 +137,7 @@ def create_role(body: CreateRoleRequest, actor_user_id: str = Depends(get_actor_
 
         _set_role_permissions(conn, role["id"], body.permissions)
         _audit(conn, actor_user_id, "CREATE_ROLE",
-               "jsonb_build_object('role_id', :role_id::text, 'code', :code::text)",
+               "jsonb_build_object('role_id', CAST(:role_id AS text), 'code', CAST(:code AS text))",
                {"role_id": role["id"], "code": code})
 
     return {"id": role["id"], "code": code, "message": "Rol creado."}
@@ -170,7 +170,7 @@ def update_role(role_id: str, body: UpdateRoleRequest, actor_user_id: str = Depe
             _set_role_permissions(conn, role_id, body.permissions)
 
         _audit(conn, actor_user_id, "UPDATE_ROLE",
-               "jsonb_build_object('role_id', :role_id::text)", {"role_id": role_id})
+               "jsonb_build_object('role_id', CAST(:role_id AS text))", {"role_id": role_id})
 
     return {"id": role_id, "message": "Rol actualizado."}
 
@@ -196,7 +196,7 @@ def delete_role(role_id: str, actor_user_id: str = Depends(get_actor_user_id)):
         conn.execute(text("DELETE FROM public.roles WHERE id::text = :id"), {"id": role_id})
 
         _audit(conn, actor_user_id, "DELETE_ROLE",
-               "jsonb_build_object('role_id', :role_id::text, 'code', :code::text)",
+               "jsonb_build_object('role_id', CAST(:role_id AS text), 'code', CAST(:code AS text))",
                {"role_id": role_id, "code": role["code"]})
 
     return {"id": role_id, "message": "Rol eliminado."}

@@ -83,7 +83,7 @@ def check_and_auto_close_court(event_id: str, court_id: str, actor_user_id: str)
             conn.execute(text("""
                 INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
                 VALUES (:event_id, :actor_user_id, 'AUTO_CLOSE_COURT',
-                        jsonb_build_object('court_id', :court_id::text, 'reason', 'capacity_reached'))
+                        jsonb_build_object('court_id', CAST(:court_id AS text), 'reason', 'capacity_reached'))
             """), {
                 "event_id": event_id,
                 "actor_user_id": actor_user_id,
@@ -754,7 +754,7 @@ def move_registration(
             )
             values (
               :event_id, :actor_user_id, 'MOVE_REGISTRATION', :target_registration_id,
-              jsonb_build_object('from_court_id', :from_court_id::text, 'to_court_id', :to_court_id::text)
+              jsonb_build_object('from_court_id', CAST(:from_court_id AS text), 'to_court_id', CAST(:to_court_id AS text))
             )
         """), {
             "event_id": event_id,

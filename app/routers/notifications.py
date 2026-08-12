@@ -272,7 +272,7 @@ def create_notification(
                     :actor_user_id,
                     'CREATE_NOTIFICATION',
                     jsonb_build_object(
-                        'notification_id', :notification_id::text,
+                        'notification_id', CAST(:notification_id AS text),
                         'expires_in_days', :expires_in_days
                     )
                 )
@@ -329,7 +329,7 @@ def deactivate_notification(
                     NULL,
                     :actor_user_id,
                     'DEACTIVATE_NOTIFICATION',
-                    jsonb_build_object('notification_id', :notification_id::text)
+                    jsonb_build_object('notification_id', CAST(:notification_id AS text))
                 )
             """), {
                 "actor_user_id": actor_user_id,
