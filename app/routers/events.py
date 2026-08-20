@@ -210,9 +210,11 @@ def get_active_event(
               r.guest_name,
               u.full_name as user_full_name,
               u.avatar_url as user_avatar_url,
-              u.player_level as user_player_level
+              u.player_level as user_player_level,
+              cb.full_name as created_by_full_name
             from public.event_registrations r
             left join public.users u on u.id = r.user_id
+            left join public.users cb on cb.id = r.created_by_user_id
             where r.event_id = :event_id
               and r.status = 'CONFIRMED'
               and r.court_id is not null
@@ -230,9 +232,11 @@ def get_active_event(
               r.guest_name,
               u.full_name as user_full_name,
               u.avatar_url as user_avatar_url,
-              u.player_level as user_player_level
+              u.player_level as user_player_level,
+              cb.full_name as created_by_full_name
             from public.event_registrations r
             left join public.users u on u.id = r.user_id
+            left join public.users cb on cb.id = r.created_by_user_id
             where r.event_id = :event_id
               and r.status = 'WAITLIST'
               and r.court_id is null
@@ -250,6 +254,7 @@ def get_active_event(
                 "player_level": r["user_player_level"] if r["registration_type"] == "USER" else None,
                 "created_at": str(r["created_at"]),
                 "created_by_user_id": str(r["created_by_user_id"]),
+                "created_by_name": r["created_by_full_name"],
             })
 
         courts_payload = []
@@ -278,6 +283,7 @@ def get_active_event(
             "player_level": r["user_player_level"] if r["registration_type"] == "USER" else None,
             "created_at": str(r["created_at"]),
             "created_by_user_id": str(r["created_by_user_id"]),
+            "created_by_name": r["created_by_full_name"],
         } for r in waitlist]
 
         return {
@@ -335,10 +341,13 @@ def get_player_cards(
               r.created_at,
               u.full_name          AS user_full_name,
               u.player_level       AS user_player_level,
-              u.ranking_opt_in     AS target_opt_in
+              u.ranking_opt_in     AS target_opt_in,
+              cb.full_name         AS created_by_full_name
             FROM public.event_registrations r
             LEFT JOIN public.users u
               ON u.id = r.user_id
+            LEFT JOIN public.users cb
+              ON cb.id = r.created_by_user_id
             WHERE r.event_id = :event_id
               AND r.court_id = :court_id
               AND r.status = 'CONFIRMED'
@@ -359,6 +368,7 @@ def get_player_cards(
                     "registration_id": registration_id,
                     "subject_type": "GUEST",
                     "guest_name": row["guest_name"],
+                    "invited_by_name": row["created_by_full_name"],
                     "participates": False,
                     "reason": "GUEST",
                 })

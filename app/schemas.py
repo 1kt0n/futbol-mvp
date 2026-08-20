@@ -185,6 +185,7 @@ class PlayerCardItem(BaseModel):
     user_id: str | None = None
     full_name: str | None = None
     guest_name: str | None = None
+    invited_by_name: str | None = Field(None, description="Nombre completo de quien anoto al invitado")
     player_level: Literal["INICIAL", "RECREATIVO", "COMPETITIVO"] | None = None
     participates: bool
     reason: Literal["VIEWER_OPT_OUT", "TARGET_OPT_OUT", "GUEST"] | None = None

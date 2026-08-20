@@ -742,6 +742,19 @@ export default function AdminPanel() {
 
 // ==================== TAB COMPONENTS ====================
 
+// Mismo criterio que en la app: un invitado siempre se muestra con quien lo anoto.
+function InvitedByChip({ name }) {
+  return (
+    <span
+      className="ml-1 inline-flex max-w-full items-center gap-1 rounded-full border border-sky-400/25 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-200 align-middle"
+      title={name ? `Invitado de ${name}` : 'Invitado'}
+    >
+      <span className="opacity-60">Invitado de</span>
+      <span className="truncate">{name || 'alguien sin registrar'}</span>
+    </span>
+  )
+}
+
 function EventosTab({
   eventsList,
   selectedEventId,
@@ -1012,7 +1025,10 @@ function EventosTab({
                   <div className="mt-3 space-y-1 max-h-40 overflow-y-auto">
                     {court.players.slice(0, 5).map((p, i) => (
                       <div key={i} className="text-xs text-white/50">
-                        {p.name} ({p.type})
+                        {p.name}
+                        {p.type === 'GUEST'
+                          ? <InvitedByChip name={p.created_by_name} />
+                          : ' (USER)'}
                       </div>
                     ))}
                     {court.players.length > 5 && (
@@ -1033,7 +1049,10 @@ function EventosTab({
               <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4">
                 {waitlist.slice(0, 10).map((w, i) => (
                   <div key={i} className="text-sm text-white/70">
-                    {w.name} ({w.type})
+                    {w.name}
+                    {w.type === 'GUEST'
+                      ? <InvitedByChip name={w.created_by_name} />
+                      : ' (USER)'}
                   </div>
                 ))}
                 {waitlist.length > 10 && (

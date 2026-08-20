@@ -953,9 +953,11 @@ def get_event_detail(
               r.created_by_user_id,
               r.user_id,
               r.guest_name,
-              u.full_name AS user_full_name
+              u.full_name AS user_full_name,
+              cb.full_name AS created_by_full_name
             FROM public.event_registrations r
             LEFT JOIN public.users u ON u.id = r.user_id
+            LEFT JOIN public.users cb ON cb.id = r.created_by_user_id
             WHERE r.event_id = :event_id
               AND r.status = 'CONFIRMED'
               AND r.court_id IS NOT NULL
@@ -971,9 +973,11 @@ def get_event_detail(
               r.created_by_user_id,
               r.user_id,
               r.guest_name,
-              u.full_name AS user_full_name
+              u.full_name AS user_full_name,
+              cb.full_name AS created_by_full_name
             FROM public.event_registrations r
             LEFT JOIN public.users u ON u.id = r.user_id
+            LEFT JOIN public.users cb ON cb.id = r.created_by_user_id
             WHERE r.event_id = :event_id
               AND r.status = 'WAITLIST'
               AND r.court_id IS NULL
@@ -988,6 +992,7 @@ def get_event_detail(
                 "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
                 "created_at": str(r["created_at"]),
                 "created_by_user_id": str(r["created_by_user_id"]),
+                "created_by_name": r["created_by_full_name"],
             })
 
         courts_payload = []
@@ -1014,6 +1019,7 @@ def get_event_detail(
             "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
             "created_at": str(r["created_at"]),
             "created_by_user_id": str(r["created_by_user_id"]),
+            "created_by_name": r["created_by_full_name"],
         } for r in waitlist]
 
         return {

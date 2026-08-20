@@ -278,9 +278,11 @@ function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardDa
           <div>
             <div className="text-base font-semibold text-white">{name}</div>
             {isGuest ? (
-              <span className="mt-1 inline-flex rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-semibold text-white/80">
-                Invitado
-              </span>
+              <InvitedByChip
+                name={cardData?.invited_by_name || selectedPlayer?.created_by_name}
+                className="mt-1 text-[11px]"
+                data-testid="player-card-invited-by"
+              />
             ) : level ? (
               <span className={cn(
                 "mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold",
@@ -381,6 +383,25 @@ function SkeletonCourtCard() {
 }
 
 // ── Individual avatar slot ─────────────────────────────────────────────────
+// Chip que identifica a un invitado con quien lo anotó.
+// El problema que resuelve: sin esto un invitado es solo un nombre suelto y nadie
+// sabe de quién viene.
+function InvitedByChip({ name, className, ...rest }) {
+  return (
+    <span
+      {...rest}
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 rounded-full border border-sky-400/25 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-200",
+        className
+      )}
+      title={name ? `Invitado de ${name}` : "Invitado"}
+    >
+      <span className="shrink-0 opacity-60">Invitado de</span>
+      <span className="truncate">{name || "alguien sin registrar"}</span>
+    </span>
+  );
+}
+
 function AvatarSlot({ player, canRegister, courtId, isFirstEmpty, isAdmin, dragRef, onRegisterSelf, onPlayerClick }) {
   if (player) {
     const ringClass = LEVEL_RING[player.player_level] || "ring-1 ring-white/15";
@@ -394,7 +415,11 @@ function AvatarSlot({ player, canRegister, courtId, isFirstEmpty, isAdmin, dragR
         draggable={isAdmin}
         onDragStart={isAdmin ? () => { dragRef.current = { regId: player.registration_id, fromCourtId: courtId }; } : undefined}
         onClick={() => onPlayerClick?.(courtId, player)}
-        title={player.name}
+        title={
+          player.type === "GUEST"
+            ? `${player.name} — invitado de ${player.created_by_name || "alguien sin registrar"}`
+            : player.name
+        }
       >
         {player.avatar_url ? (
           <img src={player.avatar_url} alt={player.name} className="w-full h-full object-cover" />
@@ -539,15 +564,21 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
               className="flex items-center gap-2 rounded-xl border border-white/5 bg-black/10 px-2.5 py-1.5 cursor-pointer hover:bg-black/20 transition-colors"
               onClick={() => onPlayerClick?.(court.court_id, p)}
             >
-              <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                <span className="text-xs text-white/70 truncate">{p.name}</span>
-                {p.type === "USER" && p.player_level && (
-                  <span className="shrink-0 text-[10px] text-white/35">
-                    {PLAYER_LEVEL_LABELS[p.player_level] || p.player_level}
-                  </span>
-                )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-white/70 truncate">{p.name}</span>
+                  {p.type === "USER" && p.player_level && (
+                    <span className="shrink-0 text-[10px] text-white/35">
+                      {PLAYER_LEVEL_LABELS[p.player_level] || p.player_level}
+                    </span>
+                  )}
+                </div>
                 {p.type === "GUEST" && (
-                  <span className="shrink-0 text-[10px] text-white/35">Invitado</span>
+                  <InvitedByChip
+                    name={p.created_by_name}
+                    className="mt-1"
+                    data-testid={`player-invited-by-${p.registration_id}`}
+                  />
                 )}
               </div>
               <select
