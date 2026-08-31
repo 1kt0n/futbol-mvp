@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
@@ -123,6 +125,56 @@ def check_and_auto_close_court(event_id: str, court_id: str, actor_user_id: str)
                 INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
                 VALUES (:event_id, :actor_user_id, 'AUTO_CLOSE_EVENT', '{"reason": "all_courts_closed_or_full"}'::jsonb)
             """), {"event_id": event_id, "actor_user_id": actor_user_id})
+
+
+def promote_first_waitlist(conn, event_id, freed_court_id, actor_user_id, source="auto"):
+    """
+    Promueve la primera inscripción en WAITLIST a la cancha liberada, si hay cupo.
+    Devuelve el id promovido o None. Debe llamarse dentro de una transacción.
+    Reusa la regla de orden actual (created_at asc). actor_user_id puede ser None
+    (acciones del sistema, p.ej. cancelación de un externo).
+    """
+    if not freed_court_id:
+        return None
+
+    wait = conn.execute(text("""
+        select id from public.event_registrations
+        where event_id = :event_id and status = 'WAITLIST' and court_id is null
+        order by created_at asc limit 1 for update
+    """), {"event_id": event_id}).mappings().first()
+    if not wait:
+        return None
+
+    court = conn.execute(text("""
+        select capacity, is_open from public.event_courts
+        where id = :court_id and event_id = :event_id for update
+    """), {"court_id": freed_court_id, "event_id": event_id}).mappings().first()
+    if not court or not court["is_open"]:
+        return None
+
+    occupied = conn.execute(text("""
+        select count(*)::int as cnt from public.event_registrations
+        where event_id = :event_id and court_id = :court_id and status = 'CONFIRMED'
+    """), {"event_id": event_id, "court_id": freed_court_id}).mappings().first()["cnt"]
+    if occupied >= court["capacity"]:
+        return None
+
+    conn.execute(text("""
+        update public.event_registrations
+        set status = 'CONFIRMED', court_id = :court_id, updated_at = now()
+        where id = :wait_id
+    """), {"court_id": freed_court_id, "wait_id": wait["id"]})
+
+    conn.execute(text("""
+        insert into public.event_audit_log (event_id, actor_user_id, action, target_registration_id, metadata)
+        values (:event_id, :actor_user_id, 'PROMOTE_WAITLIST', :target_registration_id, CAST(:metadata AS jsonb))
+    """), {
+        "event_id": event_id,
+        "actor_user_id": actor_user_id,
+        "target_registration_id": wait["id"],
+        "metadata": json.dumps({"source": source}),
+    })
+    return wait["id"]
 
 
 # =========================
@@ -253,7 +305,7 @@ def get_active_event(
                 "avatar_url": r["user_avatar_url"] if r["registration_type"] == "USER" else None,
                 "player_level": r["user_player_level"] if r["registration_type"] == "USER" else None,
                 "created_at": str(r["created_at"]),
-                "created_by_user_id": str(r["created_by_user_id"]),
+                "created_by_user_id": str(r["created_by_user_id"]) if r["created_by_user_id"] else None,
                 "created_by_name": r["created_by_full_name"],
             })
 
@@ -282,7 +334,7 @@ def get_active_event(
             "avatar_url": r["user_avatar_url"] if r["registration_type"] == "USER" else None,
             "player_level": r["user_player_level"] if r["registration_type"] == "USER" else None,
             "created_at": str(r["created_at"]),
-            "created_by_user_id": str(r["created_by_user_id"]),
+            "created_by_user_id": str(r["created_by_user_id"]) if r["created_by_user_id"] else None,
             "created_by_name": r["created_by_full_name"],
         } for r in waitlist]
 

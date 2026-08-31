@@ -84,10 +84,20 @@ class UpdateEventAccessRequest(BaseModel):
     access_mode: EventAccessMode
     public_roster_visibility: RosterVisibility | None = None
     password: EventPasswordAction | None = None
+    allow_external_registration: bool | None = None
 
 
 class EventUnlockRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=200)
+
+
+class ExternalRegisterRequest(BaseModel):
+    """Alta de participante externo (sin cuenta) desde la landing pública."""
+    display_name: str = Field(..., min_length=2, max_length=60)
+    contact: str = Field(..., min_length=6, max_length=30, description="WhatsApp/teléfono")
+    court_id: str = Field(..., description="UUID de la cancha elegida")
+    position: str | None = Field(None, max_length=30)
+    privacy_accepted: bool = Field(..., description="Debe ser true")
 
 
 class CreateCourtRequest(BaseModel):

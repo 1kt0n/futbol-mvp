@@ -14,6 +14,7 @@ from app.settings import (
     engine,
     EVENT_ACCESS_ENABLED,
     EVENT_PASSWORDS_ENABLED,
+    EXTERNAL_REGISTRATION_ENABLED,
 )
 from app.utils.auth_token import verify_token
 from app.utils.ratelimit import client_ip
@@ -113,6 +114,7 @@ def app_config():
     return {
         "eventAccessEnabled": EVENT_ACCESS_ENABLED,
         "eventPasswordsEnabled": EVENT_PASSWORDS_ENABLED,
+        "externalRegistrationEnabled": EXTERNAL_REGISTRATION_ENABLED,
     }
 
 

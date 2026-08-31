@@ -5,7 +5,12 @@ from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from app.settings import engine, EVENT_ACCESS_ENABLED, EVENT_PASSWORDS_ENABLED
+from app.settings import (
+    engine,
+    EVENT_ACCESS_ENABLED,
+    EVENT_PASSWORDS_ENABLED,
+    EXTERNAL_REGISTRATION_ENABLED,
+)
 from app.schemas import (
     CreateEventRequest,
     UpdateEventRequest,
@@ -22,7 +27,10 @@ from app.utils.security import (
     gen_salt,
     hash_event_password,
     assert_event_password,
+    gen_management_token,
+    hash_management_token,
 )
+from app.utils.contact_crypto import decrypt_contact
 
 router = APIRouter()
 
@@ -416,7 +424,16 @@ def update_event_access(
             share_code = gen_share_code()
             generated = True
 
-        # allow_external_registration queda forzado en false en v1 (Iteración 2).
+        # allow_external solo si el flag global está activo y el modo tiene enlace.
+        requested_ext = (
+            body.allow_external_registration
+            if body.allow_external_registration is not None
+            else current["allow_external_registration"]
+        )
+        new_allow_external = bool(
+            requested_ext and EXTERNAL_REGISTRATION_ENABLED
+            and new_mode in ("LINK_ACCESS", "LINK_PASSWORD")
+        )
         conn.execute(text("""
             UPDATE public.events
             SET access_mode = :access_mode,
@@ -425,7 +442,7 @@ def update_event_access(
                 password_hash = :password_hash,
                 password_salt = :password_salt,
                 password_version = :password_version,
-                allow_external_registration = false,
+                allow_external_registration = :allow_external,
                 updated_at = now()
             WHERE id = :event_id
         """), {
@@ -435,6 +452,7 @@ def update_event_access(
             "password_hash": password_hash,
             "password_salt": password_salt,
             "password_version": password_version,
+            "allow_external": new_allow_external,
             "event_id": event_id,
         })
 
@@ -504,6 +522,54 @@ def rotate_share_code(event_id: str, actor_user_id: str = Depends(get_actor_user
     payload = _access_payload(fresh)
     payload["message"] = "Link de compartir rotado. El anterior ya no funciona."
     return payload
+
+
+@router.post("/events/{event_id}/participants/{registration_id}/rotate-management-token")
+def rotate_management_token(
+    event_id: str,
+    registration_id: str,
+    actor_user_id: str = Depends(get_actor_user_id),
+):
+    """
+    Rota el token de gestión de un participante externo (ante exposición del link).
+    Devuelve el nuevo link de gestión una sola vez.
+    """
+    with engine.connect() as conn:
+        require_permission(conn, actor_user_id, 'events.manage')
+
+    new_token = gen_management_token()
+    with engine.begin() as conn:
+        reg = conn.execute(text("""
+            SELECT id, registration_type FROM public.event_registrations
+            WHERE id = :rid AND event_id = :eid FOR UPDATE
+        """), {"rid": registration_id, "eid": event_id}).mappings().first()
+
+        if not reg or reg["registration_type"] != 'EXTERNAL':
+            raise HTTPException(status_code=404, detail="Participante externo no encontrado.")
+
+        conn.execute(text("""
+            UPDATE public.event_registrations
+            SET management_token_hash = :h,
+                management_token_expires_at = GREATEST(now(),
+                    (SELECT starts_at FROM public.events WHERE id = :eid)) + interval '7 days',
+                updated_at = now()
+            WHERE id = :rid
+        """), {"h": hash_management_token(new_token), "rid": registration_id, "eid": event_id})
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (event_id, actor_user_id, action, target_registration_id, metadata)
+            VALUES (:event_id, :actor_user_id, 'ROTATE_MGMT_TOKEN', :target_registration_id, '{}'::jsonb)
+        """), {
+            "event_id": event_id,
+            "actor_user_id": actor_user_id,
+            "target_registration_id": registration_id,
+        })
+
+    return {
+        "registration_id": registration_id,
+        "management_path": f"/g/{new_token}",
+        "message": "Link de gestión rotado. El anterior ya no funciona.",
+    }
 
 
 @router.post("/events/{event_id}/open")
@@ -1145,6 +1211,8 @@ def get_event_detail(
               r.created_by_user_id,
               r.user_id,
               r.guest_name,
+              r.contact_encrypted,
+              r.position,
               u.full_name AS user_full_name,
               cb.full_name AS created_by_full_name
             FROM public.event_registrations r
@@ -1165,6 +1233,8 @@ def get_event_detail(
               r.created_by_user_id,
               r.user_id,
               r.guest_name,
+              r.contact_encrypted,
+              r.position,
               u.full_name AS user_full_name,
               cb.full_name AS created_by_full_name
             FROM public.event_registrations r
@@ -1183,8 +1253,10 @@ def get_event_detail(
                 "type": r["registration_type"],
                 "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
                 "created_at": str(r["created_at"]),
-                "created_by_user_id": str(r["created_by_user_id"]),
+                "created_by_user_id": str(r["created_by_user_id"]) if r["created_by_user_id"] else None,
                 "created_by_name": r["created_by_full_name"],
+                "contact": decrypt_contact(r["contact_encrypted"]) if r["registration_type"] == "EXTERNAL" else None,
+                "position": r["position"] if r["registration_type"] == "EXTERNAL" else None,
             })
 
         courts_payload = []
@@ -1210,8 +1282,10 @@ def get_event_detail(
             "type": r["registration_type"],
             "name": r["user_full_name"] if r["registration_type"] == "USER" else r["guest_name"],
             "created_at": str(r["created_at"]),
-            "created_by_user_id": str(r["created_by_user_id"]),
+            "created_by_user_id": str(r["created_by_user_id"]) if r["created_by_user_id"] else None,
             "created_by_name": r["created_by_full_name"],
+            "contact": decrypt_contact(r["contact_encrypted"]) if r["registration_type"] == "EXTERNAL" else None,
+            "position": r["position"] if r["registration_type"] == "EXTERNAL" else None,
         } for r in waitlist]
 
         return {

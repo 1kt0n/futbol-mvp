@@ -71,3 +71,17 @@ def assert_event_password(password: str) -> str:
     if len(p) > 200:
         raise HTTPException(status_code=400, detail="La contraseña del evento es demasiado larga.")
     return p
+
+
+# ============================================================
+# Token de gestión de participante externo (Event Access v2)
+# ============================================================
+
+def gen_management_token() -> str:
+    """Token opaco de gestión (~256 bits). El plano se muestra 1 vez; se guarda su hash."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_management_token(token: str) -> str:
+    """SHA-256 del token (256 bits de entropía → sin brute-force, no necesita PBKDF2)."""
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
