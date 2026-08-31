@@ -9,12 +9,18 @@ from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.settings import CORS_ORIGINS, engine
+from app.settings import (
+    CORS_ORIGINS,
+    engine,
+    EVENT_ACCESS_ENABLED,
+    EVENT_PASSWORDS_ENABLED,
+)
 from app.utils.auth_token import verify_token
 from app.utils.ratelimit import client_ip
 from app.routers import (
     auth,
     events,
+    events_public,
     admin_events,
     admin_users,
     admin_audit,
@@ -47,7 +53,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Actor-User-Id"],
+    allow_headers=["Content-Type", "X-Actor-User-Id", "X-Event-Access"],
 )
 
 
@@ -98,12 +104,25 @@ def db_check():
         return {"db": "error"}
 
 
+@app.get("/config")
+def app_config():
+    """
+    Feature flags públicas para el frontend (sin auth, sin secretos).
+    El cliente decide qué UI mostrar sin depender de constantes de build.
+    """
+    return {
+        "eventAccessEnabled": EVENT_ACCESS_ENABLED,
+        "eventPasswordsEnabled": EVENT_PASSWORDS_ENABLED,
+    }
+
+
 # =========================
 # Include Routers
 # =========================
 
 app.include_router(auth.router, tags=["Auth"])
 app.include_router(events.router, tags=["Events"])
+app.include_router(events_public.router, tags=["Public - Events"])
 app.include_router(admin_events.router, prefix="/admin", tags=["Admin - Events"])
 app.include_router(admin_users.router, prefix="/admin", tags=["Admin - Users"])
 app.include_router(admin_audit.router, prefix="/admin", tags=["Admin - Audit"])

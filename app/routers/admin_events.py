@@ -5,7 +5,7 @@ from app.utils.deps import get_actor_user_id
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from app.settings import engine
+from app.settings import engine, EVENT_ACCESS_ENABLED, EVENT_PASSWORDS_ENABLED
 from app.schemas import (
     CreateEventRequest,
     UpdateEventRequest,
@@ -13,11 +13,39 @@ from app.schemas import (
     UpdateCourtRequest,
     AssignCaptainRequest,
     UpdateEventVisibilityRequest,
+    UpdateEventAccessRequest,
 )
 from app.utils.datetime_parser import parse_client_datetime
 from app.utils.permissions import require_permission
+from app.utils.security import (
+    gen_share_code,
+    gen_salt,
+    hash_event_password,
+    assert_event_password,
+)
 
 router = APIRouter()
+
+# Columnas de acceso que se leen para armar el payload (nunca se exponen hash/salt).
+_ACCESS_COLS = (
+    "access_mode, allow_external_registration, share_code, "
+    "password_hash, password_version, public_roster_visibility"
+)
+
+
+def _access_payload(ev) -> dict:
+    """Info de acceso sin secretos, para respuestas de admin."""
+    code = ev["share_code"]
+    return {
+        "access_mode": ev["access_mode"],
+        "public_roster_visibility": ev["public_roster_visibility"],
+        "allow_external_registration": ev["allow_external_registration"],
+        "password_set": ev["password_hash"] is not None,
+        "password_version": ev["password_version"],
+        "share_code": code,
+        # Ruta relativa; el frontend arma la URL absoluta con su propio origin.
+        "share_path": f"/e/{code}" if code else None,
+    }
 
 
 def _clean_description(value: str | None) -> str | None:
@@ -312,6 +340,170 @@ def update_event_visibility(
         "visibility": new_visibility,
         "message": f"Visibilidad actualizada a {new_visibility}.",
     }
+
+
+@router.patch("/events/{event_id}/access")
+def update_event_access(
+    event_id: str,
+    body: UpdateEventAccessRequest,
+    actor_user_id: str = Depends(get_actor_user_id),
+):
+    """
+    Configura el acceso de un evento: modo (MEMBERS_ONLY / LINK_ACCESS / LINK_PASSWORD),
+    visibilidad del roster público y la clave (setear/rotar/borrar).
+    Setear o borrar la clave incrementa password_version e invalida los grants previos.
+    Nunca devuelve la clave ni su hash.
+    """
+    if not EVENT_ACCESS_ENABLED:
+        raise HTTPException(status_code=403, detail="La configuración de acceso no está habilitada.")
+
+    with engine.connect() as conn:
+        require_permission(conn, actor_user_id, 'events.manage')
+
+    new_mode = body.access_mode
+    pwd = body.password
+    pwd_action = pwd.action if pwd else "keep"
+
+    if new_mode == "LINK_PASSWORD" and not EVENT_PASSWORDS_ENABLED:
+        raise HTTPException(status_code=400, detail="Las contraseñas de evento no están habilitadas.")
+    if pwd_action == "set" and not EVENT_PASSWORDS_ENABLED:
+        raise HTTPException(status_code=400, detail="Las contraseñas de evento no están habilitadas.")
+
+    with engine.begin() as conn:
+        current = conn.execute(text(f"""
+            SELECT id, {_ACCESS_COLS}, password_salt
+            FROM public.events
+            WHERE id = :event_id
+            FOR UPDATE
+        """), {"event_id": event_id}).mappings().first()
+
+        if not current:
+            raise HTTPException(status_code=404, detail="Evento no encontrado.")
+
+        from_mode = current["access_mode"]
+
+        # --- Contraseña ---
+        password_hash = current["password_hash"]
+        password_salt = current["password_salt"]
+        password_version = current["password_version"]
+
+        if pwd_action == "set":
+            value = assert_event_password(pwd.value or "")
+            password_salt = gen_salt()
+            password_hash = hash_event_password(value, password_salt)
+            password_version = password_version + 1
+        elif pwd_action == "clear":
+            password_hash = None
+            password_salt = None
+            password_version = password_version + 1
+
+        password_set_after = password_hash is not None
+
+        # 'Con enlace + contraseña' exige clave presente tras el cambio.
+        if new_mode == "LINK_PASSWORD" and not password_set_after:
+            raise HTTPException(
+                status_code=400,
+                detail="Para 'Con enlace + contraseña' tenés que setear una contraseña.",
+            )
+
+        # --- Roster público ---
+        new_roster = body.public_roster_visibility or current["public_roster_visibility"]
+
+        # --- Share code: se genera al pasar a un modo con enlace ---
+        share_code = current["share_code"]
+        generated = False
+        if new_mode in ("LINK_ACCESS", "LINK_PASSWORD") and not share_code:
+            share_code = gen_share_code()
+            generated = True
+
+        # allow_external_registration queda forzado en false en v1 (Iteración 2).
+        conn.execute(text("""
+            UPDATE public.events
+            SET access_mode = :access_mode,
+                public_roster_visibility = :roster,
+                share_code = :share_code,
+                password_hash = :password_hash,
+                password_salt = :password_salt,
+                password_version = :password_version,
+                allow_external_registration = false,
+                updated_at = now()
+            WHERE id = :event_id
+        """), {
+            "access_mode": new_mode,
+            "roster": new_roster,
+            "share_code": share_code,
+            "password_hash": password_hash,
+            "password_salt": password_salt,
+            "password_version": password_version,
+            "event_id": event_id,
+        })
+
+        fresh = conn.execute(text(f"""
+            SELECT id, {_ACCESS_COLS} FROM public.events WHERE id = :event_id
+        """), {"event_id": event_id}).mappings().first()
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+            VALUES (:event_id, :actor_user_id, 'UPDATE_EVENT_ACCESS', CAST(:metadata AS jsonb))
+        """), {
+            "event_id": event_id,
+            "actor_user_id": actor_user_id,
+            "metadata": json.dumps({
+                "from_mode": from_mode,
+                "to_mode": new_mode,
+                "password_action": pwd_action,
+                "roster": new_roster,
+                "share_code_generated": generated,
+            }),
+        })
+
+    payload = _access_payload(fresh)
+    payload["message"] = "Acceso del evento actualizado."
+    return payload
+
+
+@router.post("/events/{event_id}/rotate-share-code")
+def rotate_share_code(event_id: str, actor_user_id: str = Depends(get_actor_user_id)):
+    """
+    Rota el share code: invalida el link anterior y genera uno nuevo.
+    Runbook ante exposición accidental del enlace.
+    """
+    if not EVENT_ACCESS_ENABLED:
+        raise HTTPException(status_code=403, detail="La configuración de acceso no está habilitada.")
+
+    with engine.connect() as conn:
+        require_permission(conn, actor_user_id, 'events.manage')
+
+    with engine.begin() as conn:
+        current = conn.execute(text("""
+            SELECT id, share_code FROM public.events WHERE id = :event_id FOR UPDATE
+        """), {"event_id": event_id}).mappings().first()
+
+        if not current:
+            raise HTTPException(status_code=404, detail="Evento no encontrado.")
+
+        new_code = gen_share_code()
+        conn.execute(text("""
+            UPDATE public.events SET share_code = :share_code, updated_at = now()
+            WHERE id = :event_id
+        """), {"share_code": new_code, "event_id": event_id})
+
+        fresh = conn.execute(text(f"""
+            SELECT id, {_ACCESS_COLS} FROM public.events WHERE id = :event_id
+        """), {"event_id": event_id}).mappings().first()
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+            VALUES (:event_id, :actor_user_id, 'ROTATE_SHARE_CODE', CAST(:metadata AS jsonb))
+        """), {
+            "event_id": event_id,
+            "actor_user_id": actor_user_id,
+            "metadata": json.dumps({"had_previous": current["share_code"] is not None}),
+        })
+
+    payload = _access_payload(fresh)
+    payload["message"] = "Link de compartir rotado. El anterior ya no funciona."
+    return payload
 
 
 @router.post("/events/{event_id}/open")
@@ -927,8 +1119,8 @@ def get_event_detail(
     with engine.connect() as conn:
         require_permission(conn, actor_user_id, 'events.view')
 
-        event = conn.execute(text("""
-            SELECT id, title, description, starts_at, location_name, status, close_at, visibility
+        event = conn.execute(text(f"""
+            SELECT id, title, description, starts_at, location_name, status, close_at, visibility, {_ACCESS_COLS}
             FROM public.events
             WHERE id = :event_id
         """), {"event_id": event_id}).mappings().first()
@@ -1033,6 +1225,7 @@ def get_event_detail(
                 "visibility": event["visibility"],
                 "close_at": str(event["close_at"]) if event["close_at"] else None,
             },
+            "access": _access_payload(event),
             "courts": courts_payload,
             "waitlist": waitlist_payload,
         }

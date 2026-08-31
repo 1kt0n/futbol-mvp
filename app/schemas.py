@@ -69,6 +69,27 @@ class UpdateEventVisibilityRequest(BaseModel):
     visibility: EventVisibility
 
 
+# ========== EVENT ACCESS (Event Access v1) ==========
+EventAccessMode = Literal["MEMBERS_ONLY", "LINK_ACCESS", "LINK_PASSWORD"]
+RosterVisibility = Literal["NONE", "FIRST_NAME", "DISPLAY_NAME"]
+
+
+class EventPasswordAction(BaseModel):
+    """Semántica explícita para la clave: dejarla igual, setear/rotar, o borrar."""
+    action: Literal["keep", "set", "clear"] = "keep"
+    value: str | None = Field(None, max_length=200, description="Requerido solo con action='set'")
+
+
+class UpdateEventAccessRequest(BaseModel):
+    access_mode: EventAccessMode
+    public_roster_visibility: RosterVisibility | None = None
+    password: EventPasswordAction | None = None
+
+
+class EventUnlockRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=200)
+
+
 class CreateCourtRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=60)
     capacity: int = Field(..., gt=0, le=50)

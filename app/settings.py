@@ -28,6 +28,22 @@ if not AUTH_SECRET:
         "Setear AUTH_SECRET explícito en producción."
     )
 
+# =========================
+# FEATURE FLAGS
+# =========================
+# Entregadas por configuración (env), no constantes de build. El frontend las
+# consume vía GET /config. Default false: la feature queda inerte hasta activarla.
+def _flag(name: str, default: bool = False) -> bool:
+    return os.getenv(name, "true" if default else "false").strip().lower() == "true"
+
+# Event Access v1 (Iteración 1): link para compartir + share code.
+EVENT_ACCESS_ENABLED = _flag("EVENT_ACCESS_ENABLED")
+# Sub-feature de contraseña de evento.
+EVENT_PASSWORDS_ENABLED = _flag("EVENT_PASSWORDS_ENABLED")
+# Reservados para fases futuras (se definen ya, pero no se usan en 0+1):
+EXTERNAL_REGISTRATION_ENABLED = _flag("EXTERNAL_REGISTRATION_ENABLED")  # Iteración 2
+ACCOUNT_APPROVAL_ENABLED = _flag("ACCOUNT_APPROVAL_ENABLED")  # Iteración 3
+
 # CORS: configurable via env var (comma-separated) o defaults para desarrollo
 _cors_env = os.getenv("CORS_ORIGINS", "")
 if _cors_env.strip():
