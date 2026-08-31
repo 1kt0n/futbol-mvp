@@ -55,6 +55,16 @@ export default defineConfig({
               expiration: { maxEntries: 30, maxAgeSeconds: 60 * 5 },
             },
           },
+          {
+            // Datos de acceso a eventos: red primero, sin quedar stale.
+            urlPattern: ({ url }) => url.pathname.includes('/public/events/'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'public-events-v1',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 5 },
+            },
+          },
         ],
       },
     }),

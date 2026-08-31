@@ -5,6 +5,7 @@ import TournamentsAdminTab from './TournamentsAdminTab.jsx'
 import AdminAnnouncementForm from './calendar/AdminAnnouncementForm.jsx'
 import AuditoriaTab from './audit/AuditoriaTab.jsx'
 import RolesPermisosTab from './admin/RolesPermisosTab.jsx'
+import EventAccessPanel from './features/events/admin/EventAccessPanel.jsx'
 import { can, canAccessAdmin } from './permissions/can.js'
 
 // Tabs del panel: cada una se muestra si el usuario tiene su permiso.
@@ -584,6 +585,9 @@ export default function AdminPanel() {
               onCreateCourt={() => setShowCreateCourt(true)}
               onRefresh={loadEvents}
               onToggleVisibility={handleToggleVisibility}
+              onAccessChanged={() => loadEventDetail(selectedEventId)}
+              setToast={setToast}
+              setErr={setErr}
             />
           )}
 
@@ -774,6 +778,9 @@ function EventosTab({
   onCreateCourt,
   onRefresh,
   onToggleVisibility,
+  onAccessChanged,
+  setToast,
+  setErr,
 }) {
   const event = activeEvent?.event
   const courts = activeEvent?.courts || []
@@ -953,6 +960,16 @@ function EventosTab({
               )}
             </div>
           </div>
+
+          {perms.canManageEvent && (
+            <EventAccessPanel
+              event={event}
+              access={activeEvent?.access}
+              onChanged={onAccessChanged}
+              setToast={setToast}
+              setErr={setErr}
+            />
+          )}
 
           {/* Canchas */}
           <div className="mt-6 space-y-4">
