@@ -1043,9 +1043,14 @@ function EventosTab({
                     {court.players.slice(0, 5).map((p, i) => (
                       <div key={i} className="text-xs text-white/50">
                         {p.name}
-                        {p.type === 'GUEST'
-                          ? <InvitedByChip name={p.created_by_name} />
-                          : ' (USER)'}
+                        {p.type === 'GUEST' && <InvitedByChip name={p.created_by_name} />}
+                        {p.type === 'USER' && ' (USER)'}
+                        {p.type === 'EXTERNAL' && (
+                          <span className="ml-1">
+                            <span className="rounded bg-sky-500/20 px-1 text-[10px] font-semibold text-sky-200">EXTERNO</span>
+                            {p.contact && <span className="ml-1 text-white/40">{p.contact}</span>}
+                          </span>
+                        )}
                       </div>
                     ))}
                     {court.players.length > 5 && (

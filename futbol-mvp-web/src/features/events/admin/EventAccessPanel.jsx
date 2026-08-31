@@ -22,6 +22,7 @@ export default function EventAccessPanel({ event, access, onChanged, setToast, s
   const [mode, setMode] = useState(access?.access_mode || 'MEMBERS_ONLY')
   const [roster, setRoster] = useState(access?.public_roster_visibility || 'NONE')
   const [newPassword, setNewPassword] = useState('')
+  const [allowExternal, setAllowExternal] = useState(!!access?.allow_external_registration)
   const [busy, setBusy] = useState(false)
   const [localErr, setLocalErr] = useState('')
 
@@ -37,9 +38,10 @@ export default function EventAccessPanel({ event, access, onChanged, setToast, s
   useEffect(() => {
     setMode(access?.access_mode || 'MEMBERS_ONLY')
     setRoster(access?.public_roster_visibility || 'NONE')
+    setAllowExternal(!!access?.allow_external_registration)
     setNewPassword('')
     setLocalErr('')
-  }, [access?.access_mode, access?.public_roster_visibility, event?.id])
+  }, [access?.access_mode, access?.public_roster_visibility, access?.allow_external_registration, event?.id])
 
   const shareUrl = useMemo(() => {
     if (!access?.share_path) return ''
@@ -52,6 +54,7 @@ export default function EventAccessPanel({ event, access, onChanged, setToast, s
   const dirty =
     mode !== access?.access_mode ||
     roster !== (access?.public_roster_visibility || 'NONE') ||
+    allowExternal !== !!access?.allow_external_registration ||
     newPassword.trim() !== ''
   const showShare = mode !== 'MEMBERS_ONLY' && !!shareUrl && mode === access?.access_mode
 
@@ -65,7 +68,7 @@ export default function EventAccessPanel({ event, access, onChanged, setToast, s
       setLocalErr('La contraseña debe tener al menos 8 caracteres.')
       return
     }
-    const body = { access_mode: mode, public_roster_visibility: roster }
+    const body = { access_mode: mode, public_roster_visibility: roster, allow_external_registration: allowExternal }
     body.password = (mode === 'LINK_PASSWORD' && newPassword.trim())
       ? { action: 'set', value: newPassword.trim() }
       : { action: 'keep' }
@@ -178,6 +181,22 @@ export default function EventAccessPanel({ event, access, onChanged, setToast, s
             <option value="DISPLAY_NAME">Nombre para mostrar</option>
           </select>
         </div>
+      )}
+
+      {mode !== 'MEMBERS_ONLY' && cfg.externalRegistrationEnabled && (
+        <label className="mt-3 flex items-start gap-2 text-sm text-white/80">
+          <input
+            type="checkbox"
+            checked={allowExternal}
+            onChange={(e) => setAllowExternal(e.target.checked)}
+            data-testid="access-allow-external"
+            className="mt-0.5"
+          />
+          <span>
+            Permitir inscripción sin cuenta
+            <span className="mt-0.5 block text-xs text-white/50">Cualquiera con el enlace puede anotarse desde la página pública.</span>
+          </span>
+        </label>
       )}
 
       {localErr && (

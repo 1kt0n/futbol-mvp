@@ -11,6 +11,7 @@ import Calendar from './calendar/Calendar.jsx'
 import TournamentPublicPage from './features/tournaments/public/TournamentPublicPage.jsx'
 import TournamentTvPage from './features/tournaments/public/TournamentTvPage.jsx'
 import PublicEventPage from './features/events/public/PublicEventPage.jsx'
+import ExternalParticipationPage from './features/events/public/ExternalParticipationPage.jsx'
 
 function LegacyPublicRedirect() {
   const { id } = useParams()
@@ -36,6 +37,7 @@ createRoot(document.getElementById('root')).render(
         <Route path="/calendar" element={<Calendar />} />
         <Route path="/ratings/pending-ui" element={<RatingsPending />} />
         <Route path="/e/:shareCode" element={<PublicEventPage />} />
+        <Route path="/g/:token" element={<ExternalParticipationPage />} />
         <Route path="/tournaments/:id" element={<TournamentPublicPage />} />
         <Route path="/tournaments/:id/tv" element={<TournamentTvPage />} />
         <Route path="/tournaments/:id/live" element={<LegacyPublicRedirect />} />

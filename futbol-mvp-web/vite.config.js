@@ -65,6 +65,16 @@ export default defineConfig({
               expiration: { maxEntries: 30, maxAgeSeconds: 60 * 5 },
             },
           },
+          {
+            // Gestión de participación externa: red primero (estado en vivo).
+            urlPattern: ({ url }) => url.pathname.includes('/public/participations/'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'public-participations-v1',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 30, maxAgeSeconds: 60 * 2 },
+            },
+          },
         ],
       },
     }),
