@@ -13,6 +13,7 @@ const ADMIN_TABS = [
   { key: 'eventos', label: 'Eventos', perm: 'events.view', testid: 'admin-tab-eventos' },
   { key: 'usuarios', label: 'Usuarios', perm: 'users.view', testid: 'admin-tab-usuarios' },
   { key: 'desbloqueos', label: 'Desbloqueos', perm: 'users.unlock', testid: 'admin-tab-desbloqueos' },
+  { key: 'solicitudes', label: 'Solicitudes', perm: 'accounts.review', testid: 'admin-tab-solicitudes' },
   { key: 'auditoria', label: 'Auditoria', perm: 'audit.view', testid: 'admin-tab-auditoria' },
   { key: 'notificaciones', label: 'Notificaciones', perm: 'notifications.view', testid: 'admin-tab-notificaciones' },
   { key: 'torneos', label: 'Torneos', perm: 'tournaments.view', testid: 'admin-tab-torneos' },
@@ -613,6 +614,10 @@ export default function AdminPanel() {
 
           {tab === 'desbloqueos' && has('users.unlock') && (
             <UnlockRequestsTab setToast={setToast} setErr={setErr} />
+          )}
+
+          {tab === 'solicitudes' && has('accounts.review') && (
+            <AccountRequestsTab setToast={setToast} setErr={setErr} />
           )}
 
           {tab === 'auditoria' && has('audit.view') && (
@@ -1233,6 +1238,108 @@ function UsuariosTab({ users, searchQuery, setSearchQuery, busy, onSearch, onCre
     </div>
   )
 }
+
+function AccountRequestsTab({ setToast, setErr }) {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [actingId, setActingId] = useState(null)
+
+  async function load() {
+    setLoading(true)
+    try {
+      const data = await apiFetch('/admin/account-requests?status=PENDING')
+      setItems(Array.isArray(data?.requests) ? data.requests : [])
+    } catch (e) {
+      setErr?.(e.message || 'No se pudieron cargar las solicitudes.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function approve(userId) {
+    setActingId(userId)
+    try {
+      await apiFetch(`/admin/account-requests/${userId}/approve`, { method: 'POST' })
+      setToast?.('Cuenta aprobada')
+      setItems((prev) => prev.filter((x) => x.user_id !== userId))
+    } catch (e) {
+      setErr?.(e.message || 'No se pudo aprobar.')
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  async function reject(userId) {
+    if (!window.confirm('¿Rechazar esta solicitud de cuenta?')) return
+    const reason = window.prompt('Motivo interno (opcional, no se envía al solicitante):') || null
+    setActingId(userId)
+    try {
+      await apiFetch(`/admin/account-requests/${userId}/reject`, { method: 'POST', body: { reason } })
+      setToast?.('Solicitud rechazada')
+      setItems((prev) => prev.filter((x) => x.user_id !== userId))
+    } catch (e) {
+      setErr?.(e.message || 'No se pudo rechazar.')
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  if (loading) {
+    return <div className="py-10 text-center text-sm text-white/40">Cargando solicitudes…</div>
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-sm text-white/50">
+        No hay solicitudes de cuenta pendientes.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="text-sm text-white/60">
+        {items.length} solicitud{items.length !== 1 ? 'es' : ''} de cuenta pendiente{items.length !== 1 ? 's' : ''}.
+      </div>
+      {items.map((r) => (
+        <div
+          key={r.user_id}
+          data-testid="account-request-row"
+          className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <div className="font-semibold text-white">{r.full_name || 'Sin nombre'}</div>
+            <div className="text-sm text-white/50">{r.phone || 'Sin teléfono'}</div>
+            {r.created_at && (
+              <div className="mt-0.5 text-xs text-white/40">{new Date(r.created_at).toLocaleString()}</div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => approve(r.user_id)}
+              disabled={actingId === r.user_id}
+              data-testid="account-approve-btn"
+              className="focus-ring rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40"
+            >
+              {actingId === r.user_id ? '...' : 'Aprobar'}
+            </button>
+            <button
+              onClick={() => reject(r.user_id)}
+              disabled={actingId === r.user_id}
+              data-testid="account-reject-btn"
+              className="focus-ring rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/20 disabled:opacity-40"
+            >
+              Rechazar
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 
 function UnlockRequestsTab({ setToast, setErr }) {
   const [items, setItems] = useState([])

@@ -29,6 +29,7 @@ export const PANEL_PERMISSIONS = [
   "tournaments.view",
   "calendar.view",
   "roles.manage",
+  "accounts.review",
 ];
 
 /** ¿Puede entrar al panel admin? */

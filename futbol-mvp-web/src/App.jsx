@@ -763,8 +763,14 @@ export default function App() {
 
       await load();
     } catch (e) {
-      setErr(e.message || "No se pudo iniciar sesión.");
-      // Tras un fallo, refrescar estado: puede haber quedado bloqueada.
+      // Mensajes claros para los estados de cuenta (Account Approval).
+      const map = {
+        ACCOUNT_PENDING: "Tu solicitud de cuenta está en revisión. Te avisaremos cuando se apruebe.",
+        ACCOUNT_REJECTED: "Tu solicitud no fue aprobada. Si creés que es un error, contactá a un organizador.",
+        ACCOUNT_SUSPENDED: "Tu cuenta está suspendida. Contactá a un organizador.",
+      };
+      setErr(map[e.message] || e.message || "No se pudo iniciar sesión.");
+      // Tras un fallo, refrescar estado: puede haber quedado bloqueada o en revisión.
       await refreshAuthStatus(p);
     } finally {
       setBusy(false);
@@ -857,6 +863,15 @@ export default function App() {
         method: "POST",
         body: { full_name: name, phone: p, pin: pi },
       });
+
+      // Con aprobación de cuentas activada: el registro queda en revisión (sin sesión).
+      if (r.status === "PENDING") {
+        setAuthState({ state: "pending" });
+        setPin("");
+        setLoginMode("login");
+        setToast({ kind: "success", title: "Solicitud enviada", text: "Tu cuenta quedó en revisión. Te avisamos cuando se apruebe." });
+        return;
+      }
 
       const actor = String(r.actor_user_id || "").trim();
       if (!actor) throw new Error("Registro inválido (sin actor_user_id).");

@@ -108,6 +108,14 @@ export default function AuthFlowCard({
   const isLocked = accountState === "locked";
   const mustReset = accountState === "must_reset";
 
+  // Estados de cuenta (Account Approval): paneles informativos en el paso del PIN.
+  const ACCOUNT_NOTICES = {
+    pending: { title: "Solicitud en revisión", text: "Tu cuenta está pendiente de aprobación. Te avisaremos cuando un organizador la habilite.", tone: "amber" },
+    rejected: { title: "Solicitud no aprobada", text: "Tu solicitud no fue aprobada. Si creés que es un error, contactá a un organizador.", tone: "rose" },
+    suspended: { title: "Cuenta suspendida", text: "Tu cuenta está suspendida. Contactá a un organizador.", tone: "rose" },
+  };
+  const accountNotice = isLogin ? ACCOUNT_NOTICES[accountState] : null;
+
   async function continueFromPhone() {
     await onPhoneContinue?.();
     setStep("pin");
@@ -229,7 +237,31 @@ export default function AuthFlowCard({
 
         {/* ── Step: PIN ── */}
         <Slide show={step === "pin"}>
-          {isLogin && isLocked ? (
+          {isLogin && accountNotice ? (
+            /* Estado de cuenta: en revisión / rechazada / suspendida */
+            <div className="space-y-4">
+              <div
+                className={cn(
+                  "rounded-2xl border p-4 text-sm",
+                  accountNotice.tone === "amber"
+                    ? "border-amber-400/30 bg-amber-500/10 text-amber-100"
+                    : "border-rose-400/30 bg-rose-500/10 text-rose-100"
+                )}
+                data-testid={`auth-account-${accountState}`}
+              >
+                <div className="font-semibold">{accountNotice.title}</div>
+                <p className="mt-1 opacity-80">{accountNotice.text}</p>
+              </div>
+              <button
+                type="button"
+                data-testid="auth-back-btn"
+                onClick={goBack}
+                className="focus-ring w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm transition-colors hover:bg-white/10"
+              >
+                Atras
+              </button>
+            </div>
+          ) : isLogin && isLocked ? (
             /* Cuenta bloqueada → pedir desbloqueo a administradores */
             <div className="space-y-4">
               <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
