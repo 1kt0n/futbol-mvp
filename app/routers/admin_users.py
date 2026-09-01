@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.settings import engine
-from app.schemas import CreateUserRequest, UpdateUserRequest, ResetPinRequest, UpdateUserRolesRequest
+from app.schemas import CreateUserRequest, UpdateUserRequest, ResetPinRequest, UpdateUserRolesRequest, RejectAccountRequest
 from app.utils.permissions import require_permission
 from app.utils.security import hash_pin, assert_pin
 from app.utils.phone import normalize_phone
@@ -546,3 +546,121 @@ def deny_unlock_request(request_id: str, actor_user_id: str = Depends(get_actor_
         raise HTTPException(status_code=500, detail="No se pudo rechazar la solicitud.")
 
     return {"message": "Solicitud rechazada."}
+
+
+# ============================================================
+# Solicitudes de cuenta (Account Approval — Iteración 3)
+# ============================================================
+
+@router.get("/account-requests")
+def list_account_requests(
+    actor_user_id: str = Depends(get_actor_user_id),
+    status: str = "PENDING",
+    limit: int = 50,
+):
+    """Lista solicitudes de cuenta por estado (default PENDING). Requiere accounts.review."""
+    if status not in ("PENDING", "REJECTED", "ACTIVE", "SUSPENDED"):
+        raise HTTPException(status_code=400, detail="Estado inválido.")
+
+    with engine.connect() as conn:
+        require_permission(conn, actor_user_id, "accounts.review")
+        rows = conn.execute(text("""
+            SELECT id, full_name, phone_e164, created_at
+            FROM public.users
+            WHERE status = :status
+            ORDER BY created_at ASC
+            LIMIT :limit
+        """), {"status": status, "limit": limit}).mappings().all()
+
+    return {
+        "requests": [
+            {
+                "user_id": str(x["id"]),
+                "full_name": x["full_name"],
+                "phone": x["phone_e164"],
+                "created_at": x["created_at"].isoformat() if x["created_at"] else None,
+            }
+            for x in rows
+        ]
+    }
+
+
+@router.post("/account-requests/{user_id}/approve")
+def approve_account_request(user_id: str, actor_user_id: str = Depends(get_actor_user_id)):
+    """Aprueba una solicitud: activa la cuenta (PENDING → ACTIVE)."""
+    try:
+        with engine.begin() as conn:
+            require_permission(conn, actor_user_id, "accounts.review")
+
+            u = conn.execute(text("""
+                SELECT id, status FROM public.users
+                WHERE id = CAST(:id AS uuid) FOR UPDATE
+            """), {"id": user_id}).mappings().first()
+            if not u:
+                raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+            if u["status"] != "PENDING":
+                raise HTTPException(status_code=409, detail=f"La solicitud ya no está pendiente (estado: {u['status']}).")
+
+            conn.execute(text("""
+                UPDATE public.users
+                SET status = 'ACTIVE', is_active = true,
+                    account_reviewed_at = now(), account_reviewed_by = CAST(:actor AS uuid),
+                    account_rejection_reason = null, updated_at = now()
+                WHERE id = CAST(:id AS uuid)
+            """), {"id": user_id, "actor": actor_user_id})
+
+            conn.execute(text("""
+                INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+                VALUES (NULL, CAST(:actor AS uuid), 'APPROVE_ACCOUNT',
+                        jsonb_build_object('user_id', CAST(:uid AS text)))
+            """), {"actor": actor_user_id, "uid": user_id})
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("approve_account_request failed")
+        raise HTTPException(status_code=500, detail="No se pudo aprobar la solicitud.")
+
+    return {"user_id": user_id, "status": "ACTIVE", "message": "Cuenta aprobada."}
+
+
+@router.post("/account-requests/{user_id}/reject")
+def reject_account_request(
+    user_id: str,
+    body: RejectAccountRequest,
+    actor_user_id: str = Depends(get_actor_user_id),
+):
+    """Rechaza una solicitud (PENDING → REJECTED). El motivo es interno, no se envía al solicitante."""
+    reason = (body.reason or "").strip() or None
+    try:
+        with engine.begin() as conn:
+            require_permission(conn, actor_user_id, "accounts.review")
+
+            u = conn.execute(text("""
+                SELECT id, status FROM public.users
+                WHERE id = CAST(:id AS uuid) FOR UPDATE
+            """), {"id": user_id}).mappings().first()
+            if not u:
+                raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+            if u["status"] != "PENDING":
+                raise HTTPException(status_code=409, detail=f"La solicitud ya no está pendiente (estado: {u['status']}).")
+
+            conn.execute(text("""
+                UPDATE public.users
+                SET status = 'REJECTED', is_active = false,
+                    account_reviewed_at = now(), account_reviewed_by = CAST(:actor AS uuid),
+                    account_rejection_reason = :reason, updated_at = now()
+                WHERE id = CAST(:id AS uuid)
+            """), {"id": user_id, "actor": actor_user_id, "reason": reason})
+
+            conn.execute(text("""
+                INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+                VALUES (NULL, CAST(:actor AS uuid), 'REJECT_ACCOUNT',
+                        jsonb_build_object('user_id', CAST(:uid AS text), 'reason', CAST(:reason AS text)))
+            """), {"actor": actor_user_id, "uid": user_id, "reason": reason})
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("reject_account_request failed")
+        raise HTTPException(status_code=500, detail="No se pudo rechazar la solicitud.")
+
+    return {"user_id": user_id, "status": "REJECTED", "message": "Solicitud rechazada."}

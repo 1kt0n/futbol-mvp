@@ -135,6 +135,11 @@ class ResetPinRequest(BaseModel):
     pin: str = Field(..., min_length=4, max_length=6)
 
 
+class RejectAccountRequest(BaseModel):
+    """Motivo interno del rechazo (categorizado). NO se envía al solicitante."""
+    reason: str | None = Field(None, max_length=200)
+
+
 class UpdateUserRolesRequest(BaseModel):
     roles: list[str] = Field(..., description="Lista de codigos de roles")
 

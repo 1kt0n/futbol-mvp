@@ -1,6 +1,7 @@
 import secrets
 import re
 import io
+import json
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
 from sqlalchemy import text
@@ -14,6 +15,7 @@ from app.settings import (
     AVATAR_MAX_SIZE,
     AVATAR_MAX_MB,
     SUPABASE_URL,
+    ACCOUNT_APPROVAL_ENABLED,
 )
 from app.schemas import (
     PinRegisterRequest,
@@ -67,11 +69,59 @@ def pin_register(body: PinRegisterRequest, request: Request):
     pin_hash = hash_pin(pin, salt_hex)
 
     with engine.begin() as conn:
-        exists = conn.execute(text("""
-            select 1 from public.users where phone_login = :p limit 1
-        """), {"p": phone_e164}).first()
+        existing = conn.execute(text("""
+            select id, status from public.users where phone_login = :p limit 1
+        """), {"p": phone_e164}).mappings().first()
 
-        if exists:
+        # --- Con aprobación de cuentas: el registro entra como PENDING (sin sesión) ---
+        if ACCOUNT_APPROVAL_ENABLED:
+            if existing:
+                if existing["status"] in ("ACTIVE", "SUSPENDED"):
+                    raise HTTPException(status_code=409, detail="Ya existe un usuario con ese teléfono.")
+                # PENDING o REJECTED → reabrir la solicitud (re-submit con datos nuevos).
+                conn.execute(text("""
+                    update public.users
+                    set full_name = :full_name, pin_salt = :pin_salt, pin_hash = :pin_hash,
+                        status = 'PENDING', is_active = false,
+                        account_reviewed_at = null, account_reviewed_by = null,
+                        account_rejection_reason = null,
+                        failed_pin_attempts = 0, locked_until = null, must_reset_pin = false,
+                        updated_at = now()
+                    where id = :id
+                """), {"full_name": full_name, "pin_salt": salt_hex, "pin_hash": pin_hash, "id": existing["id"]})
+                target_id = existing["id"]
+            else:
+                row = conn.execute(text("""
+                    insert into public.users (
+                        full_name, phone_e164, phone_login, is_active, status,
+                        pin_salt, pin_hash, created_at, updated_at
+                    )
+                    values (
+                        :full_name, :phone_e164, :phone_login, false, 'PENDING',
+                        :pin_salt, :pin_hash, now(), now()
+                    )
+                    returning id
+                """), {
+                    "full_name": full_name,
+                    "phone_e164": phone_e164,
+                    "phone_login": phone_e164,
+                    "pin_salt": salt_hex,
+                    "pin_hash": pin_hash,
+                }).mappings().first()
+                target_id = row["id"]
+
+            conn.execute(text("""
+                insert into public.event_audit_log (event_id, actor_user_id, action, metadata)
+                values (NULL, NULL, 'ACCOUNT_REQUEST_SUBMITTED', CAST(:metadata AS jsonb))
+            """), {"metadata": json.dumps({"user_id": str(target_id)})})
+
+            return {
+                "status": "PENDING",
+                "message": "Tu solicitud de cuenta quedó en revisión. Te avisaremos cuando se apruebe.",
+            }
+
+        # --- Flag apagado: comportamiento actual (entra directo con sesión) ---
+        if existing:
             raise HTTPException(status_code=409, detail="Ya existe un usuario con ese teléfono.")
 
         user = conn.execute(text("""
@@ -141,7 +191,7 @@ def pin_login(body: PinLoginRequest, request: Request):
     # Lectura inicial (solo lectura, sin transacción de escritura).
     with engine.connect() as conn:
         user = conn.execute(text("""
-            select id, full_name, is_active, pin_salt, pin_hash,
+            select id, full_name, is_active, status, pin_salt, pin_hash,
                    failed_pin_attempts, locked_until, must_reset_pin
             from public.users
             where phone_login = :p
@@ -150,6 +200,15 @@ def pin_login(body: PinLoginRequest, request: Request):
 
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+    # Estado de cuenta: bloquear (con código para que el front muestre la pantalla justa).
+    account_status = user.get("status")
+    if account_status == "PENDING":
+        raise HTTPException(status_code=403, detail="ACCOUNT_PENDING")
+    if account_status == "REJECTED":
+        raise HTTPException(status_code=403, detail="ACCOUNT_REJECTED")
+    if account_status == "SUSPENDED":
+        raise HTTPException(status_code=403, detail="ACCOUNT_SUSPENDED")
 
     if user.get("is_active") is False:
         raise HTTPException(status_code=403, detail="Usuario inactivo.")
@@ -248,7 +307,7 @@ def pin_status(body: PhoneOnlyRequest, request: Request):
 
     with engine.connect() as conn:
         user = conn.execute(text("""
-            select is_active, locked_until, must_reset_pin
+            select is_active, status, locked_until, must_reset_pin
             from public.users
             where phone_login = :p
             limit 1
@@ -256,6 +315,13 @@ def pin_status(body: PhoneOnlyRequest, request: Request):
 
     if not user:
         return {"state": "unknown"}
+    st = user.get("status")
+    if st == "PENDING":
+        return {"state": "pending"}
+    if st == "REJECTED":
+        return {"state": "rejected"}
+    if st == "SUSPENDED":
+        return {"state": "suspended"}
     if user.get("is_active") is False:
         return {"state": "inactive"}
     if user.get("must_reset_pin"):
