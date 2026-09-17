@@ -112,8 +112,14 @@ def pin_register(body: PinRegisterRequest, request: Request):
 
             conn.execute(text("""
                 insert into public.event_audit_log (event_id, actor_user_id, action, metadata)
-                values (NULL, NULL, 'ACCOUNT_REQUEST_SUBMITTED', CAST(:metadata AS jsonb))
-            """), {"metadata": json.dumps({"user_id": str(target_id)})})
+                values (NULL, CAST(:actor_user_id AS uuid), 'ACCOUNT_REQUEST_SUBMITTED', CAST(:metadata AS jsonb))
+            """), {
+                "actor_user_id": str(target_id),
+                "metadata": json.dumps({
+                    "user_id": str(target_id),
+                    "source": "public_registration",
+                }),
+            })
 
             return {
                 "status": "PENDING",
