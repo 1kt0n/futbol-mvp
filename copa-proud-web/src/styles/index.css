@@ -1,0 +1,216 @@
+@import '@fontsource/montserrat/500';
+@import '@fontsource/montserrat/600';
+@import '@fontsource/montserrat/700';
+@import '@fontsource/montserrat/800';
+@import '@fontsource/big-shoulders-display/700';
+@import '@fontsource/big-shoulders-display/900';
+@import '@fontsource/kaushan-script/400';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Paleta muestreada de CopaProud-Elementos.ai (ver BRAND.md) */
+:root {
+  --cp-night: #04011e;
+  --cp-indigo-900: #0d012e;
+  --cp-indigo-800: #120236;
+  --cp-indigo-700: #1b0246;
+  --cp-violet-glow: #360777;
+  --cp-gold: #ffc000;
+  --cp-gold-deep: #e49f2b;
+  --cp-gold-light: #f6d381;
+  --cp-silver: #c9cbd8;
+  --cp-bronze: #d08a4e;
+  --cp-live: #eb2151;
+  --cp-line: rgba(255, 255, 255, 0.09);
+  --cp-card: rgba(27, 2, 70, 0.55);
+  --cp-rainbow: linear-gradient(90deg, #e40303, #ff8c00, #ffed00, #008026, #004dff, #750787);
+  color-scheme: dark;
+}
+
+html {
+  background: var(--cp-night);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  color: #f3efff;
+  font-family: Montserrat, system-ui, sans-serif;
+  font-weight: 500;
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgba(54, 7, 119, 0.85), transparent 60%),
+    radial-gradient(80% 50% at 100% 100%, rgba(54, 7, 119, 0.45), transparent 70%),
+    linear-gradient(180deg, var(--cp-indigo-800), var(--cp-night) 70%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Grano del póster: ruido SVG muy sutil sobre todo el sitio (no intercepta clicks). */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.07;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- utilidades de marca ---------- */
+@layer components {
+  .rainbow-strip {
+    height: 3px;
+    background: var(--cp-rainbow);
+  }
+  .card {
+    background: var(--cp-card);
+    border: 1px solid var(--cp-line);
+    border-radius: 14px;
+    backdrop-filter: blur(6px);
+  }
+  .board-num {
+    font-family: 'Big Shoulders Display', Impact, sans-serif;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+  }
+  .kicker {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--cp-gold-light);
+  }
+  .gold-text {
+    background: linear-gradient(180deg, #fff3c4, var(--cp-gold) 45%, var(--cp-gold-deep));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-night;
+  }
+}
+
+/* ---------- partido en vivo: borde arcoíris que gira ---------- */
+@property --cp-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.live-frame {
+  position: relative;
+  border-color: transparent;
+  box-shadow: 0 0 28px -6px rgba(235, 33, 81, 0.45);
+}
+/* Solo el anillo: la máscara recorta el centro, así el fondo translúcido de la tarjeta no se tiñe. */
+.live-frame::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  padding: 2px;
+  border-radius: 15px;
+  pointer-events: none;
+  background: conic-gradient(from var(--cp-angle), #e40303, #ff8c00, #ffed00, #008026, #004dff, #750787, #e40303);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: cp-spin 4s linear infinite;
+}
+
+@keyframes cp-spin {
+  to {
+    --cp-angle: 360deg;
+  }
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--cp-live);
+  box-shadow: 0 0 0 0 rgba(235, 33, 81, 0.7);
+  animation: cp-pulse 1.6s ease-out infinite;
+}
+
+@keyframes cp-pulse {
+  70% {
+    box-shadow: 0 0 0 9px rgba(235, 33, 81, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(235, 33, 81, 0);
+  }
+}
+
+/* ---------- entrada escalonada (una sola, al cargar) ---------- */
+.reveal {
+  opacity: 0;
+  animation: cp-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+@keyframes cp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Gol recién entrado: el marcador destella en dorado. */
+.score-flash {
+  animation: cp-flash 1.8s ease-out;
+}
+@keyframes cp-flash {
+  0%,
+  30% {
+    color: var(--cp-gold);
+    text-shadow: 0 0 18px rgba(255, 192, 0, 0.8);
+  }
+  100% {
+    color: inherit;
+    text-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+    opacity: 1;
+  }
+  .live-frame::before,
+  .live-dot,
+  .score-flash {
+    animation: none;
+  }
+}
+
+/* Scroll horizontal con snap (grilla de canchas, llaves) */
+.scroll-x {
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cp-violet-glow) transparent;
+}
+
+/* Menú de pestañas: se desplaza de costado sin mostrar barra */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
