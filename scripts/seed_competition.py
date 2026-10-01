@@ -6,11 +6,15 @@ partidos con horario, cancha y fuentes. Es IDEMPOTENTE: se puede volver a correr
 organización confirme los cruces pendientes; solo reescribe partidos que siguen SCHEDULED
 y reporta los que ya empezaron (no los toca). Nunca borra nada.
 
-Uso (requiere haber corrido migrations/018_competitions.sql):
-  DATABASE_URL=... ./.venv/bin/python scripts/seed_competition.py copa-proud-2026           # dry-run
-  DATABASE_URL=... ./.venv/bin/python scripts/seed_competition.py copa-proud-2026 --apply   # escribe
+Uso (requiere haber corrido migrations/018 y 019):
+  ./.venv/bin/python scripts/seed_competition.py copa-proud-2026
+    → pide la URL de la base (no se muestra), hace la prueba en seco, muestra el resumen y
+      pregunta si aplicar (hay que escribir APLICAR). Un solo comando, en una terminal.
+  DATABASE_URL=... ./.venv/bin/python scripts/seed_competition.py copa-proud-2026 [--apply]
+    → modo no interactivo (dry-run salvo --apply).
 """
 import argparse
+import getpass
 import os
 import sys
 
@@ -18,6 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Railway entrega la URL como postgresql://… (o postgres://…); la app usa el driver psycopg 3.
 _url = os.environ.get("DATABASE_URL", "").strip()
+if (not _url or "<" in _url) and sys.stdin.isatty():
+    _url = getpass.getpass("Pegá la DATABASE_PUBLIC_URL de Railway (no se va a ver) y apretá Enter: ").strip()
 if not _url or "<" in _url:
     sys.exit("Falta DATABASE_URL real (copiá DATABASE_PUBLIC_URL del servicio Postgres en Railway).")
 for _prefix in ("postgres://", "postgresql://"):
@@ -135,11 +141,25 @@ def main():
     target = make_url(os.environ["DATABASE_URL"])
     print(f"Base: {target.host}:{target.port or 5432} / {target.database} (usuario {target.username})")
 
+    report = run_once(fmt, apply=args.apply)
+    print_report(fmt, report, applied=args.apply)
+    # Interactivo: tras la prueba en seco, ofrecer aplicar (en una transacción nueva).
+    if not args.apply and sys.stdin.isatty():
+        answer = input("\n¿Guardar estos cambios en la base? Escribí APLICAR y Enter (solo Enter = salir): ")
+        if answer.strip().upper() == "APLICAR":
+            report = run_once(fmt, apply=True)
+            print()
+            print_report(fmt, report, applied=True)
+        else:
+            print("No se guardó nada.")
+
+
+def run_once(fmt: dict, *, apply: bool) -> dict:
     conn = engine.connect()
     trans = conn.begin()
     try:
         report = seed(conn, fmt)
-        if args.apply:
+        if apply:
             trans.commit()
         else:
             trans.rollback()
@@ -148,8 +168,11 @@ def main():
         raise
     finally:
         conn.close()
+    return report
 
-    mode = "APLICADO" if args.apply else "DRY-RUN (rollback, nada se guardó)"
+
+def print_report(fmt: dict, report: dict, *, applied: bool) -> None:
+    mode = "APLICADO ✓" if applied else "PRUEBA EN SECO (no se guardó nada)"
     print(f"== {fmt['name']} — {mode}")
     print(f"  competencia creada: {report['created']}")
     print(f"  canchas: {report['venues']}  slots nuevos: {report['slots']}")
