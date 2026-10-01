@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy import text
@@ -33,6 +34,8 @@ from app.routers import (
     calendar,
     admin_calendar,
     admin_roles,
+    competitions_admin,
+    competitions_public,
 )
 
 # =========================
@@ -55,8 +58,10 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Actor-User-Id", "X-Event-Access"],
+    allow_headers=["Content-Type", "X-Actor-User-Id", "X-Event-Access", "X-Staff-Token"],
 )
+# El snapshot público de competencias (~100 KB de JSON repetitivo) baja ~10x con gzip.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 # =========================
@@ -138,6 +143,8 @@ app.include_router(tournaments_public.router, tags=["Public - Tournaments"])
 app.include_router(calendar.router, tags=["Calendar"])
 app.include_router(admin_calendar.router, prefix="/admin", tags=["Admin - Calendar"])
 app.include_router(admin_roles.router, prefix="/admin", tags=["Admin - Roles"])
+app.include_router(competitions_admin.router, prefix="/admin", tags=["Admin - Competitions"])
+app.include_router(competitions_public.router, tags=["Public - Competitions"])
 
 # =========================
 # Serve Frontend (production)

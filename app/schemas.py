@@ -426,3 +426,131 @@ class UpdateAnnouncementRequest(BaseModel):
     location_name: str | None = Field(None, max_length=160)
     action_url: str | None = Field(None, max_length=500)
     action_label: str | None = Field(None, max_length=40)
+
+
+# ========== COMPETITIONS (Copa Proud y competencias grandes) ==========
+CompetitionStatus = Literal["DRAFT", "PUBLISHED", "LIVE", "FINISHED"]
+CompetitionMatchStatus = Literal["SCHEDULED", "LIVE", "HALFTIME", "FINISHED"]
+CompetitionEventType = Literal["GOAL", "OWN_GOAL", "YELLOW", "RED"]
+
+
+class CompetitionUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=3, max_length=160)
+    status: CompetitionStatus | None = None
+
+
+class CompetitionTeamRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+    short_name: str | None = Field(None, max_length=12)
+    country_code: str | None = Field(None, min_length=2, max_length=2, description="ISO 3166-1 alpha-2")
+    city: str | None = Field(None, max_length=80)
+    logo_url: str | None = Field(None, max_length=500)
+    color: str | None = Field(None, max_length=20)
+
+
+class CompetitionTeamUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=80)
+    short_name: str | None = Field(None, max_length=12)
+    country_code: str | None = Field(None, min_length=2, max_length=2)
+    city: str | None = Field(None, max_length=80)
+    logo_url: str | None = Field(None, max_length=500)
+    color: str | None = Field(None, max_length=20)
+
+
+class CompetitionTeamBulkItem(CompetitionTeamRequest):
+    group: str | None = Field(None, min_length=1, max_length=2)
+    position: int | None = Field(None, ge=1, le=8)
+
+
+class CompetitionTeamBulkRequest(BaseModel):
+    teams: list[CompetitionTeamBulkItem] = Field(..., min_length=1, max_length=64)
+
+
+class CompetitionPlayerRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=120)
+    shirt_number: int | None = Field(None, ge=0, le=999)
+    is_captain: bool = False
+    is_goalkeeper: bool = False
+
+
+class CompetitionPlayerUpdateRequest(BaseModel):
+    full_name: str | None = Field(None, min_length=2, max_length=120)
+    shirt_number: int | None = Field(None, ge=0, le=999)
+    is_captain: bool | None = None
+    is_goalkeeper: bool | None = None
+
+
+class CompetitionPlayerBulkRequest(BaseModel):
+    players: list[CompetitionPlayerRequest] = Field(..., min_length=1, max_length=30)
+
+
+class CompetitionSlotAssignment(BaseModel):
+    group: str = Field(..., min_length=1, max_length=2)
+    position: int = Field(..., ge=1, le=8)
+    team_id: str | None = None
+
+
+class CompetitionSlotsRequest(BaseModel):
+    assignments: list[CompetitionSlotAssignment] = Field(..., min_length=1, max_length=64)
+
+
+class CompetitionDrawRank(BaseModel):
+    team_id: str
+    rank: int = Field(..., ge=1, le=64)
+
+
+class CompetitionDrawRequest(BaseModel):
+    context: str = Field(..., pattern=r"^(GROUP:[A-Z]{1,2}|THIRD|FOURTH)$")
+    ranks: list[CompetitionDrawRank] = Field(..., min_length=2, max_length=16)
+
+
+class CompetitionStaffRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=120)
+    role: Literal["VEEDOR", "REFEREE"] = "VEEDOR"
+    contact: str | None = Field(None, max_length=120)
+    team_ids: list[str] = Field(default_factory=list, max_length=64)
+
+
+class CompetitionStaffTeamsRequest(BaseModel):
+    """Equipos a cargo del veedor (reemplaza la lista). Un equipo tiene un solo veedor: si estaba con otro, pasa a este."""
+    team_ids: list[str] = Field(default_factory=list, max_length=64)
+
+
+class CompetitionStaffAssignRequest(BaseModel):
+    venue: int = Field(..., ge=1, le=50)
+    date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class CompetitionMatchPatchRequest(BaseModel):
+    """Edición de la mesa central. Solo se aplican los campos presentes."""
+    home_goals: int | None = Field(None, ge=0, le=99)
+    away_goals: int | None = Field(None, ge=0, le=99)
+    home_pens: int | None = Field(None, ge=0, le=99)
+    away_pens: int | None = Field(None, ge=0, le=99)
+    clear_penalties: bool = False
+    veedor_staff_id: str | None = None
+    clear_veedor: bool = False
+    referee_name: str | None = Field(None, max_length=120)
+    notes: str | None = Field(None, max_length=1000)
+
+
+class CompetitionMatchStatusRequest(BaseModel):
+    status: CompetitionMatchStatus
+
+
+class CompetitionWalkoverRequest(BaseModel):
+    winner: Literal["HOME", "AWAY"]
+
+
+class CompetitionEventRequest(BaseModel):
+    team_id: str
+    type: CompetitionEventType
+    player_id: str | None = None
+    shirt_number: int | None = Field(None, ge=0, le=999)
+    minute: int | None = Field(None, ge=0, le=60)
+    client_event_id: str | None = Field(None, min_length=8, max_length=64)
+
+
+class CompetitionPenaltiesRequest(BaseModel):
+    home_pens: int = Field(..., ge=0, le=99)
+    away_pens: int = Field(..., ge=0, le=99)
