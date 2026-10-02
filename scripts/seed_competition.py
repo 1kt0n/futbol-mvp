@@ -20,12 +20,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Railway entrega la URL como postgresql://… (o postgres://…); la app usa el driver psycopg 3.
+# La base es Supabase. Si la URL viene como postgresql://… (o postgres://…) se pasa al driver psycopg 3.
 _url = os.environ.get("DATABASE_URL", "").strip()
 if (not _url or "<" in _url) and sys.stdin.isatty():
-    _url = getpass.getpass("Pegá la DATABASE_PUBLIC_URL de Railway (no se va a ver) y apretá Enter: ").strip()
+    _url = getpass.getpass("Pegá la URL de la base (DATABASE_URL del servicio futbol-mvp en Railway; no se va a ver) y apretá Enter: ").strip()
 if not _url or "<" in _url:
-    sys.exit("Falta DATABASE_URL real (copiá DATABASE_PUBLIC_URL del servicio Postgres en Railway).")
+    sys.exit("Falta la URL de la base (copiá DATABASE_URL del servicio futbol-mvp en Railway: es la de Supabase).")
 for _prefix in ("postgres://", "postgresql://"):
     if _url.startswith(_prefix):
         _url = "postgresql+psycopg://" + _url[len(_prefix):]
