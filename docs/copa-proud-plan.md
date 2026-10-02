@@ -320,3 +320,14 @@ levanta por terminal (el panel no puede leer `.venv` en ~/Desktop por permisos d
 - `scripts/demo_competition.py crear [--fecha AAAA-MM-DD]` → (re)crea con links nuevos (`demo-veedores.csv`, ignorado por git).
   `reiniciar` → borra solo resultados (links intactos). `borrar` → elimina la demo. Solo opera sobre slugs `-demo`.
 - Frontend: `src/lib/mode.js` (basename `/demo` del router + slug `-demo`), `DemoBanner`.
+
+## 16. Sorteo de zonas EN VIVO (2026-10-02, desplegado)
+
+- Pantalla de transmisión: `live.copaproud.com/sorteo?tv=1` (ensayo: `/demo/sorteo?tv=1`) para OBS/proyector.
+  Bolillero + 7 zonas + revelación animada (cola si salen varios). El sitio muestra "Sorteo EN VIVO".
+- Panel de producción: `/produccion/<token>` (ensayo `/demo/produccion/<token>`). Link con
+  `scripts/draw_link.py [--demo]` (cada corrida invalida el anterior). Buscar + Enter elige, Enter revela.
+- Versátil (bolillero/reglas no definidos aún): orden ronda o zona por zona, bombos opcionales,
+  regla opcional "separar mismo país", lugar a mano. Estado en `competitions.settings.live_draw` (sin migración);
+  resultado en `competition_group_slots` → el fixture del sábado se completa solo.
+- Pendiente para el sorteo REAL: cargar los 28 equipos reales en la competencia real (mesa central) antes del sorteo.
