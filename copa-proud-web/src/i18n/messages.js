@@ -118,6 +118,8 @@ export const messages = {
     'source.LOSER': 'Perdedor {match}',
 
     'teams.title': 'Los 28 equipos',
+    "teams.pending": "Los equipos se confirman con el sorteo de zonas. ¡Volvé pronto!",
+    "groups.pending": "Se completa con el sorteo de zonas.",
     'teams.roster': 'Plantel',
     'teams.no_roster': 'El plantel todavía no está cargado.',
     'teams.matches': 'Partidos',
@@ -294,6 +296,8 @@ export const messages = {
     'source.LOSER': 'Perdedor {match}',
 
     'teams.title': 'Os 28 times',
+    "teams.pending": "Os times serão confirmados no sorteio dos grupos. Volte em breve!",
+    "groups.pending": "Será definido no sorteio dos grupos.",
     'teams.roster': 'Elenco',
     'teams.no_roster': 'O elenco ainda não foi cadastrado.',
     'teams.matches': 'Jogos',
@@ -470,6 +474,8 @@ export const messages = {
     'source.LOSER': 'Loser {match}',
 
     'teams.title': 'The 28 teams',
+    "teams.pending": "Teams are confirmed at the group draw. Check back soon!",
+    "groups.pending": "Filled in at the group draw.",
     'teams.roster': 'Squad',
     'teams.no_roster': "The squad hasn't been uploaded yet.",
     'teams.matches': 'Matches',

@@ -2,6 +2,7 @@ import { useI18n } from '../i18n/I18nProvider.jsx'
 import { useCompetition } from '../lib/CompetitionProvider.jsx'
 import { SectionTitle } from '../components/Layout.jsx'
 import { StandingsTable } from '../components/StandingsTable.jsx'
+import { TeamLine } from '../components/TeamBadge.jsx'
 
 function Legend() {
   const { t } = useI18n()
@@ -35,16 +36,30 @@ export default function Groups() {
               <span className="text-xs font-bold uppercase tracking-[0.2em] text-white/45">{t('common.zone')}</span>
               <span className="board-num text-3xl leading-none gold-text">{g.code}</span>
             </h3>
-            <StandingsTable rows={g.rows} complete={g.complete} />
+            {g.rows.length ? (
+              <StandingsTable rows={g.rows} complete={g.complete} />
+            ) : (
+              <>
+                <ul className="mt-2 space-y-2">
+                  {[1, 2, 3, 4].map((n) => (
+                    <li key={n} className="flex items-center gap-3">
+                      <span className="board-num w-5 text-center text-base text-white/50">{n}</span>
+                      <TeamLine team={null} source={`SLOT:${g.code}:${n}`} size="sm" className="text-sm" />
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 text-xs font-semibold text-gold-light/80">{t('groups.pending')}</p>
+              </>
+            )}
           </section>
         ))}
       </div>
 
-      <section className="card mt-8 p-3 sm:p-4" aria-labelledby="terceros">
+      {model.thirds.rows.length > 0 && <section className="card mt-8 p-3 sm:p-4" aria-labelledby="terceros">
         <SectionTitle title={<span id="terceros">{t('groups.thirds')}</span>} className="mb-2" />
         <p className="mb-3 text-xs font-semibold text-white/55">{t('groups.thirds_note')}</p>
         <StandingsTable rows={model.thirds.rows} thirdsMode />
-      </section>
+      </section>}
 
       <p className="mt-4 text-xs text-white/45">{t('table.tiebreak')}</p>
     </>

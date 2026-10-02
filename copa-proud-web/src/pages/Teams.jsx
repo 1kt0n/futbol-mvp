@@ -25,6 +25,18 @@ export default function Teams() {
   const assigned = model.teams.some((tm) => tm.group)
   const sorted = [...model.teams].sort((a, b) => a.name.localeCompare(b.name))
 
+  if (!model.teams.length) {
+    return (
+      <>
+        <SectionTitle title={t('teams.title')} />
+        <div className="card flex flex-col items-center gap-3 p-10 text-center">
+          <img src="/brand/mark.webp" alt="" className="h-20 w-20 object-contain opacity-80" />
+          <p className="max-w-sm font-bold text-white/80">{t('teams.pending')}</p>
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <SectionTitle title={t('teams.title')} />
