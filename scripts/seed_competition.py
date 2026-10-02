@@ -54,7 +54,7 @@ def seed(conn, fmt: dict) -> dict:
             INSERT INTO public.competitions (slug, name, format_code, starts_on, ends_on, utc_offset)
             VALUES (:slug, :name, :fc, :s, :e, :off)
             RETURNING id
-        """), {"slug": fmt["slug"], "name": fmt["name"], "fc": fmt["slug"],
+        """), {"slug": fmt["slug"], "name": fmt["name"], "fc": fmt.get("format_code", fmt["slug"]),
                "s": fmt["starts_on"], "e": fmt["ends_on"], "off": fmt["utc_offset"]}).mappings().first()
         report["created"] = True
     else:

@@ -302,3 +302,21 @@ levanta por terminal (el panel no puede leer `.venv` en ~/Desktop por permisos d
 - Migración **`019_competition_team_veedor.sql`** (aditiva: `competition_teams.veedor_staff_id`). Correr después de 018.
 - API: `PUT /admin/competitions/{slug}/staff/{id}/teams` y `team_ids` opcional al crear el veedor.
 - Verificado: E2E (~800 verificaciones, 5 semillas) + prueba en navegador de dos veedores en el mismo partido.
+
+## 14. Producción (2026-10-01)
+
+- `api.copaproud.com` → servicio actual (CNAME + TXT en Hostinger, SSL Let's Encrypt OK).
+- Migraciones **018 y 019 corridas** en la base de producción.
+- Deploy: commits `1e9a196` (backend) y `fa6578d` (sitio) en `main`; verificado en producción.
+- **`live.copaproud.com` ACTIVO (2/10)**: servicio Railway del sitio (root `copa-proud-web`, `VITE_API_URL=https://api.copaproud.com`, puerto 8080) + CNAME/TXT en Hostinger + SSL. Verificado: rutas SPA, caché, gzip, CORS. Muestra "todavía no está publicado" hasta publicar.
+- Pendiente: seed en producción (corriendo en la terminal del usuario), pantalla de mesa central, publicar.
+
+## 15. Modo demo para ensayar con veedores (2026-10-02)
+
+- `live.copaproud.com/demo` (y `/demo/v/<token>` para los veedores) usa la competencia aparte
+  `copa-proud-2026-demo`: mismo formato, 28 equipos reales con escudo, sorteo al azar, planteles de prueba
+  (#1 arquero, #2 capitán) y 14 veedores de prueba con 2 equipos cada uno. Franja "MODO DEMO" siempre visible,
+  `noindex`, no enlazado. Nada toca el torneo real (verificado).
+- `scripts/demo_competition.py crear [--fecha AAAA-MM-DD]` → (re)crea con links nuevos (`demo-veedores.csv`, ignorado por git).
+  `reiniciar` → borra solo resultados (links intactos). `borrar` → elimina la demo. Solo opera sobre slugs `-demo`.
+- Frontend: `src/lib/mode.js` (basename `/demo` del router + slug `-demo`), `DemoBanner`.

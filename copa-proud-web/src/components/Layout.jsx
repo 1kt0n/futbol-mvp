@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { useI18n } from '../i18n/I18nProvider.jsx'
 import { LANGS } from '../i18n/messages.js'
 import { useCompetition } from '../lib/CompetitionProvider.jsx'
+import { DemoBanner } from './DemoBanner.jsx'
 
 const NAV = [
   ['/', 'nav.home'],
@@ -64,6 +65,7 @@ export function Layout() {
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-30 border-b border-white/10 bg-night/80 backdrop-blur-md">
+        <DemoBanner />
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 sm:flex-nowrap">
           <NavLink to="/" className="focus-ring flex shrink-0 items-center gap-2 rounded" aria-label="Copa Proud Sudamericana 2026">
             <img src="/brand/mark.webp" alt="" className="h-9 w-9 object-contain" />

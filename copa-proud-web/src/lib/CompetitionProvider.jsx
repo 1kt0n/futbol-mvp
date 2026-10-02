@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { buildModel } from './model.js'
+import { IS_DEMO } from './mode.js'
 
 export const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-export const SLUG = import.meta.env.VITE_COMPETITION_SLUG || 'copa-proud-2026'
+const BASE_SLUG = import.meta.env.VITE_COMPETITION_SLUG || 'copa-proud-2026'
+export const SLUG = IS_DEMO ? `${BASE_SLUG}-demo` : BASE_SLUG
 
 const POLL_LIVE_MS = 15_000
 const POLL_IDLE_MS = 60_000

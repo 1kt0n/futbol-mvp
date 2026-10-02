@@ -5,6 +5,8 @@ import './styles/index.css'
 import { I18nProvider, useI18n } from './i18n/I18nProvider.jsx'
 import { CompetitionProvider, useCompetition } from './lib/CompetitionProvider.jsx'
 import { Layout } from './components/Layout.jsx'
+import { DemoBanner } from './components/DemoBanner.jsx'
+import { IS_DEMO, ROUTER_BASENAME } from './lib/mode.js'
 import Home from './pages/Home.jsx'
 import Fixture from './pages/Fixture.jsx'
 import Groups from './pages/Groups.jsx'
@@ -17,9 +19,19 @@ import NotFound from './pages/NotFound.jsx'
 // El modo veedor es una pantalla aparte (lo usan ~6 personas): se carga solo si se abre su link.
 const Veedor = lazy(() => import('./veedor/VeedorApp.jsx'))
 
+if (IS_DEMO) {
+  // La demo no se indexa ni se confunde con el sitio real en la pestaña del navegador.
+  const robots = document.createElement('meta')
+  robots.name = 'robots'
+  robots.content = 'noindex, nofollow'
+  document.head.appendChild(robots)
+  document.title = `DEMO · ${document.title}`
+}
+
 function Splash({ children }) {
   return (
     <div className="grid min-h-dvh place-items-center px-6 text-center">
+      <div className="fixed inset-x-0 top-0"><DemoBanner /></div>
       <div className="flex flex-col items-center gap-5">
         <img src="/brand/logo-dark-bg.webp" alt="Copa Proud Sudamericana 2026" className="w-56 animate-pulse drop-shadow-[0_18px_40px_rgba(54,7,119,0.9)]" />
         {children}
@@ -56,7 +68,7 @@ function PublicSite() {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <I18nProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={ROUTER_BASENAME}>
         <Routes>
           <Route
             path="/v/:token"

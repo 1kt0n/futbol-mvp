@@ -48,3 +48,6 @@ static/
 *.log
 # Scripts forenses / ad-hoc locales
 scripts/forense.sql
+
+# Links de veedores de la demo (los genera scripts/demo_competition.py)
+demo-veedores.csv

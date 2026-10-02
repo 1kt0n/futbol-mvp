@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/I18nProvider.jsx'
 import { LANGS } from '../i18n/messages.js'
 import { localParts, matchLabel, offsetMinutes, sourceLabel } from '../lib/model.js'
 import { Crest } from '../components/TeamBadge.jsx'
+import { DemoBanner } from '../components/DemoBanner.jsx'
 import { flushQueue, loadQueue, newId, saveQueue, staffFetch } from './queue.js'
 
 const REFRESH_FAST_MS = 5_000
@@ -160,6 +161,7 @@ export default function VeedorApp() {
 function Shell({ children, right }) {
   return (
     <div className="mx-auto min-h-dvh max-w-lg px-4 pb-32 pt-3">
+      <div className="-mx-4 -mt-3 mb-3"><DemoBanner /></div>
       <header className="mb-4 flex items-center justify-between">
         <img src="/brand/mark.webp" alt="Copa Proud" className="h-10 w-10 object-contain" />
         {right}
