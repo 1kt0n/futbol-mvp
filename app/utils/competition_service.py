@@ -537,6 +537,8 @@ def build_snapshot(conn, comp: dict, *, include_admin: bool = False) -> dict:
             "utc_offset": comp["utc_offset"],
             "match_minutes": fmt.get("match_minutes"),
             "group_stage_closed": closed,
+            "draw_status": ((comp.get("settings") if isinstance(comp.get("settings"), dict)
+                             else json.loads(comp.get("settings") or "{}")).get("live_draw") or {}).get("status", "IDLE"),
             "data_version": int(comp["data_version"]),
             "fair_play_weights": settings["fair_play"],
         },

@@ -9,6 +9,7 @@ const SIZES = {
   md: 'h-10 w-10 text-xs',
   lg: 'h-16 w-16 text-base',
   xl: 'h-28 w-28 text-2xl',
+  fluid: 'text-xs', // el tamaño lo da className (pantallas que escalan con el viewport)
 }
 
 /** Escudo del equipo; si no hay imagen (o falla), iniciales sobre el color del equipo. */

@@ -35,6 +35,7 @@ from app.routers import (
     admin_calendar,
     admin_roles,
     competitions_admin,
+    competitions_draw,
     competitions_public,
 )
 
@@ -58,7 +59,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Actor-User-Id", "X-Event-Access", "X-Staff-Token"],
+    allow_headers=["Content-Type", "X-Actor-User-Id", "X-Event-Access", "X-Staff-Token", "X-Draw-Token"],
 )
 # El snapshot público de competencias (~100 KB de JSON repetitivo) baja ~10x con gzip.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -145,6 +146,7 @@ app.include_router(admin_calendar.router, prefix="/admin", tags=["Admin - Calend
 app.include_router(admin_roles.router, prefix="/admin", tags=["Admin - Roles"])
 app.include_router(competitions_admin.router, prefix="/admin", tags=["Admin - Competitions"])
 app.include_router(competitions_public.router, tags=["Public - Competitions"])
+app.include_router(competitions_draw.router, tags=["Public - Competition draw"])
 
 # =========================
 # Serve Frontend (production)

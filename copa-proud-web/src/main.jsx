@@ -18,6 +18,8 @@ import NotFound from './pages/NotFound.jsx'
 
 // El modo veedor es una pantalla aparte (lo usan ~6 personas): se carga solo si se abre su link.
 const Veedor = lazy(() => import('./veedor/VeedorApp.jsx'))
+const DrawStage = lazy(() => import('./draw/DrawStage.jsx'))
+const ProducerPanel = lazy(() => import('./draw/ProducerPanel.jsx'))
 
 if (IS_DEMO) {
   // La demo no se indexa ni se confunde con el sitio real en la pestaña del navegador.
@@ -75,6 +77,22 @@ createRoot(document.getElementById('root')).render(
             element={
               <Suspense fallback={<Splash />}>
                 <Veedor />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/sorteo"
+            element={
+              <Suspense fallback={<Splash />}>
+                <DrawStage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/produccion/:token"
+            element={
+              <Suspense fallback={<Splash />}>
+                <ProducerPanel />
               </Suspense>
             }
           />

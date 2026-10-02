@@ -186,6 +186,63 @@ body::before {
   }
 }
 
+/* ---------- Sorteo en vivo ---------- */
+.draw-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  padding: 7px;
+  background: conic-gradient(from var(--cp-angle), #e40303, #ff8c00, #ffed00, #008026, #004dff, #750787, #e40303);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: cp-spin 2.4s linear infinite;
+  filter: drop-shadow(0 0 28px rgba(255, 192, 0, 0.45));
+}
+/* Toda la revelación dura 4.2 s (REVEAL_MS en DrawStage.jsx) */
+.draw-reveal-bg {
+  animation: draw-bg 4.2s ease forwards;
+}
+@keyframes draw-bg {
+  0% { opacity: 0; }
+  7% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.draw-reveal-crest {
+  animation: draw-crest 0.8s cubic-bezier(0.2, 1.4, 0.3, 1) both;
+}
+@keyframes draw-crest {
+  from { opacity: 0; transform: scale(0.2) rotate(-20deg); }
+  to { opacity: 1; transform: none; }
+}
+.draw-reveal-name {
+  animation: draw-up 0.5s ease 0.75s both;
+}
+.draw-reveal-dest {
+  animation: draw-up 0.5s ease 1.5s both;
+}
+@keyframes draw-up {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: none; }
+}
+.draw-next {
+  animation: draw-pulse 1.4s ease-in-out infinite;
+}
+@keyframes draw-pulse {
+  50% { box-shadow: 0 0 0 4px rgba(255, 192, 0, 0.25), 0 0 26px rgba(255, 192, 0, 0.35); }
+}
+.draw-fresh {
+  animation: draw-fresh 2.2s ease-out;
+}
+@keyframes draw-fresh {
+  0% { transform: scale(1.12); box-shadow: 0 0 0 3px #ffc000, 0 0 40px rgba(255, 192, 0, 0.8); }
+  100% { transform: none; box-shadow: none; }
+}
+.draw-done {
+  animation: draw-crest 0.7s cubic-bezier(0.2, 1.4, 0.3, 1) both;
+}
+
 /* Cuenta regresiva: el número que cambia entra desde arriba */
 .countdown-tick {
   animation: cp-tick 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -202,7 +259,14 @@ body::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .countdown-tick {
+  .countdown-tick,
+  .draw-ring,
+  .draw-reveal-crest,
+  .draw-reveal-name,
+  .draw-reveal-dest,
+  .draw-next,
+  .draw-fresh,
+  .draw-done {
     animation: none;
   }
   .reveal {

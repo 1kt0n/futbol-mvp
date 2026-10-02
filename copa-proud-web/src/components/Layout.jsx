@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useRef } from 'react'
 import { useI18n } from '../i18n/I18nProvider.jsx'
 import { LANGS } from '../i18n/messages.js'
@@ -52,7 +52,7 @@ function LiveBadge() {
 
 export function Layout() {
   const { t } = useI18n()
-  const { offline, updatedAt } = useCompetition()
+  const { offline, updatedAt, model } = useCompetition()
   const { pathname } = useLocation()
 
   const navRef = useRef(null)
@@ -97,6 +97,12 @@ export function Layout() {
         </div>
         <div className="rainbow-strip opacity-80" />
       </header>
+
+      {model?.comp?.draw_status === 'LIVE' && (
+        <Link to="/sorteo" className="focus-ring flex items-center justify-center gap-2 bg-live px-4 py-2 text-center text-sm font-extrabold uppercase tracking-wider text-white">
+          <span className="live-dot !bg-white" aria-hidden="true" /> {t('draw.live_banner')} · {t('draw.watch')} →
+        </Link>
+      )}
 
       {offline && (
         <div role="status" className="bg-gold/15 px-4 py-2 text-center text-xs font-semibold text-gold-light">
