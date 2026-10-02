@@ -51,3 +51,4 @@ scripts/forense.sql
 
 # Links de veedores de la demo (los genera scripts/demo_competition.py)
 demo-veedores.csv
+demo-veedores-qr.png
