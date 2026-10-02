@@ -186,7 +186,25 @@ body::before {
   }
 }
 
+/* Cuenta regresiva: el número que cambia entra desde arriba */
+.countdown-tick {
+  animation: cp-tick 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes cp-tick {
+  from {
+    opacity: 0;
+    transform: translateY(-35%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .countdown-tick {
+    animation: none;
+  }
   .reveal {
     animation: none;
     opacity: 1;

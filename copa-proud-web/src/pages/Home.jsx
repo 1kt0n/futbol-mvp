@@ -2,15 +2,14 @@ import { Link } from 'react-router-dom'
 import { useI18n } from '../i18n/I18nProvider.jsx'
 import { useCompetition } from '../lib/CompetitionProvider.jsx'
 import { CUPS, DONE, LIVE } from '../lib/model.js'
-import { formatCountdown, useNow } from '../lib/useNow.js'
 import { SectionTitle } from '../components/Layout.jsx'
 import { MatchCard } from '../components/MatchCard.jsx'
 import { Crest } from '../components/TeamBadge.jsx'
+import { Countdown } from '../components/Countdown.jsx'
 
 function Hero() {
   const { t, locale } = useI18n()
   const { model } = useCompetition()
-  const now = useNow(30_000)
   const first = model.matches[0]
   const live = model.liveMatches.length
   const allDone = model.matches.length > 0 && model.doneMatches.length === model.matches.length
@@ -30,13 +29,8 @@ function Hero() {
     )
   } else if (allDone) {
     status = <span className="text-sm font-bold text-gold-light">{t('home.tournament_over')}</span>
-  } else if (first?.local && first.status === 'SCHEDULED' && first.local.ms > now) {
-    status = (
-      <span className="text-sm font-bold text-white/80">
-        {t('home.countdown', { time: '' })}
-        <span className="board-num ml-1 text-2xl text-gold">{formatCountdown(first.local.ms - now)}</span>
-      </span>
-    )
+  } else if (first?.local && first.status === 'SCHEDULED') {
+    status = <Countdown target={first.local.ms} className="inline-block text-left" />
   }
 
   return (
