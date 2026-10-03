@@ -154,6 +154,23 @@ COPA_PROUD_2026 = {
         "walkover_goals": 3,
         # Reglamento 7.9: goleador y valla menos vencida solo en fase clasificatoria.
         "stats_group_stage_only": True,
+        # Transmisión del sorteo (la producción la cambia desde su panel; esto es el default).
+        "broadcast": {"starts_at": "2026-10-06T22:15:00-03:00", "youtube_id": None, "spoiler_delay_s": 10},
+    },
+    # "Reglamento y Procedimiento del Sorteo Oficial" (recibido 2026-10-02): doble bombo por
+    # tanda, máx. 2 extranjeros por zona, clubes con 2 equipos separados, regla de salto.
+    # Las tandas se arman con los equipos cargados (país / nombre): ver competition_draw.build_tandas_preset.
+    "draw_procedure": {
+        "home_country": "AR",
+        "max_foreign": 2,
+        "pairs": [["Tercer Tiempo", "Cuarto Tiempo"], ["Rayos.cba", "Rayos.cba II"], ["Dogos", "Dogos Seniors"]],
+        "tandas": [
+            {"n": 1, "label": "Brasil", "ball": "GROUP", "select": {"countries": ["BR"]}, "expected": 5},
+            {"n": 2, "label": "Uruguay", "ball": "GROUP", "select": {"countries": ["UY"]}, "expected": 3},
+            {"n": 3, "label": "Resto de extranjeros", "ball": "GROUP", "select": {"foreign": True}, "expected": 4},
+            {"n": 4, "label": "Parejas de agrupaciones", "ball": "GROUP", "select": {"pairs": True}, "expected": 6},
+            {"n": 5, "label": "Resto de Argentina", "ball": "SLOT", "select": {"rest": True}, "expected": 10},
+        ],
     },
     # Intercambio para evitar que un mejor 3° enfrente al 1° de su propia zona (SUPUESTO 2).
     # Cada regla: si el equipo en (match, side) es de la misma zona que su rival,

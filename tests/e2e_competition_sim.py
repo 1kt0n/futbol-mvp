@@ -211,6 +211,8 @@ def main_sim():
     ok(all(m["my_team_ids"] and len(m["other_veedors"]) >= 1 for m in me["matches"]), "marca su equipo y el otro veedor")
     rme = expect(client.get(f"{PUB}/staff/me", headers={"X-Staff-Token": staff_tokens["Veedor Reserva"]}), 200)
     ok(len(rme["matches"]) == 7 and all(not m["my_team_ids"] for m in rme["matches"]), "reserva ve su cancha, sin equipos propios")
+    ok(rme["staff"]["courts"] == [{"venue": 1, "date": FMT["starts_on"], "matches": 7}] and me["staff"]["courts"] == [],
+       "me.staff.courts: cancha y día (fecha local) del veedor por cancha; vacío para el de equipos")
     with_roster = next(t for t in snap["teams"] if t["players"])
     me_r = expect(client.get(f"{PUB}/staff/me", headers={"X-Staff-Token": team_token[with_roster["id"]]}), 200)
     ok(any(len(m[side]["players"]) == 8 for m in me_r["matches"] for side in ("home", "away")

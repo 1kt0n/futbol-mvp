@@ -9,6 +9,9 @@ API pública de competencias (sitio de la Copa Proud) + modo veedor. SIN login d
   solo vive su SHA-256. Cada veedor opera únicamente sus partidos asignados y no puede
   tocar un partido ya confirmado por la mesa central.
 """
+import datetime as dt
+import re
+
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from sqlalchemy import text
 
@@ -69,6 +72,15 @@ def _require_staff(conn, request: Request, comp: dict, token: str | None) -> dic
     return {"id": str(row["id"]), "full_name": row["full_name"], "role": row["role"]}
 
 
+def _venue_tz(utc_offset: str | None) -> dt.timezone:
+    """'-03:00' → zona fija del predio (la del cronograma). Si no se entiende, UTC."""
+    m = re.fullmatch(r"([+-])(\d{2}):(\d{2})", utc_offset or "")
+    if not m:
+        return dt.timezone.utc
+    delta = dt.timedelta(hours=int(m[2]), minutes=int(m[3]))
+    return dt.timezone(-delta if m[1] == "-" else delta)
+
+
 def _staff_match(conn, comp: dict, staff: dict, code: str) -> dict:
     """Partido que el veedor puede operar: asignado al partido o veedor de alguno de los dos equipos."""
     match = svc.get_match(conn, comp["id"], code, for_update=True)
@@ -101,6 +113,9 @@ def staff_me(
             "is_captain": p["is_captain"], "is_goalkeeper": p["is_goalkeeper"],
         })
     venues = {v["id"]: v for v in state["venues"]}
+    tz = _venue_tz(comp["utc_offset"])
+    # Asignación POR CANCHA (veedor_staff_id del partido): (fecha local, cancha) → partidos.
+    courts: dict = {}
 
     def team_payload(tid):
         if not tid or tid not in teams:
@@ -116,6 +131,9 @@ def staff_me(
         if staff["id"] not in veedor_ids:
             continue
         venue = venues.get(m["venue_id"])
+        if m["veedor_staff_id"] == staff["id"] and venue and m["scheduled_at"]:
+            key = (m["scheduled_at"].astimezone(tz).date().isoformat(), venue["number"])
+            courts[key] = courts.get(key, 0) + 1
         mine.append({
             "code": m["code"], "stage": m["stage"], "cup": m["cup"], "group": m["group"],
             "venue": venue["number"] if venue else None,
@@ -140,7 +158,10 @@ def staff_me(
     return {
         "competition": {"slug": comp["slug"], "name": comp["name"], "utc_offset": comp["utc_offset"]},
         "staff": {"full_name": staff["full_name"], "role": staff["role"],
-                  "teams": [teams[t]["name"] for t in my_team_ids]},
+                  "teams": [teams[t]["name"] for t in my_team_ids],
+                  # Canchas a cargo (lo habitual: una cancha, uno o los dos días), por fecha y cancha.
+                  "courts": [{"venue": venue_n, "date": date, "matches": n}
+                             for (date, venue_n), n in sorted(courts.items())]},
         # Hora del servidor: el teléfono compara la antigüedad de los eventos sin depender de su reloj.
         "server_now": server_now.isoformat() if server_now else None,
         "matches": mine,

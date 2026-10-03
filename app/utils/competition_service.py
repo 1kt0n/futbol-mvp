@@ -66,6 +66,18 @@ def effective_settings(comp: dict) -> dict:
     return settings
 
 
+def broadcast_settings(comp: dict) -> dict:
+    """Transmisión del sorteo (YouTube + hora de inicio), con los defaults del formato."""
+    b = dict(effective_settings(comp).get("broadcast") or {})
+    yid = b.get("youtube_id")
+    return {
+        "starts_at": b.get("starts_at"),
+        "youtube_id": yid,
+        "youtube_url": f"https://www.youtube.com/watch?v={yid}" if yid else None,
+        "spoiler_delay_s": int(b.get("spoiler_delay_s") or 0),
+    }
+
+
 def _s(v):
     return str(v) if v is not None else None
 
@@ -539,6 +551,7 @@ def build_snapshot(conn, comp: dict, *, include_admin: bool = False) -> dict:
             "group_stage_closed": closed,
             "draw_status": ((comp.get("settings") if isinstance(comp.get("settings"), dict)
                              else json.loads(comp.get("settings") or "{}")).get("live_draw") or {}).get("status", "IDLE"),
+            "broadcast": broadcast_settings(comp),
             "data_version": int(comp["data_version"]),
             "fair_play_weights": settings["fair_play"],
         },
