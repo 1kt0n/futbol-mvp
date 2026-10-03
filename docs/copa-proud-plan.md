@@ -331,3 +331,65 @@ levanta por terminal (el panel no puede leer `.venv` en ~/Desktop por permisos d
   regla opcional "separar mismo país", lugar a mano. Estado en `competitions.settings.live_draw` (sin migración);
   resultado en `competition_group_slots` → el fixture del sábado se completa solo.
 - Pendiente para el sorteo REAL: cargar los 28 equipos reales en la competencia real (mesa central) antes del sorteo.
+
+## 17. Veedores por cancha (2026-10-02)
+
+- **Decisión:** los veedores se asignan **por cancha** (uno por cancha; puede ser otra persona cada día). Reemplaza a §13
+  como camino principal; el modelo por equipo sigue andando (el E2E lo usa). Sin migración: usa
+  `competition_matches.veedor_staff_id`, que `staff_can_operate`/`match_veedor_ids` ya respetaban.
+- `staff/me` suma `staff.courts = [{venue, date (local del predio), matches}]`. El modo veedor muestra arriba
+  "Tu cancha · Cancha 3 · Sáb y Dom", agrupa los partidos por día (un día ya terminado queda plegado) y no repite
+  la cancha en cada partido si tiene una sola.
+- Script `scripts/veedores_cancha.py` (pide la URL como el seed; `--demo` = competencia de ensayo):
+
+| Comando | Qué hace |
+|---|---|
+| `crear [--archivo veedores.csv] [--reemplazar]` | crea los veedores y les asigna todos los partidos de su cancha/día. Sin archivo: "Veedor Cancha N" (ambos días). CSV `cancha,dia,nombre[,telefono]`, `dia` = sab/dom/ambos; un nombre repetido = una persona con un link. Si ya hay veedores activos aborta; `--reemplazar` los revoca y borra las asignaciones (equipo y cancha). |
+| `links [--cancha N] [--dia sab\|dom]` | links NUEVOS (todos o esa cancha); los anteriores dejan de andar. |
+| `renombrar --cancha N [--dia sab\|dom] "Nombre"` | cambia el nombre sin tocar el link. |
+| `listar` | veedores, canchas/días, fechas (sin tokens) y partidos sin veedor. |
+| `qr` | rearma la hoja de QR desde el CSV (sin base; necesita `pip install qrcode`). |
+
+- `crear`/`links` muestran resumen y piden APLICAR (`--si` para no preguntar). Salida en la raíz del repo (ignorada
+  por git): `veedores-links.csv` + `veedores-qr.png` (demo: `demo-veedores.csv` + `demo-veedores-qr.png`), con un
+  mensaje listo para WhatsApp por veedor. Los días sab/dom salen de las fechas de los partidos (sirve para la demo).
+- `demo_competition.py crear` ahora crea 6 "Veedor Demo Cancha N" (ambos días); `--por-equipo N` = modelo anterior.
+- El teléfono del CSV solo va al CSV de salida (no se guarda cifrado: la clave de cifrado es la del servidor).
+
+## 18. Sorteo oficial + transmisión por YouTube + escenas de OBS (2026-10-02)
+
+**Reglamento y Procedimiento del Sorteo Oficial** (PDF recibido 2/10) implementado como modo `TANDAS`
+(`app/utils/competition_draw.py`, config en `draw_procedure` de `competition_formats.py`):
+- Doble bombo por tanda. T1 Brasil (5) · T2 Uruguay (3) · T3 resto de extranjeros (4) · T4 parejas
+  de agrupaciones (6) · T5 resto de Argentina (10). T1–T4: bolilla de **zona** A–G (va a la primera
+  posición libre; las bolillas no vuelven al bombo dentro de la tanda, se avisa si se repite).
+  T5: bolilla de **casillero** (zona + posición) entre los libres.
+- Máx. **2 extranjeros** por zona; parejas Tercer/Cuarto Tiempo, Rayos.cba/Rayos.cba II, Dogos/Dogos
+  Seniors en zonas distintas. **Regla de salto**: zona siguiente A→B…G→A que cumpla; queda en la pick
+  (`jump: {from, to, reason, partner_id}`) y se muestra en todas las pantallas.
+- ⚠️ SUPUESTO: posición dentro de la zona en T1–T4 = la primera libre (el PDF no lo dice).
+- `scripts/equipos_oficiales.py [--demo]`: carga los 28 equipos oficiales (`copa_proud_teams.json`,
+  países corregidos: Guatemala IyD es AR; Zorros = escudo MDP, Beescats = escudo Soccer Boys, 3F = 3
+  Deporte Inclusivo; Real Players sin escudo; Rayos.cba II usa el de Rayos) y deja el sorteo en modo
+  oficial. El panel también tiene "Cargar procedimiento oficial" (acción `preset`).
+- Panel: equipo + Enter → letra de la bolilla (T5: letra + número) → vista previa (acción `preview`,
+  muestra el salto) → Enter revela. "Ubicar a mano (sin reglas)" = `force`.
+- Tests: 10 nuevos en `tests/test_competition_draw.py` (incl. 1000 sorteos oficiales al azar que
+  siempre cumplen el reglamento).
+
+**Transmisión** (`settings.broadcast` = `{starts_at, youtube_id, spoiler_delay_s}`, default del
+formato: martes 6/10 22:15 −03:00). Se cambia desde el panel de producción (sección "Transmisión",
+acción `broadcast`). Pestaña nueva **Sorteo** (`/sorteo`): fecha/hora ARG + hora del visitante,
+cuenta regresiva, "Agendar" (Google Calendar), YouTube embebido + link, tablero en vivo con demora
+anti-spoiler (`spoiler_delay_s`, 10 s por defecto) y "Cómo es el sorteo". La demo tiene su propia
+config → **ensayo secreto**: vivo "No listado" pegado solo en el panel de la demo.
+`/sorteo?tv=1` sigue abriendo el tablero.
+
+**Escenas de OBS** (`copa-proud-web/src/obs/ObsApp.jsx`, índice con miniaturas en `/obs`): espera,
+reglas, equipos, overlay (transparente), zocalo?nombre=&rol= (transparente), split (ventana
+transparente 896×504 en 64,208), tablero, pausa, cierre. Escenario fijo 1920×1080, siempre en español,
+"ENSAYO" en una esquina en la demo. `copa-proud-web/obs/setup-obs.mjs` arma OBS solo por obs-websocket
+(guía: `docs/copa-proud-obs.md`).
+
+`scripts/demo_competition.py crear` ahora sortea la demo con el procedimiento oficial, deja las tandas
+listas para ensayar y conserva el link de producción y la transmisión al recrearla.

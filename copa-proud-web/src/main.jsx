@@ -1,6 +1,6 @@
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import './styles/index.css'
 import { I18nProvider, useI18n } from './i18n/I18nProvider.jsx'
 import { CompetitionProvider, useCompetition } from './lib/CompetitionProvider.jsx'
@@ -14,12 +14,14 @@ import Cups from './pages/Cups.jsx'
 import Teams from './pages/Teams.jsx'
 import Team from './pages/Team.jsx'
 import Stats from './pages/Stats.jsx'
+import Draw from './pages/Draw.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 // El modo veedor es una pantalla aparte (lo usan ~6 personas): se carga solo si se abre su link.
 const Veedor = lazy(() => import('./veedor/VeedorApp.jsx'))
 const DrawStage = lazy(() => import('./draw/DrawStage.jsx'))
 const ProducerPanel = lazy(() => import('./draw/ProducerPanel.jsx'))
+const ObsApp = lazy(() => import('./obs/ObsApp.jsx'))
 
 if (IS_DEMO) {
   // La demo no se indexa ni se confunde con el sitio real en la pestaña del navegador.
@@ -61,9 +63,32 @@ function PublicSite() {
         <Route path="equipos" element={<Teams />} />
         <Route path="equipos/:id" element={<Team />} />
         <Route path="estadisticas" element={<Stats />} />
+        <Route path="sorteo" element={<Draw />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
+  )
+}
+
+/**
+ * El sitio público. /sorteo es una pestaña más; /sorteo?tv=1 (link viejo de la pantalla de
+ * transmisión) sigue abriendo el tablero a pantalla completa. Un solo elemento para todo el sitio
+ * así navegar entre pestañas no vuelve a montar el proveedor de datos.
+ */
+function SiteRoot() {
+  const [params] = useSearchParams()
+  const { pathname } = useLocation()
+  if (pathname === '/sorteo' && params.get('tv') === '1') {
+    return (
+      <Suspense fallback={<Splash />}>
+        <DrawStage />
+      </Suspense>
+    )
+  }
+  return (
+    <CompetitionProvider>
+      <PublicSite />
+    </CompetitionProvider>
   )
 }
 
@@ -81,10 +106,10 @@ createRoot(document.getElementById('root')).render(
             }
           />
           <Route
-            path="/sorteo"
+            path="/obs/*"
             element={
-              <Suspense fallback={<Splash />}>
-                <DrawStage />
+              <Suspense fallback={null}>
+                <ObsApp />
               </Suspense>
             }
           />
@@ -96,14 +121,7 @@ createRoot(document.getElementById('root')).render(
               </Suspense>
             }
           />
-          <Route
-            path="*"
-            element={
-              <CompetitionProvider>
-                <PublicSite />
-              </CompetitionProvider>
-            }
-          />
+          <Route path="*" element={<SiteRoot />} />
         </Routes>
       </BrowserRouter>
     </I18nProvider>

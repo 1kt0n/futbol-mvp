@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useI18n } from '../i18n/I18nProvider.jsx'
 import { useCompetition } from '../lib/CompetitionProvider.jsx'
-import { CUPS, DONE, LIVE } from '../lib/model.js'
+import { CUPS, DONE, LIVE, localParts, offsetMinutes } from '../lib/model.js'
 import { SectionTitle } from '../components/Layout.jsx'
 import { MatchCard } from '../components/MatchCard.jsx'
 import { Crest } from '../components/TeamBadge.jsx'
@@ -57,6 +57,29 @@ function Hero() {
         <div className="mt-4">{status}</div>
       </div>
     </section>
+  )
+}
+
+/** Aviso del sorteo (hasta que termina): cuándo es y link a la pestaña. */
+function DrawPromo() {
+  const { t, locale } = useI18n()
+  const { model } = useCompetition()
+  const status = model.comp.draw_status
+  const startsAt = model.comp.broadcast?.starts_at
+  if (status === 'DONE' || status === 'LIVE' || !startsAt) return null
+  const p = localParts(startsAt, offsetMinutes(model.comp.utc_offset))
+  const day = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${p.date}T12:00:00Z`))
+  return (
+    <Link to="/sorteo" className="card reveal focus-ring mb-8 flex flex-wrap items-center gap-x-4 gap-y-2 p-4 hover:border-white/25" style={{ '--i': 1 }}>
+      <span className="draw-ball h-11 w-11 text-2xl" aria-hidden="true">A</span>
+      <span className="min-w-0 flex-1">
+        <span className="kicker block">{t('draw.official')}</span>
+        <span className="block text-lg font-extrabold first-letter:uppercase">
+          {day} · <span className="text-gold">{p.time} hs</span> <span className="text-sm font-semibold text-white/55">({t('draw.arg_time')})</span>
+        </span>
+      </span>
+      <span className="text-sm font-extrabold text-gold-light">{t('draw.watch_here')} →</span>
+    </Link>
   )
 }
 
@@ -120,6 +143,7 @@ export default function Home() {
   return (
     <>
       <Hero />
+      <DrawPromo />
       <Champions />
       {model.pending.length + model.liveMatches.length > 0 && <Courts />}
       {next.length > 0 && (

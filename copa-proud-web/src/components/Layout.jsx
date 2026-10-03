@@ -7,6 +7,7 @@ import { DemoBanner } from './DemoBanner.jsx'
 
 const NAV = [
   ['/', 'nav.home'],
+  ['/sorteo', 'nav.draw'],
   ['/fixture', 'nav.fixture'],
   ['/zonas', 'nav.groups'],
   ['/copas', 'nav.cups'],
@@ -98,7 +99,7 @@ export function Layout() {
         <div className="rainbow-strip opacity-80" />
       </header>
 
-      {model?.comp?.draw_status === 'LIVE' && (
+      {model?.comp?.draw_status === 'LIVE' && pathname !== '/sorteo' && (
         <Link to="/sorteo" className="focus-ring flex items-center justify-center gap-2 bg-live px-4 py-2 text-center text-sm font-extrabold uppercase tracking-wider text-white">
           <span className="live-dot !bg-white" aria-hidden="true" /> {t('draw.live_banner')} · {t('draw.watch')} →
         </Link>

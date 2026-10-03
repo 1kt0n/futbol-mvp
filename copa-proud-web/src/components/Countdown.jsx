@@ -8,11 +8,12 @@ const pad = (n) => String(n).padStart(2, '0')
  * segundo. Vive en su propio componente para que el tic de cada segundo no re-renderice la página.
  * Al llegar a cero desaparece (el estado "en vivo" lo muestra el resto del sitio).
  */
-export function Countdown({ target, className = '' }) {
+export function Countdown({ target, label, className = '' }) {
   const { t } = useI18n()
   const now = useNow(1000)
   const diff = target - now
   if (!(diff > 0)) return null
+  const title = label || t('home.starts_in')
 
   const total = Math.floor(diff / 1000)
   const parts = [
@@ -25,8 +26,8 @@ export function Countdown({ target, className = '' }) {
   const shown = parts[0].value === '0' ? parts.slice(1) : parts
 
   return (
-    <div className={className} role="timer" aria-label={`${t('home.starts_in')} ${shown.map((p) => `${p.value} ${t(`countdown.${p.key}`)}`).join(' ')}`}>
-      <div className="kicker mb-2">{t('home.starts_in')}</div>
+    <div className={className} role="timer" aria-label={`${title} ${shown.map((p) => `${p.value} ${t(`countdown.${p.key}`)}`).join(' ')}`}>
+      <div className="kicker mb-2">{title}</div>
       <div className="flex items-start gap-2 sm:gap-3" aria-hidden="true">
         {shown.map((p, i) => (
           <div key={p.key} className="flex items-start gap-2 sm:gap-3">

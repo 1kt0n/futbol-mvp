@@ -15,8 +15,9 @@ function detectLang() {
   return nav.find((l) => messages[l]) || 'es'
 }
 
-export function I18nProvider({ children }) {
-  const [lang, setLangState] = useState(detectLang)
+/** `forceLang`: idioma fijo (escenas de OBS: siempre en español, sin importar el navegador). */
+export function I18nProvider({ children, forceLang }) {
+  const [lang, setLangState] = useState(() => (forceLang && messages[forceLang] ? forceLang : detectLang()))
 
   const setLang = useCallback((next) => {
     setLangState(next)

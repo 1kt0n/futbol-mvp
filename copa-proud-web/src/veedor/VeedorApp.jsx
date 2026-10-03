@@ -11,6 +11,35 @@ const REFRESH_FAST_MS = 5_000
 const REFRESH_SLOW_EVERY = 4 // 4 × 5 s = 20 s
 const DUP_WINDOW_S = 90
 const LIVE = new Set(['LIVE', 'HALFTIME'])
+const DONE = new Set(['FINISHED', 'WALKOVER'])
+
+/** '2026-10-10' → 'Sábado' / 'Sáb' en el idioma elegido (el día del predio, no el del teléfono). */
+function weekdayName(date, locale, short = false) {
+  const wd = new Intl.DateTimeFormat(locale, { weekday: short ? 'short' : 'long', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`))
+  return wd.charAt(0).toUpperCase() + wd.slice(1)
+}
+
+function dayLabel(date, locale) {
+  const dm = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`))
+  return `${weekdayName(date, locale)} ${dm}`
+}
+
+/**
+ * Canchas a cargo (`me.staff.courts`: [{venue, date, matches}]) → una etiqueta por cancha:
+ * un día → 'Sábado 10/10'; los dos → 'Sáb y Dom'.
+ */
+function courtChips(courts, locale, t) {
+  const byVenue = new Map()
+  for (const c of courts || []) {
+    if (!byVenue.has(c.venue)) byVenue.set(c.venue, new Set())
+    byVenue.get(c.venue).add(c.date)
+  }
+  return [...byVenue.entries()].map(([venue, set]) => {
+    const dates = [...set].sort()
+    const days = dates.length === 1 ? dayLabel(dates[0], locale) : dates.map((d) => weekdayName(d, locale, true)).reduce((a, b) => t('veedor.days_and', { a, b }))
+    return { venue, days }
+  })
+}
 
 function errorText(t, code) {
   const known = ['MATCH_CONFIRMED', 'MATCH_NOT_ASSIGNED', 'TEAMS_NOT_DEFINED', 'PENALTIES_REQUIRED', 'INVALID_STAFF_TOKEN', 'MATCH_NOT_STARTED', 'EVENT_NOT_YOURS']
@@ -21,7 +50,7 @@ function errorText(t, code) {
 
 export default function VeedorApp() {
   const { token } = useParams()
-  const { t, lang, setLang } = useI18n()
+  const { t, lang, setLang, locale } = useI18n()
   const [me, setMe] = useState(null)
   const [fatal, setFatal] = useState(null)
   const [queue, setQueue] = useState(() => loadQueue(token))
@@ -113,8 +142,11 @@ export default function VeedorApp() {
   }
 
   const offset = offsetMinutes(me.competition.utc_offset)
-  const matches = me.matches.map((m) => ({ ...m, local: localParts(m.scheduled_at, offset) })).sort((a, b) => (a.local?.ms ?? 0) - (b.local?.ms ?? 0))
+  const matches = me.matches
+    .map((m) => ({ ...m, local: localParts(m.scheduled_at, offset) }))
+    .sort((a, b) => (a.local?.ms ?? 0) - (b.local?.ms ?? 0) || (a.venue ?? 0) - (b.venue ?? 0))
   const open = matches.find((m) => m.code === openCode)
+  const chips = courtChips(me.staff.courts, locale, t)
 
   return (
     <Shell
@@ -131,6 +163,19 @@ export default function VeedorApp() {
       <div className="mb-4">
         <div className="kicker">{t('veedor.title')}</div>
         <div className="text-lg font-extrabold">{me.staff.full_name}</div>
+        {chips.length > 0 && (
+          <div className="mt-2">
+            <div className="kicker mb-1">{t(chips.length > 1 ? 'veedor.your_courts' : 'veedor.your_court')}</div>
+            <div className="flex flex-wrap gap-2">
+              {chips.map((c) => (
+                <span key={c.venue} className="inline-flex items-baseline gap-2 rounded-xl bg-gold/15 px-3 py-1.5 ring-1 ring-gold/40">
+                  <span className="board-num text-3xl leading-none text-gold">{t('common.court_n', { n: c.venue })}</span>
+                  <span className="text-sm font-bold text-gold-light">{c.days}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         {me.staff.teams?.length > 0 && (
           <div className="mt-0.5 text-xs font-semibold text-white/60">
             {t('veedor.your_teams')}: <span className="text-gold-light">{me.staff.teams.join(' · ')}</span>
@@ -172,46 +217,98 @@ function Shell({ children, right }) {
   )
 }
 
+/**
+ * Partidos agrupados por día (un veedor de cancha tiene ~7 el sábado y ~6 el domingo). Si tiene más
+ * de un día, los días ya terminados quedan plegados para que lo próximo quede arriba.
+ */
 function MatchList({ matches, onOpen }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   if (!matches.length) return <p className="card p-5 text-center text-white/60">{t('veedor.no_matches')}</p>
-  const nextIdx = matches.findIndex((m) => m.status !== 'FINISHED' && m.status !== 'WALKOVER')
+  const nextCode = matches.find((m) => !DONE.has(m.status))?.code
+  // Con una sola cancha ya está arriba en grande: no se repite en cada partido.
+  const showCourt = new Set(matches.map((m) => m.venue)).size > 1
+  const days = []
+  for (const m of matches) {
+    const date = m.local?.date ?? ''
+    if (days[days.length - 1]?.date !== date) days.push({ date, matches: [] })
+    days[days.length - 1].matches.push(m)
+  }
   return (
-    <ul className="space-y-2">
-      {matches.map((m, i) => (
-        <li key={m.code}>
-          <button
-            type="button"
-            onClick={() => onOpen(m.code)}
-            className={`card focus-ring flex w-full items-center gap-3 p-3 text-left ${LIVE.has(m.status) ? 'live-frame' : ''} ${i === nextIdx ? 'ring-1 ring-gold/60' : ''}`}
-          >
-            <span className="w-14 shrink-0 text-center">
-              <span className="board-num block text-2xl leading-none text-gold">{m.local?.time}</span>
-              <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-white/45">{t('common.court_n', { n: m.venue })}</span>
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="kicker block truncate">{matchLabel(m.code, t)}</span>
-              {['home', 'away'].map((side) => {
-                const team = m[side]
-                const own = team && m.my_team_ids?.includes(team.id)
-                return (
-                  <span key={side} className={`block truncate text-sm font-bold ${own ? 'text-gold-light' : ''}`}>
-                    {own && <span className="mr-1" aria-label={t('veedor.your_team')}>★</span>}
-                    {team?.name || sourceLabel(m[`${side}_source`], t)}
-                  </span>
-                )
-              })}
-            </span>
-            <span className="text-right">
-              {m.status !== 'SCHEDULED' && <span className="board-num block text-2xl">{m.home_goals ?? 0}–{m.away_goals ?? 0}</span>}
-              <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
-                {m.confirmed ? t('common.official') : t(`status.${m.status}`)}
+    <div className="space-y-5">
+      {days.map((d) => {
+        const done = d.matches.filter((m) => DONE.has(m.status)).length
+        const head = (
+          <span className="flex items-baseline justify-between gap-3">
+            <span className="kicker">{d.date ? dayLabel(d.date, locale) : t('common.tbd')}</span>
+            <span className="sr-only"> · </span>
+            <span className="text-[11px] font-bold text-white/50">{t('veedor.day_progress', { done, n: d.matches.length })}</span>
+          </span>
+        )
+        const list = (
+          <ul className="space-y-2">
+            {d.matches.map((m) => (
+              <MatchRow key={m.code} m={m} next={m.code === nextCode} showCourt={showCourt} onOpen={onOpen} />
+            ))}
+          </ul>
+        )
+        if (days.length > 1 && done === d.matches.length) {
+          return (
+            <details key={d.date} className="group">
+              <summary className="focus-ring card mb-2 cursor-pointer list-none px-3 py-2 [&::-webkit-details-marker]:hidden">
+                <span className="flex items-center gap-2">
+                  <span className="text-white/50 transition group-open:rotate-90">›</span>
+                  <span className="flex-1">{head}</span>
+                </span>
+              </summary>
+              {list}
+            </details>
+          )
+        }
+        return (
+          <section key={d.date}>
+            <h2 className="mb-2 px-1">{head}</h2>
+            {list}
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+function MatchRow({ m, next, showCourt, onOpen }) {
+  const { t } = useI18n()
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onOpen(m.code)}
+        className={`card focus-ring flex w-full items-center gap-3 p-3 text-left ${LIVE.has(m.status) ? 'live-frame' : ''} ${next ? 'ring-1 ring-gold/60' : ''}`}
+      >
+        <span className="w-14 shrink-0 text-center">
+          <span className="board-num block text-2xl leading-none text-gold">{m.local?.time}</span>
+          {showCourt && <span className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-white/45">{t('common.court_n', { n: m.venue })}</span>}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="kicker block truncate">{matchLabel(m.code, t)}</span>
+          {['home', 'away'].map((side) => {
+            const team = m[side]
+            const own = team && m.my_team_ids?.includes(team.id)
+            return (
+              <span key={side} className={`block truncate text-sm font-bold ${own ? 'text-gold-light' : ''}`}>
+                {own && <span className="mr-1" aria-label={t('veedor.your_team')}>★</span>}
+                {team?.name || sourceLabel(m[`${side}_source`], t)}
               </span>
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
+            )
+          })}
+        </span>
+        <span className="text-right">
+          {m.status !== 'SCHEDULED' && <span className="board-num block text-2xl">{m.home_goals ?? 0}–{m.away_goals ?? 0}</span>}
+          <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
+            {m.confirmed ? t('common.official') : t(`status.${m.status}`)}
+          </span>
+        </span>
+      </button>
+    </li>
   )
 }
 
