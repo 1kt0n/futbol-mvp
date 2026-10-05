@@ -33,6 +33,9 @@ const CANVAS = { w: 1920, h: 1080, fps: 30 };
 // /obs/split deja un hueco transparente exactamente en x=64 y=208 w=896 h=504 sobre un lienzo
 // de 1920×1080. Si cambia allá, cambiala acá (y viceversa).
 const SPLIT_WINDOW = { x: 64, y: 208, w: 896, h: 504 };
+// Ventana VERTICAL del conductor en la escena 4 (/obs/equipos?camara=1): mismo acuerdo que arriba
+// (EQUIPOS_WINDOW en copa-proud-web/src/obs/ObsApp.jsx). La cámara 16:9 se recorta a lo alto.
+const EQUIPOS_WINDOW = { x: 64, y: 196, w: 540, h: 820 };
 const FULL_FRAME = { x: 0, y: 0, w: CANVAS.w, h: CANVAS.h };
 
 const CAMERA_SCENE = '[Fuente] Cámara';
@@ -133,7 +136,7 @@ function buildPlan(opts) {
   const sources = [
     ['CP · Espera', '/obs/espera', false, 'cuenta regresiva antes del show'],
     ['CP · Reglamento', '/obs/reglas', false, 'reglamento del sorteo'],
-    ['CP · Equipos', '/obs/equipos', false, 'los 28 equipos por tanda'],
+    ['CP · Equipos', '/obs/equipos?camara=1', true, 'los 28 equipos por tanda, con hueco vertical para el conductor'],
     ['CP · Overlay sorteo', '/obs/overlay', true, 'sobre la cámara: logo, EN VIVO, tanda y revelación'],
     ['CP · Zócalo conductor', `/obs/zocalo?${zocalo}`, true, 'zócalo de quien conduce'],
     ['CP · Tablero', '/obs/tablero', false, 'tablero completo de zonas'],
@@ -149,7 +152,7 @@ function buildPlan(opts) {
     { name: '1 · Espera', items: [page('CP · Espera')] },
     { name: '2 · Conductor', items: [camera(FULL_FRAME), page('CP · Overlay sorteo'), page('CP · Zócalo conductor')] },
     { name: '3 · Reglamento', items: [page('CP · Reglamento')] },
-    { name: '4 · Equipos', items: [page('CP · Equipos')] },
+    { name: '4 · Equipos', items: [camera(EQUIPOS_WINDOW), page('CP · Equipos')] },
     { name: '5 · Sorteo · Cámara', items: [camera(FULL_FRAME), page('CP · Overlay sorteo')] },
     { name: '6 · Sorteo · Tablero', items: [page('CP · Tablero')] },
     { name: '7 · Sorteo · Cámara + Tablero', items: [camera(SPLIT_WINDOW), page('CP · Cámara + Tablero')] },

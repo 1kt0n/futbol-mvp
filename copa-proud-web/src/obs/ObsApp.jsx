@@ -18,11 +18,13 @@ import { BallsRow, Reveal, ZonesGrid } from '../draw/DrawBoard.jsx'
  * Ventana de la cámara en "Cámara + Tablero": tiene que coincidir con SPLIT_WINDOW de setup-obs.mjs.
  */
 export const SPLIT_WINDOW = { x: 64, y: 208, w: 896, h: 504 }
+// Ventana VERTICAL del conductor en "Equipos" (/obs/equipos?camara=1) = EQUIPOS_WINDOW de setup-obs.mjs.
+export const EQUIPOS_WINDOW = { x: 64, y: 196, w: 540, h: 820 }
 
 const SCENES = [
   ['espera', 'Espera', 'Cuenta regresiva hasta el inicio, con los 28 escudos pasando.', false],
   ['reglas', 'Reglamento', 'Cómo es el sorteo: tandas, cupo de extranjeros, parejas y regla de salto.', false],
-  ['equipos', 'Equipos', 'Los 28 equipos, tanda por tanda.', false],
+  ['equipos?camara=1', 'Equipos', 'Los 28 equipos, tanda por tanda, con el conductor de pie a la izquierda (ventana para la cámara).', true],
   ['overlay', 'Overlay sorteo', 'Va ENCIMA de la cámara: marca, EN VIVO, tanda y bolillas; revela cada equipo con un zócalo.', true],
   ['zocalo?nombre=Nombre%20Apellido&rol=Conducci%C3%B3n', 'Zócalo conductor', 'Va ENCIMA de la cámara. Cambiá nombre y rol en el link.', true],
   ['split', 'Cámara + Tablero', 'Ventana transparente a la izquierda para la cámara; zonas a la derecha.', true],
@@ -102,6 +104,30 @@ function BrandBg() {
       />
       <div className="rainbow-strip absolute inset-x-0 bottom-0 !h-[8px]" />
     </div>
+  )
+}
+
+/**
+ * Fondo de marca con una ventana transparente (ahí se ve la cámara, que en OBS va DEBAJO de esta
+ * página) y un marco arcoíris alrededor. Fuera de OBS se marca dónde va la cámara.
+ */
+function CameraHole({ win }) {
+  const mask = `linear-gradient(#000 0 0) ${win.x}px ${win.y}px / ${win.w}px ${win.h}px no-repeat, linear-gradient(#000 0 0)`
+  return (
+    <>
+      <div className="absolute inset-0" style={{ WebkitMask: mask, WebkitMaskComposite: 'xor', mask, maskComposite: 'exclude' }}>
+        <BrandBg />
+      </div>
+      <div
+        className="absolute rounded-[18px]"
+        style={{ left: win.x - 6, top: win.y - 6, width: win.w + 12, height: win.h + 12, padding: 6, background: 'linear-gradient(90deg, #e40303, #ff8c00, #ffed00, #008026, #004dff, #750787)', WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)', WebkitMaskComposite: 'xor', maskComposite: 'exclude' }}
+      />
+      {!window.obsstudio && (
+        <div className="absolute grid place-items-center text-[26px] font-extrabold uppercase tracking-[0.25em] text-white/40" style={{ left: win.x, top: win.y, width: win.w, height: win.h, background: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.04) 0 20px, transparent 20px 40px)' }}>
+          Cámara
+        </div>
+      )}
+    </>
   )
 }
 
@@ -258,29 +284,40 @@ function Rules() {
 
 function TeamsScene() {
   const { t } = useI18n()
+  const [params] = useSearchParams()
+  const withCamera = params.get('camara') === '1'
   const { state, teamById } = useFeed({ animate: false, slowMs: 20000 })
-  if (!state) return <Stage />
+  if (!state) return <Stage transparent={withCamera} />
   const columns =
     state.mode === 'TANDAS' && state.tandas?.length
       ? state.tandas.map((td) => ({ key: td.n, title: t('draw.tanda', { n: td.n }), sub: tandaLabel(td, t, state.has_official_procedure), ids: td.team_ids }))
       : [{ key: 'all', title: 'Equipos', sub: '', ids: state.teams.map((x) => x.id) }]
+  const w = EQUIPOS_WINDOW
+  // Con cámara: el conductor de pie a la izquierda y las tandas en lo que queda a la derecha.
+  const grid = withCamera
+    ? { left: w.x + w.w + 40, right: 64, top: w.y, gap: 12, pad: 14, crest: 'h-[46px] w-[46px]', name: 'line-clamp-2 text-[18px] leading-[1.1]', title: 'text-[38px]', sub: 'text-[17px]', row: 10 }
+    : { left: 80, right: 80, top: 220, gap: 20, pad: 18, crest: 'h-[52px] w-[52px]', name: 'truncate text-[22px]', title: 'text-[44px]', sub: 'text-[22px]', row: 10 }
   return (
-    <Stage>
-      <Title kicker={t('draw.official')} className="absolute left-[80px] top-[64px]">
+    <Stage transparent={withCamera}>
+      {withCamera && <CameraHole win={w} />}
+      <Title kicker={t('draw.official')} className={`absolute top-[56px] ${withCamera ? 'left-[64px]' : 'left-[80px]'}`}>
         Los {state.teams.length} equipos
       </Title>
-      <div className="absolute inset-x-[80px] top-[220px] grid gap-[20px]" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
+      <div
+        className="absolute grid"
+        style={{ left: grid.left, right: grid.right, top: grid.top, height: withCamera ? w.h : undefined, gap: grid.gap, gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
+      >
         {columns.map((col) => (
-          <div key={col.key} className="card p-[18px]">
-            <div className="board-num text-[44px] leading-none text-gold">{col.title}</div>
-            <div className="mb-[14px] mt-[4px] text-[22px] font-extrabold leading-tight">{col.sub}</div>
-            <div className="flex flex-col gap-[10px]">
+          <div key={col.key} className="card" style={{ padding: grid.pad }}>
+            <div className={`board-num leading-none text-gold ${grid.title}`}>{col.title}</div>
+            <div className={`mb-[14px] mt-[4px] font-extrabold leading-tight ${grid.sub}`}>{col.sub}</div>
+            <div className="flex flex-col" style={{ gap: grid.row }}>
               {col.ids.map((id) => {
                 const tm = teamById.get(id)
                 return (
-                  <div key={id} className="flex items-center gap-[12px]">
-                    <Crest team={tm} size="fluid" className="h-[52px] w-[52px]" />
-                    <span className="min-w-0 truncate text-[22px] font-bold">
+                  <div key={id} className="flex items-center gap-[10px]">
+                    <Crest team={tm} size="fluid" className={grid.crest} />
+                    <span className={`min-w-0 font-bold ${grid.name}`}>
                       {tm?.name} {tm?.country_code && <span className="text-[0.9em]">{flag(tm.country_code)}</span>}
                     </span>
                   </div>
@@ -373,18 +410,10 @@ function Split() {
   const { t } = useI18n()
   const { state, shownSeq, revealing, lastShown, teamById } = useFeed()
   const w = SPLIT_WINDOW
-  const mask = `linear-gradient(#000 0 0) ${w.x}px ${w.y}px / ${w.w}px ${w.h}px no-repeat, linear-gradient(#000 0 0)`
   const view = state ? visibleView(state, shownSeq, revealing?.seq) : null
   return (
     <Stage transparent>
-      {/* Fondo con la ventana recortada (ahí se ve la cámara que está debajo en OBS) */}
-      <div className="absolute inset-0" style={{ WebkitMask: mask, WebkitMaskComposite: 'xor', mask, maskComposite: 'exclude' }}>
-        <BrandBg />
-      </div>
-      <div
-        className="absolute rounded-[18px]"
-        style={{ left: w.x - 6, top: w.y - 6, width: w.w + 12, height: w.h + 12, padding: 6, background: 'linear-gradient(90deg, #e40303, #ff8c00, #ffed00, #008026, #004dff, #750787)', WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)', WebkitMaskComposite: 'xor', maskComposite: 'exclude' }}
-      />
+      <CameraHole win={w} />
       {state && view && (
         <>
           <Header state={state} view={view} />
