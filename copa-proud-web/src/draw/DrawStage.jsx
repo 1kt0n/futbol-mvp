@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/I18nProvider.jsx'
 import { flag } from '../lib/model.js'
 import { Crest } from '../components/TeamBadge.jsx'
 import { DemoBanner } from '../components/DemoBanner.jsx'
+import { Sponsors } from '../components/Sponsors.jsx'
 import { useDrawFeed } from './useDrawFeed.js'
 import { tandaLabel, visibleView } from './drawView.js'
 import { BallsRow, ForeignDots, Reveal } from './DrawBoard.jsx'
@@ -88,6 +89,7 @@ export default function DrawStage({ forceTv = false, embedded = false }) {
               <BallsRow state={state} view={view} size={Math.round(Math.min(window.innerHeight * 0.055, 64))} />
             </div>
           )}
+          <Sponsors height="3.4vh" gap="1.6vh" stack className={`border-t border-white/10 pt-[1.4vh] ${tandas && view.tanda ? '' : 'mt-auto'}`} labelClassName="text-[clamp(9px,1.3vh,16px)]" />
         </section>
 
         {/* Zonas */}

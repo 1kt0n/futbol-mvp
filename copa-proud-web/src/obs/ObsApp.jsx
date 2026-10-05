@@ -4,6 +4,7 @@ import { I18nProvider, useI18n } from '../i18n/I18nProvider.jsx'
 import { DEMO_PREFIX, IS_DEMO } from '../lib/mode.js'
 import { flag } from '../lib/model.js'
 import { Crest } from '../components/TeamBadge.jsx'
+import { Sponsors } from '../components/Sponsors.jsx'
 import DrawStage from '../draw/DrawStage.jsx'
 import { useDrawFeed } from '../draw/useDrawFeed.js'
 import { tandaLabel, visibleView } from '../draw/drawView.js'
@@ -153,22 +154,22 @@ function Header({ state, view }) {
     <div className="absolute inset-x-[64px] top-[44px] flex items-center gap-[24px]">
       <img src="/brand/mark.webp" alt="" className="h-[110px] w-[110px] object-contain" />
       <div>
-        <div className="text-[52px] font-extrabold leading-none tracking-tight">{t('draw.official')}</div>
-        <div className="mt-[8px] text-[20px] font-bold tracking-[0.3em] text-white/60">COPA PROUD SUDAMERICANA 2026</div>
+        <div className="whitespace-nowrap text-[44px] font-extrabold leading-none tracking-tight">{t('draw.official')}</div>
+        <div className="mt-[8px] whitespace-nowrap text-[18px] font-bold tracking-[0.3em] text-white/60">COPA PROUD SUDAMERICANA 2026</div>
       </div>
       <div className="ml-auto flex items-center gap-[20px]">
         {live && view?.tanda && (
-          <span className="rounded-full bg-white/10 px-[22px] py-[10px] text-[26px] font-extrabold uppercase tracking-wider ring-1 ring-white/15">
+          <span className="whitespace-nowrap rounded-full bg-white/10 px-[20px] py-[10px] text-[22px] font-extrabold uppercase tracking-wider ring-1 ring-white/15">
             <span className="text-gold">{t('draw.tanda', { n: view.tanda.n })}</span> · {tandaLabel(view.tanda, t, state.has_official_procedure)}
           </span>
         )}
         {live && (
-          <span className="inline-flex items-center gap-[12px] rounded-full bg-live/25 px-[22px] py-[10px] text-[26px] font-extrabold uppercase tracking-widest text-[#ff8aa5]">
+          <span className="inline-flex items-center gap-[12px] whitespace-nowrap rounded-full bg-live/25 px-[20px] py-[10px] text-[22px] font-extrabold uppercase tracking-widest text-[#ff8aa5]">
             <span className="live-dot" aria-hidden="true" /> {t('status.LIVE')}
           </span>
         )}
         {state && view && (
-          <span className="board-num text-[80px] leading-none text-gold">
+          <span className="board-num whitespace-nowrap text-[72px] leading-none text-gold">
             {view.placed}<span className="text-white/30">/{state.teams.length || 28}</span>
           </span>
         )}
@@ -212,6 +213,7 @@ function Waiting() {
         )}
         <div className="mt-[22px] text-[40px] font-bold text-white/85 first-letter:uppercase">{when}</div>
         <div className="mt-[10px] font-script text-[56px] text-gold">Competí con pasión</div>
+        <Sponsors height={60} gap={56} align="start" className="mt-[34px]" labelClassName="text-[18px] tracking-[0.3em]" />
       </div>
       {teams.length > 0 && (
         <div className="absolute inset-x-0 bottom-[60px] overflow-hidden border-y border-white/10 bg-night/50 py-[22px]">
@@ -247,6 +249,7 @@ function Rules() {
   return (
     <Stage>
       <Title kicker="Reglamento oficial" className="absolute left-[80px] top-[64px]">Así es el sorteo</Title>
+      <Sponsors height={48} gap={44} align="end" className="absolute right-[80px] top-[70px]" labelClassName="text-[18px] tracking-[0.3em]" />
       <div className="absolute left-[80px] top-[230px] flex w-[1060px] flex-col gap-[16px]">
         {tandas.map((td) => (
           <div key={td.n} className="card flex items-center gap-[24px] px-[24px] py-[16px]">
@@ -303,6 +306,7 @@ function TeamsScene() {
       <Title kicker={t('draw.official')} className={`absolute top-[56px] ${withCamera ? 'left-[64px]' : 'left-[80px]'}`}>
         Los {state.teams.length} equipos
       </Title>
+      <Sponsors height={48} gap={44} align="end" className="absolute right-[64px] top-[62px]" labelClassName="text-[18px] tracking-[0.3em]" />
       <div
         className="absolute grid"
         style={{ left: grid.left, right: grid.right, top: grid.top, height: withCamera ? w.h : undefined, gap: grid.gap, gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
@@ -374,6 +378,9 @@ function CameraOverlay() {
           )}
         </div>
       )}
+      <div className="absolute bottom-[48px] right-[48px] w-[300px] rounded-[20px] bg-night/80 px-[20px] py-[16px] ring-1 ring-white/10 backdrop-blur">
+        <Sponsors height={30} gap={14} stack labelClassName="text-[13px] tracking-[0.25em]" />
+      </div>
       {revealing && <Reveal key={revealing.seq} pick={revealing} team={teamById.get(revealing.team_id)} teamById={teamById} variant="lower" />}
       {done && (
         <div className="draw-done absolute bottom-[64px] left-1/2 -translate-x-1/2 rounded-full bg-gold px-[40px] py-[14px] text-[40px] font-extrabold text-night shadow-2xl">
@@ -439,7 +446,11 @@ function Split() {
             )}
           </div>
           <div className="absolute" style={{ left: 1000, top: w.y, width: 856 }}>
-            <ZonesGrid state={state} view={view} teamById={teamById} fresh={lastShown?.team_id} variant="split" />
+            <ZonesGrid state={state} view={view} teamById={teamById} fresh={lastShown?.team_id} variant="split">
+              <div className="card grid place-items-center p-[14px]">
+                <Sponsors height={24} gap={22} stack labelClassName="text-[12px] tracking-[0.2em]" />
+              </div>
+            </ZonesGrid>
           </div>
           {revealing && <Reveal key={revealing.seq} pick={revealing} team={teamById.get(revealing.team_id)} teamById={teamById} variant="lower" />}
         </>
@@ -456,7 +467,7 @@ function Board() {
     <>
       <DrawStage forceTv embedded />
       {IS_DEMO && (
-        <div className="fixed right-[0.8vw] top-[1vh] z-50 rounded bg-gold px-[0.6vw] text-[1.4vh] font-extrabold tracking-[0.2em] text-night">ENSAYO</div>
+        <div className="fixed bottom-[1vh] right-[0.8vw] z-50 rounded bg-gold px-[0.6vw] text-[1.4vh] font-extrabold tracking-[0.2em] text-night">ENSAYO</div>
       )}
     </>
   )
@@ -478,6 +489,7 @@ function Pause() {
               Ya hay <span className="text-gold">{view.placed}</span> de {state.teams.length} equipos sorteados
             </div>
           )}
+          <Sponsors height={56} gap={56} className="mt-[48px]" labelClassName="text-[18px] tracking-[0.3em]" />
         </div>
       </div>
     </Stage>
@@ -496,6 +508,7 @@ function Closing() {
         {t('draw.board_done')}
       </Title>
       <img src="/brand/mark.webp" alt="" className="absolute right-[64px] top-[36px] h-[120px] w-[120px] object-contain" />
+      <Sponsors height={44} gap={40} align="end" className="absolute right-[220px] top-[58px]" labelClassName="text-[18px] tracking-[0.3em]" />
       {state && view && (
         <div className="absolute inset-x-[64px] top-[200px]">
           <ZonesGrid state={state} view={view} teamById={teamById} variant="final" />

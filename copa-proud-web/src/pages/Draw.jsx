@@ -8,6 +8,7 @@ import { SectionTitle } from '../components/Layout.jsx'
 import { Countdown } from '../components/Countdown.jsx'
 import { Crest } from '../components/TeamBadge.jsx'
 import { YouTubeEmbed } from '../components/YouTubeEmbed.jsx'
+import { Sponsors } from '../components/Sponsors.jsx'
 import { useDrawFeed } from '../draw/useDrawFeed.js'
 import { calendarUrl, jumpReason, tandaLabel, visibleView } from '../draw/drawView.js'
 import { BallsRow, ZonesGrid } from '../draw/DrawBoard.jsx'
@@ -98,6 +99,11 @@ export default function Draw() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* Sponsors */}
+      <section className="card reveal mb-10 px-4 py-6" style={{ '--i': 2 }}>
+        <Sponsors height={44} gap={48} className="[&_img]:max-h-[9vw] sm:[&_img]:max-h-none" />
       </section>
 
       {/* Tablero */}

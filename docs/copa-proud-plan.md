@@ -393,3 +393,7 @@ transparente 896×504 en 64,208), tablero, pausa, cierre. Escenario fijo 1920×1
 
 `scripts/demo_competition.py crear` ahora sortea la demo con el procedimiento oficial, deja las tandas
 listas para ensayar y conserva el link de producción y la transmisión al recrearla.
+
+**Sponsors del sorteo** (2026-10-05): Nutrishop y American Top Underwear (`copa-proud-web/public/sponsors/`,
+preparados para fondo oscuro; lista en `src/components/Sponsors.jsx`). Aparecen en la pestaña Sorteo
+("Con el apoyo de") y en todas las escenas de OBS salvo el zócalo.

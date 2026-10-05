@@ -76,7 +76,7 @@ const ZONE = {
 }
 
 /** Zonas con los equipos visibles. `fresh` = equipo recién ubicado (destello). */
-export function ZonesGrid({ state, view, teamById, fresh, variant = 'page', className = '' }) {
+export function ZonesGrid({ state, view, teamById, fresh, variant = 'page', className = '', children }) {
   const { t } = useI18n()
   const z = ZONE[variant]
   const max = state.rules?.max_foreign
@@ -115,6 +115,7 @@ export function ZonesGrid({ state, view, teamById, fresh, variant = 'page', clas
           </div>
         </div>
       ))}
+      {children}
     </div>
   )
 }
