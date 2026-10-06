@@ -66,7 +66,7 @@ export default function Team() {
             <ul className="card divide-y divide-white/5">
               {players.map((p) => (
                 <li key={p.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <span className="board-num w-8 text-right text-2xl text-gold">{p.shirt_number ?? '–'}</span>
+                  {players.some((x) => x.shirt_number != null) && <span className="board-num w-8 text-right text-2xl text-gold">{p.shirt_number ?? '–'}</span>}
                   <span className="flex-1 truncate font-semibold">{p.full_name}</span>
                   {p.is_captain && (
                     <span title={t('teams.captain')} className="rounded bg-gold px-1.5 text-[10px] font-extrabold text-night">C</span>

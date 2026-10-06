@@ -539,7 +539,7 @@ function EventLog({ match, locked, enqueue, base }) {
             <li key={e.id} className="flex items-center gap-3 px-3 py-2 text-sm">
               <span className="w-24 shrink-0 font-bold">{t(`event.${e.type}`)}</span>
               <span className="min-w-0 flex-1 text-white/70">
-                <span className="block truncate">{p ? `#${p.shirt_number ?? '–'} ${p.full_name}` : team?.name}</span>
+                <span className="block truncate">{p ? `${p.shirt_number != null ? `#${p.shirt_number} ` : ''}${p.full_name}` : team?.name}</span>
                 {!e.mine && e.loaded_by && (
                   <span className="block truncate text-[11px] text-white/40">{t('veedor.by', { name: e.loaded_by })}</span>
                 )}
@@ -564,6 +564,7 @@ function EventLog({ match, locked, enqueue, base }) {
 function PlayerPicker({ team, type, onPick, onClose }) {
   const { t } = useI18n()
   const players = team?.players || []
+  const numbered = players.some((p) => p.shirt_number != null)
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-black/60" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="mx-auto w-full max-w-lg rounded-t-2xl bg-indigo-800 p-4 ring-1 ring-white/10" onClick={(e) => e.stopPropagation()} style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
@@ -575,11 +576,17 @@ function PlayerPicker({ team, type, onPick, onClose }) {
             ✕
           </button>
         </div>
-        <div className="grid max-h-[50dvh] grid-cols-3 gap-2 overflow-y-auto">
+        {/* Con dorsales: número grande + nombre. Sin dorsales (planillas sin número): nombres legibles. */}
+        <div className={`grid max-h-[55dvh] gap-2 overflow-y-auto ${numbered ? 'grid-cols-3' : 'grid-cols-2'}`}>
           {players.map((p) => (
-            <button key={p.id} type="button" onClick={() => onPick(p)} className="focus-ring rounded-xl bg-white/5 p-2 text-center ring-1 ring-white/10 active:bg-gold active:text-night">
-              <span className="board-num block text-3xl leading-none text-gold">{p.shirt_number ?? '–'}</span>
-              <span className="block truncate text-[11px] font-semibold">{p.full_name}</span>
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onPick(p)}
+              className={`focus-ring rounded-xl bg-white/5 ring-1 ring-white/10 active:bg-gold active:text-night ${numbered ? 'p-2 text-center' : 'flex min-h-[52px] items-center px-3 py-2 text-left'}`}
+            >
+              {numbered && <span className="board-num block text-3xl leading-none text-gold">{p.shirt_number ?? '–'}</span>}
+              <span className={numbered ? 'line-clamp-2 block text-[12px] font-semibold leading-tight' : 'line-clamp-2 text-[15px] font-bold leading-tight'}>{p.full_name}</span>
             </button>
           ))}
         </div>
