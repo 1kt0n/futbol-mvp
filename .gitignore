@@ -56,3 +56,6 @@ demo-veedores-qr.png
 veedores-links.csv
 veedores-qr.png
 veedores.csv
+
+# Links del sorteo real (los genera scripts/preparar_sorteo_real.py; tienen el link privado del panel)
+links-produccion.txt

@@ -24,6 +24,24 @@ from app.utils.security import gen_management_token, hash_management_token  # no
 SITE = os.environ.get("DEMO_SITE_URL", "https://live.copaproud.com")
 
 
+def generar_link(conn, slug: str) -> str:
+    """Token nuevo del panel de producción (guarda solo el hash). El anterior deja de funcionar."""
+    token = gen_management_token()
+    row = conn.execute(text("SELECT id, settings FROM public.competitions WHERE slug = :s FOR UPDATE"),
+                       {"s": slug}).mappings().first()
+    if not row:
+        sys.exit(f"No existe la competencia {slug}.")
+    settings = row["settings"] if isinstance(row["settings"], dict) else json.loads(row["settings"] or "{}")
+    draw = dict(settings.get("live_draw") or {})
+    draw["producer_token_hash"] = hash_management_token(token)
+    conn.execute(text("""
+        UPDATE public.competitions
+        SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{live_draw}', CAST(:d AS jsonb))
+        WHERE id = :cid
+    """), {"d": json.dumps(draw), "cid": row["id"]})
+    return token
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--demo", action="store_true", help="link para la competencia de ensayo")
@@ -31,25 +49,13 @@ def main():
     slug = COPA_PROUD_2026["slug"] + ("-demo" if args.demo else "")
     prefix = "/demo" if args.demo else ""
 
-    token = gen_management_token()
     with engine.begin() as conn:
-        row = conn.execute(text("SELECT id, settings FROM public.competitions WHERE slug = :s FOR UPDATE"),
-                           {"s": slug}).mappings().first()
-        if not row:
-            sys.exit(f"No existe la competencia {slug}." + (" Creala con demo_competition.py crear." if args.demo else ""))
-        settings = row["settings"] if isinstance(row["settings"], dict) else json.loads(row["settings"] or "{}")
-        draw = dict(settings.get("live_draw") or {})
-        draw["producer_token_hash"] = hash_management_token(token)
-        conn.execute(text("""
-            UPDATE public.competitions
-            SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{live_draw}', CAST(:d AS jsonb))
-            WHERE id = :cid
-        """), {"d": json.dumps(draw), "cid": row["id"]})
+        token = generar_link(conn, slug)
 
     print(f"\n✓ Panel de producción ({'DEMO' if args.demo else 'REAL'}) — no lo compartas:")
     print(f"  {SITE}{prefix}/produccion/{token}")
     print("\n  Pantalla de transmisión (para OBS / proyector):")
-    print(f"  {SITE}{prefix}/sorteo?tv=1")
+    print(f"  {SITE}{prefix}/obs/tablero")
     print("  (El link anterior de producción, si había, ya no funciona.)")
 
 

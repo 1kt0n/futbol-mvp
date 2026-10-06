@@ -91,6 +91,9 @@ Opciones:
   --port <n>           Puerto del servidor WebSocket de OBS (por defecto 4455).
   --conductor "<txt>"  Nombre del zócalo (por defecto "Conducción").
   --rol "<txt>"        Segunda línea del zócalo (por defecto "Copa Proud Sudamericana 2026").
+  --coleccion "<txt>"  Colección de escenas donde armar todo (tiene que existir: en OBS,
+                       Colección de escenas → Duplicar). Así el ensayo y el show real quedan
+                       en colecciones separadas. Sin esto, usa la colección abierta.
   --dry-run            Muestra el plan completo sin conectarse a OBS.
   -h, --help           Esta ayuda.
 
@@ -101,10 +104,10 @@ Se puede correr las veces que haga falta: actualiza lo que ya existe, no duplica
 
 function parseArgs(argv) {
   const opts = {
-    demo: false, base: null, host: '127.0.0.1', port: 4455,
+    demo: false, base: null, host: '127.0.0.1', port: 4455, coleccion: null,
     conductor: 'Conducción', rol: 'Copa Proud Sudamericana 2026', dryRun: false, help: false,
   };
-  const withValue = { '--base': 'base', '--host': 'host', '--port': 'port', '--conductor': 'conductor', '--rol': 'rol' };
+  const withValue = { '--base': 'base', '--host': 'host', '--port': 'port', '--conductor': 'conductor', '--rol': 'rol', '--coleccion': 'coleccion' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
@@ -159,7 +162,7 @@ function buildPlan(opts) {
     { name: '8 · Pausa', items: [page('CP · Pausa')] },
     { name: '9 · Cierre', items: [page('CP · Cierre')] },
   ];
-  return { base, label, sources, scenes, startScene: scenes[0].name };
+  return { base, label, sources, scenes, startScene: scenes[0].name, wantedCollection: opts.coleccion };
 }
 
 function describeItem(item) {
@@ -175,6 +178,7 @@ function printPlan(plan, opts) {
   console.log(`Plan para ${plan.label} (simulación: no me conecto a OBS)`);
   console.log(`  Sitio: ${plan.base}`);
   console.log(`  OBS:   ws://${opts.host}:${opts.port}`);
+  console.log(`  Colección de escenas: ${plan.wantedCollection ? `"${plan.wantedCollection}" (tiene que existir)` : 'la que esté abierta'}`);
   console.log(`  Video: base y salida ${CANVAS.w}×${CANVAS.h} @ ${CANVAS.fps} fps · salida Simple: video ${VIDEO_KBPS} kbps, audio ${AUDIO_KBPS} kbps`);
   console.log(`\nFuentes de navegador (${CANVAS.w}×${CANVAS.h}, ${CANVAS.fps} fps; se crean una vez y se reusan):`);
   for (const s of plan.sources) {
@@ -420,7 +424,9 @@ async function syncScene(obs, scene, ctx) {
 
 async function setup(obs, plan, log) {
   const version = await obs.call('GetVersion');
-  log.info(`Conectado a OBS ${version.obsVersion} (obs-websocket ${version.obsWebSocketVersion}).\n\nVideo y salida:`);
+  log.info(`Conectado a OBS ${version.obsVersion} (obs-websocket ${version.obsWebSocketVersion}).`);
+  plan.collection = await useCollection(obs, plan.wantedCollection, log);
+  log.info('\nVideo y salida:');
   await configureVideo(obs, log);
   await configureBitrates(obs, log);
 
@@ -455,9 +461,32 @@ async function setup(obs, plan, log) {
   await obs.call('SetCurrentProgramScene', { sceneName: plan.startScene });
 }
 
+/** Colección de escenas: la pedida con --coleccion (si existe) o la que está abierta. */
+async function useCollection(obs, wanted, log) {
+  const list = async () => obs.call('GetSceneCollectionList');
+  let { currentSceneCollectionName: current, sceneCollections } = await list();
+  if (wanted && wanted !== current) {
+    if (!sceneCollections.includes(wanted)) {
+      throw new Error(`No existe la colección de escenas "${wanted}". En OBS: menú Colección de escenas → Duplicar → llamala "${wanted}" y volvé a correr esto. (Hay: ${sceneCollections.join(', ')})`);
+    }
+    await obs.call('SetCurrentSceneCollection', { sceneCollectionName: wanted });
+    // OBS cambia de colección en segundo plano: esperar a que la reporte como abierta.
+    for (let i = 0; i < 40 && current !== wanted; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      current = (await list()).currentSceneCollectionName;
+    }
+    if (current !== wanted) throw new Error(`OBS no terminó de abrir la colección "${wanted}". Abrila a mano (menú Colección de escenas) y volvé a correr esto.`);
+    await new Promise((r) => setTimeout(r, 1500));
+    log.info(`Colección de escenas: "${current}" (la abrí recién).`);
+  } else {
+    log.info(`Colección de escenas: "${current}".`);
+  }
+  return current;
+}
+
 function printSummary(plan, log) {
   const { created, updated, same, warnings } = log.counts;
-  console.log(`\nListo: OBS quedó armado para ${plan.label}.`);
+  console.log(`\nListo: OBS quedó armado para ${plan.label}${plan.collection ? ` en la colección "${plan.collection}"` : ''}.`);
   console.log(`  ${created} creados · ${updated} actualizados · ${same} sin cambios${warnings ? ` · ${warnings} avisos (mirá arriba)` : ''}`);
   console.log(`  Escena al aire: "${plan.startScene}".`);
   console.log('\nPáginas cargadas:');
