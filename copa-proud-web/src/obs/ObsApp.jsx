@@ -21,6 +21,8 @@ import { BallsRow, Reveal, ZonesGrid } from '../draw/DrawBoard.jsx'
 export const SPLIT_WINDOW = { x: 64, y: 208, w: 896, h: 504 }
 // Ventana VERTICAL del conductor en "Equipos" (/obs/equipos?camara=1) = EQUIPOS_WINDOW de setup-obs.mjs.
 export const EQUIPOS_WINDOW = { x: 64, y: 196, w: 540, h: 820 }
+// Ventana 9:16 del video de la canción oficial (un Short) = CANCION_WINDOW de setup-obs.mjs.
+export const CANCION_WINDOW = { x: 707, y: 90, w: 506, h: 900 }
 
 const SCENES = [
   ['espera', 'Espera', 'Cuenta regresiva hasta el inicio, con los 28 escudos pasando.', false],
@@ -31,6 +33,7 @@ const SCENES = [
   ['split', 'Cámara + Tablero', 'Ventana transparente a la izquierda para la cámara; zonas a la derecha.', true],
   ['tablero', 'Tablero', 'Las 7 zonas a pantalla completa, con la revelación en el centro.', false],
   ['pausa', 'Pausa', 'Volvemos enseguida.', false],
+  ['cancion', 'Canción oficial', 'Fondo con una ventana vertical para el video de la canción (fuente multimedia debajo).', true],
   ['cierre', 'Cierre', 'Así quedaron las zonas + dónde seguir el torneo.', false],
 ]
 
@@ -48,6 +51,7 @@ export default function ObsApp() {
         <Route path="split" element={<Split />} />
         <Route path="tablero" element={<Board />} />
         <Route path="pausa" element={<Pause />} />
+        <Route path="cancion" element={<Song />} />
         <Route path="cierre" element={<Closing />} />
         <Route path="*" element={<ObsIndex />} />
       </Routes>
@@ -112,7 +116,7 @@ function BrandBg() {
  * Fondo de marca con una ventana transparente (ahí se ve la cámara, que en OBS va DEBAJO de esta
  * página) y un marco arcoíris alrededor. Fuera de OBS se marca dónde va la cámara.
  */
-function CameraHole({ win }) {
+function CameraHole({ win, label = 'Cámara' }) {
   const mask = `linear-gradient(#000 0 0) ${win.x}px ${win.y}px / ${win.w}px ${win.h}px no-repeat, linear-gradient(#000 0 0)`
   return (
     <>
@@ -125,7 +129,7 @@ function CameraHole({ win }) {
       />
       {!window.obsstudio && (
         <div className="absolute grid place-items-center text-[26px] font-extrabold uppercase tracking-[0.25em] text-white/40" style={{ left: win.x, top: win.y, width: win.w, height: win.h, background: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.04) 0 20px, transparent 20px 40px)' }}>
-          Cámara
+          {label}
         </div>
       )}
     </>
@@ -491,6 +495,25 @@ function Pause() {
           )}
           <Sponsors height={56} gap={56} className="mt-[48px]" labelClassName="text-[18px] tracking-[0.3em]" />
         </div>
+      </div>
+    </Stage>
+  )
+}
+
+// ------------------------------------------------------------------ 10 · Canción oficial
+
+function Song() {
+  return (
+    <Stage transparent>
+      <CameraHole win={CANCION_WINDOW} label="Video" />
+      <div className="absolute left-[80px] top-[300px] w-[560px]">
+        <img src="/brand/mark.webp" alt="" className="h-[170px] w-[170px] object-contain drop-shadow-[0_20px_50px_rgba(54,7,119,0.95)]" />
+        <div className="mt-[28px] whitespace-nowrap text-[20px] font-extrabold uppercase tracking-[0.22em] text-gold-light">Copa Proud Sudamericana 2026</div>
+        <div className="mt-[14px] text-[84px] font-extrabold leading-[0.95] tracking-tight">La canción oficial</div>
+        <div className="mt-[18px] font-script text-[52px] text-gold">Competí con pasión</div>
+      </div>
+      <div className="absolute right-[90px] top-[380px] w-[520px]">
+        <Sponsors height={70} gap={48} stack labelClassName="text-[18px] tracking-[0.3em]" />
       </div>
     </Stage>
   )

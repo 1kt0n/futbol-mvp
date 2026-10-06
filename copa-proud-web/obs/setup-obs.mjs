@@ -18,7 +18,9 @@
  * elegiste ni el servicio/clave de emisión de YouTube. Guía completa: docs/copa-proud-obs.md
  */
 import { createHash } from 'node:crypto';
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve as resolvePath } from 'node:path';
 import readline from 'node:readline';
 import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +38,10 @@ const SPLIT_WINDOW = { x: 64, y: 208, w: 896, h: 504 };
 // Ventana VERTICAL del conductor en la escena 4 (/obs/equipos?camara=1): mismo acuerdo que arriba
 // (EQUIPOS_WINDOW en copa-proud-web/src/obs/ObsApp.jsx). La cámara 16:9 se recorta a lo alto.
 const EQUIPOS_WINDOW = { x: 64, y: 196, w: 540, h: 820 };
+// Ventana 9:16 del video de la canción oficial en la escena 10 (= CANCION_WINDOW de ObsApp.jsx).
+const CANCION_WINDOW = { x: 707, y: 90, w: 506, h: 900 };
+const SONG_INPUT = 'CP · Canción (video)';
+const MEDIA_KIND = 'ffmpeg_source';
 const FULL_FRAME = { x: 0, y: 0, w: CANVAS.w, h: CANVAS.h };
 
 const CAMERA_SCENE = '[Fuente] Cámara';
@@ -94,6 +100,9 @@ Opciones:
   --coleccion "<txt>"  Colección de escenas donde armar todo (tiene que existir: en OBS,
                        Colección de escenas → Duplicar). Así el ensayo y el show real quedan
                        en colecciones separadas. Sin esto, usa la colección abierta.
+  --cancion "<ruta>"   Video de la canción oficial (mp4/mov en esta compu): arma la escena
+                       "10 · Canción oficial" con el video, que arranca desde el principio
+                       cada vez que la escena sale al aire.
   --dry-run            Muestra el plan completo sin conectarse a OBS.
   -h, --help           Esta ayuda.
 
@@ -104,10 +113,10 @@ Se puede correr las veces que haga falta: actualiza lo que ya existe, no duplica
 
 function parseArgs(argv) {
   const opts = {
-    demo: false, base: null, host: '127.0.0.1', port: 4455, coleccion: null,
+    demo: false, base: null, host: '127.0.0.1', port: 4455, coleccion: null, cancion: null,
     conductor: 'Conducción', rol: 'Copa Proud Sudamericana 2026', dryRun: false, help: false,
   };
-  const withValue = { '--base': 'base', '--host': 'host', '--port': 'port', '--conductor': 'conductor', '--rol': 'rol', '--coleccion': 'coleccion' };
+  const withValue = { '--base': 'base', '--host': 'host', '--port': 'port', '--conductor': 'conductor', '--rol': 'rol', '--coleccion': 'coleccion', '--cancion': 'cancion' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const eq = arg.startsWith('--') ? arg.indexOf('=') : -1;
@@ -123,6 +132,11 @@ function parseArgs(argv) {
   }
   opts.port = Number(opts.port);
   if (!Number.isInteger(opts.port) || opts.port < 1 || opts.port > 65535) throw new Error('--port tiene que ser un número entre 1 y 65535.');
+  if (opts.cancion) {
+    const p = resolvePath(opts.cancion.replace(/^~(?=\/|$)/, homedir()));
+    if (!existsSync(p)) throw new Error(`No encuentro el video de la canción: ${p}`);
+    opts.cancion = p;
+  }
   if (opts.base) {
     let parsed;
     try { parsed = new URL(opts.base); } catch { throw new Error(`--base no es una URL válida: ${opts.base}`); }
@@ -146,11 +160,17 @@ function buildPlan(opts) {
     ['CP · Cámara + Tablero', '/obs/split', true, 'hueco para la cámara a la izquierda, tablero a la derecha'],
     ['CP · Pausa', '/obs/pausa', false, 'pausa'],
     ['CP · Cierre', '/obs/cierre', false, 'cierre'],
+    ['CP · Canción', '/obs/cancion', true, 'fondo de la canción oficial, con ventana vertical para el video'],
   ].map(([name, path, transparent, desc]) => ({ name, url: base + path, transparent, desc }));
 
   const urlOf = Object.fromEntries(sources.map((s) => [s.name, s.url]));
   const page = (name) => ({ source: name, kind: BROWSER_KIND, settings: browserSettings(urlOf[name], name === 'CP · Zócalo conductor'), transform: PAGE_TRANSFORM });
   const camera = (box) => ({ source: CAMERA_SCENE, transform: fillBox(box), crop: true });
+  // El video arranca de cero cada vez que la escena sale al aire y se apaga al salir.
+  const song = (file) => ({
+    source: SONG_INPUT, kind: MEDIA_KIND, transform: fillBox(CANCION_WINDOW), crop: true,
+    settings: { is_local_file: true, local_file: file, looping: false, restart_on_activate: true, close_when_inactive: true },
+  });
   const scenes = [
     { name: '1 · Espera', items: [page('CP · Espera')] },
     { name: '2 · Conductor', items: [camera(FULL_FRAME), page('CP · Overlay sorteo'), page('CP · Zócalo conductor')] },
@@ -161,8 +181,9 @@ function buildPlan(opts) {
     { name: '7 · Sorteo · Cámara + Tablero', items: [camera(SPLIT_WINDOW), page('CP · Cámara + Tablero')] },
     { name: '8 · Pausa', items: [page('CP · Pausa')] },
     { name: '9 · Cierre', items: [page('CP · Cierre')] },
+    { name: '10 · Canción oficial', items: [...(opts.cancion ? [song(opts.cancion)] : []), page('CP · Canción')] },
   ];
-  return { base, label, sources, scenes, startScene: scenes[0].name, wantedCollection: opts.coleccion };
+  return { base, label, sources, scenes, startScene: scenes[0].name, wantedCollection: opts.coleccion, song: opts.cancion };
 }
 
 function describeItem(item) {
@@ -353,7 +374,7 @@ async function getItems(obs, sceneName) {
 const defaultsCache = new Map();
 async function syncBrowserSettings(obs, spec, ctx) {
   const kind = ctx.inputs.get(spec.source);
-  if (kind !== spec.kind) throw new Error(`Ya existe "${spec.source}" pero es de tipo ${kind}, no Navegador. Renombrala o borrala en OBS y corré de nuevo.`);
+  if (kind !== spec.kind) throw new Error(`Ya existe "${spec.source}" pero es de tipo ${kind}, no ${spec.kind}. Renombrala o borrala en OBS y corré de nuevo.`);
   if (!defaultsCache.has(kind)) defaultsCache.set(kind, (await obs.call('GetInputDefaultSettings', { inputKind: kind })).defaultInputSettings ?? {});
   const { inputSettings } = await obs.call('GetInputSettings', { inputName: spec.source });
   const cur = { ...defaultsCache.get(kind), ...inputSettings };
@@ -455,8 +476,26 @@ async function setup(obs, plan, log) {
   else log.warn(`No encontré captura de video (${CAMERA_KINDS.join(', ')}). Agregá tu cámara a mano dentro de "${CAMERA_SCENE}": todas las escenas la toman de ahí.`);
 
   // 3) Escenas del show, con sus capas de abajo hacia arriba.
+  if (plan.song && !kinds.has(MEDIA_KIND)) {
+    log.warn('Este OBS no tiene "Fuente multimedia": agregá el video de la canción a mano en "10 · Canción oficial".');
+    for (const scene of plan.scenes) scene.items = scene.items.filter((it) => it.kind !== MEDIA_KIND);
+  }
   log.info('\nFuentes y capas:');
   for (const scene of plan.scenes) await syncScene(obs, scene, ctx);
+
+  // La canción se escucha en la transmisión Y en los auriculares de quien opera OBS.
+  if (ctx.inputs.has(SONG_INPUT)) {
+    try {
+      const { monitorType } = await obs.call('GetInputAudioMonitorType', { inputName: SONG_INPUT });
+      if (monitorType === 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT') log.same(`"${SONG_INPUT}" se escucha en la salida y en tus auriculares`);
+      else {
+        await obs.call('SetInputAudioMonitorType', { inputName: SONG_INPUT, monitorType: 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT' });
+        log.updated(`"${SONG_INPUT}" ahora se escucha en la salida y en tus auriculares (Monitorear y salida)`);
+      }
+    } catch (err) {
+      log.warn(`No pude activar el monitoreo de la canción (${err.message}). Hacelo en Propiedades de audio avanzadas → Monitorear y salida.`);
+    }
+  }
 
   await obs.call('SetCurrentProgramScene', { sceneName: plan.startScene });
 }
