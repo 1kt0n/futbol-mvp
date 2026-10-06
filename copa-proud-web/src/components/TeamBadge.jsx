@@ -12,6 +12,12 @@ const SIZES = {
   fluid: 'text-xs', // el tamaño lo da className (pantallas que escalan con el viewport)
 }
 
+// Versión de los escudos propios (/teams/…): cambiarla obliga a todos los navegadores (y a OBS) a
+// pedirlos de nuevo. Hizo falta el 6/10: un escudo pedido antes de subirse quedó en caché como
+// página (el servidor guarda /teams/* por 24 h) y se veía con iniciales.
+const CREST_VERSION = '2'
+const crestSrc = (url) => (url.startsWith('/teams/') ? `${url}?v=${CREST_VERSION}` : url)
+
 /** Escudo del equipo; si no hay imagen (o falla), iniciales sobre el color del equipo. */
 export function Crest({ team, size = 'md', className = '' }) {
   const [broken, setBroken] = useState(false)
@@ -19,7 +25,7 @@ export function Crest({ team, size = 'md', className = '' }) {
   if (team?.logo_url && !broken) {
     return (
       <img
-        src={team.logo_url}
+        src={crestSrc(team.logo_url)}
         alt=""
         loading="lazy"
         decoding="async"
