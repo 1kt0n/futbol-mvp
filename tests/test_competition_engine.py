@@ -255,8 +255,15 @@ def test_close_check_and_expected_pairings():
     by = {m["code"]: m for m in ms}
     assert (by["ORO-O1"]["home_team_id"], by["ORO-O1"]["away_team_id"]) == ("A1", "G3")
     assert (by["ORO-O8"]["home_team_id"], by["ORO-O8"]["away_team_id"]) == ("A2", "B2")
-    assert (by["BRONCE-O4"]["home_team_id"], by["BRONCE-O4"]["away_team_id"]) == ("G4", thirds[6])
-    assert (by["BRONCE-C3"]["home_team_id"], by["BRONCE-C3"]["away_team_id"]) == (thirds[2], thirds[5])
+    # Bronce (planilla 2026-10-07): 4°A-4°G, 4°B-7° mejor 3°, 4°C-4°F, 4°D-4°E;
+    # cuartos = 3°..6° mejor 3° vs ganador de cada octavo (este espera el resultado).
+    assert thirds[6] == "A3"
+    assert (by["BRONCE-O1"]["home_team_id"], by["BRONCE-O1"]["away_team_id"]) == ("A4", "G4")
+    assert (by["BRONCE-O2"]["home_team_id"], by["BRONCE-O2"]["away_team_id"]) == ("B4", "A3")
+    assert (by["BRONCE-O3"]["home_team_id"], by["BRONCE-O3"]["away_team_id"]) == ("C4", "F4")
+    assert (by["BRONCE-O4"]["home_team_id"], by["BRONCE-O4"]["away_team_id"]) == ("D4", "E4")
+    for i, code in enumerate(("BRONCE-C1", "BRONCE-C2", "BRONCE-C3", "BRONCE-C4")):
+        assert (by[code]["home_team_id"], by[code]["away_team_id"]) == (thirds[2 + i], None)
     # Cuartos/Plata esperan resultados del domingo.
     assert by["PLATA-C1"]["home_team_id"] is None
 
@@ -301,6 +308,10 @@ def test_swap_rule_avoids_same_zone_best_third():
     by = {m["code"]: m for m in ms}
     assert (by["ORO-O1"]["home_team_id"], by["ORO-O1"]["away_team_id"]) == ("A1", "G2")
     assert (by["ORO-O3"]["home_team_id"], by["ORO-O3"]["away_team_id"]) == ("C1", "A3")
+    # Bronce: el 7° mejor 3° es B3 y le tocaría 4°B → pasa a O1 (vs 4°A) y el 4°G va a O2.
+    assert st.thirds["rows"][6]["team_id"] == "B3"
+    assert (by["BRONCE-O1"]["home_team_id"], by["BRONCE-O1"]["away_team_id"]) == ("A4", "B3")
+    assert (by["BRONCE-O2"]["home_team_id"], by["BRONCE-O2"]["away_team_id"]) == ("B4", "G4")
 
 
 def test_conflict_and_revert():
@@ -447,7 +458,8 @@ def test_full_tournament_simulation():
         by = {m["code"]: m for m in ms}
         oro_r16 = {t for c in range(1, 9) for t in (by[f"ORO-O{c}"]["home_team_id"], by[f"ORO-O{c}"]["away_team_id"])}
         bronce = {t for c in range(1, 5) for t in (by[f"BRONCE-O{c}"]["home_team_id"], by[f"BRONCE-O{c}"]["away_team_id"])}
-        bronce |= {t for c in (3, 4) for t in (by[f"BRONCE-C{c}"]["home_team_id"], by[f"BRONCE-C{c}"]["away_team_id"])}
+        # Clasificados directos a cuartos de Bronce: el local de cada cuarto (3°..6° mejor 3°).
+        bronce |= {by[f"BRONCE-C{c}"]["home_team_id"] for c in range(1, 5)}
         assert len(oro_r16) == 16 and len(bronce) == 12
         assert oro_r16 | bronce == all_teams and not (oro_r16 & bronce)
         plata = {t for c in range(1, 5) for t in (by[f"PLATA-C{c}"]["home_team_id"], by[f"PLATA-C{c}"]["away_team_id"])}

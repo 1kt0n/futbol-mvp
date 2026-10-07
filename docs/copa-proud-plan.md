@@ -397,3 +397,16 @@ listas para ensayar y conserva el link de producción y la transmisión al recre
 **Sponsors del sorteo** (2026-10-05): Nutrishop y American Top Underwear (`copa-proud-web/public/sponsors/`,
 preparados para fondo oscuro; lista en `src/components/Sponsors.jsx`). Aparecen en la pestaña Sorteo
 ("Con el apoyo de") y en todas las escenas de OBS salvo el zócalo.
+
+## 19. Cruces de Bronce y canchas reales (2026-10-07)
+
+Planilla de cruces de la organización:
+- **Bronce octavos:** 4°A vs 4°G, 4°B vs 7° mejor 3°, 4°C vs 4°F, 4°D vs 4°E. Si el 7° mejor 3° es de
+  la Zona B se intercambia con el 4°G (`swap_rules`).
+- **Bronce cuartos:** C1 3° mejor 3° vs ganador O1 · C2 4° vs O2 · C3 5° vs O3 · C4 6° vs O4.
+  Semis y final secuenciales. (Reemplaza los SUPUESTOS 3 y 4.)
+- **Canchas reales:** columna 1..6 de las grillas = canchas 9, 10, 11, 13, 14, 15 (`venue_numbers`).
+
+`scripts/actualizar_cruces.py [--demo]` lo aplica a una competencia ya sorteada: renumera las canchas
+conservando su identidad (partidos y veedores intactos) y reescribe solo los cruces eliminatorios que
+cambiaron. Se niega si cambiaría cualquier partido de la fase de grupos. Prueba en seco + APLICAR.

@@ -65,15 +65,17 @@ def seed(conn, fmt: dict) -> dict:
         """), {"s": fmt["starts_on"], "e": fmt["ends_on"], "off": fmt["utc_offset"], "cid": comp["id"]})
     cid = comp["id"]
 
+    # Columna de la grilla (1..N) → número real de la cancha (si el formato lo define).
+    numbers = fmt.get("venue_numbers") or list(range(1, len(fmt["venues"]) + 1))
     venue_ids = {}
-    for number, name in enumerate(fmt["venues"], start=1):
+    for column, (number, name) in enumerate(zip(numbers, fmt["venues"]), start=1):
         row = conn.execute(text("""
             INSERT INTO public.competition_venues (competition_id, number, name)
             VALUES (:cid, :n, :name)
             ON CONFLICT (competition_id, number) DO UPDATE SET name = EXCLUDED.name
             RETURNING id
         """), {"cid": cid, "n": number, "name": name}).mappings().first()
-        venue_ids[number] = row["id"]
+        venue_ids[column] = row["id"]
         report["venues"] += 1
 
     for g in fmt["groups"]:

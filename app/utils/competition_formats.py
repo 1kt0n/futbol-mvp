@@ -80,18 +80,19 @@ _KNOCKOUT = {
     "PLATA-S1": ("SF", "PLATA", "WINNER:PLATA-C1", "WINNER:PLATA-C2"),
     "PLATA-S2": ("SF", "PLATA", "WINNER:PLATA-C3", "WINNER:PLATA-C4"),
     "PLATA-F": ("F", "PLATA", "WINNER:PLATA-S1", "WINNER:PLATA-S2"),
-    # ---- COPA DE BRONCE ----
-    # ⚠️ SUPUESTO 3: el PDF solo dice "3° restantes + 4° de grupos". Se cruzan por zona
-    # (4°A-4°B, 4°C-4°D, 4°E-4°F, 4°G-7° mejor 3°): no exige sortear empates entre cuartos.
-    "BRONCE-O1": ("R16", "BRONCE", "GROUP:A:4", "GROUP:B:4"),
-    "BRONCE-O2": ("R16", "BRONCE", "GROUP:C:4", "GROUP:D:4"),
-    "BRONCE-O3": ("R16", "BRONCE", "GROUP:E:4", "GROUP:F:4"),
-    "BRONCE-O4": ("R16", "BRONCE", "GROUP:G:4", "THIRD:7"),
-    "BRONCE-C1": ("QF", "BRONCE", "WINNER:BRONCE-O1", "WINNER:BRONCE-O2"),
-    "BRONCE-C2": ("QF", "BRONCE", "WINNER:BRONCE-O3", "WINNER:BRONCE-O4"),
-    # ⚠️ SUPUESTO 4: "Clasificado Directo A/B" = 3°..6° mejores terceros → 3° vs 6°, 4° vs 5°.
-    "BRONCE-C3": ("QF", "BRONCE", "THIRD:3", "THIRD:6"),
-    "BRONCE-C4": ("QF", "BRONCE", "THIRD:4", "THIRD:5"),
+    # ---- COPA DE BRONCE ---- (planilla de cruces de la organización, 2026-10-07)
+    # Octavos: 4°A vs 4°G/7° mejor 3°, 4°B vs 4°G/7° mejor 3°, 4°C vs 4°F, 4°D vs 4°E. La planilla
+    # deja el 4°G y el 7° mejor 3° "en O1 u O2": base O1 = 4°G, O2 = 7° mejor 3°, y si ese 3° es de
+    # la Zona B (le tocaría su propia zona) se intercambian (ver `swap_rules`).
+    "BRONCE-O1": ("R16", "BRONCE", "GROUP:A:4", "GROUP:G:4"),
+    "BRONCE-O2": ("R16", "BRONCE", "GROUP:B:4", "THIRD:7"),
+    "BRONCE-O3": ("R16", "BRONCE", "GROUP:C:4", "GROUP:F:4"),
+    "BRONCE-O4": ("R16", "BRONCE", "GROUP:D:4", "GROUP:E:4"),
+    # Cuartos: cada uno, un clasificado directo (3°..6° mejor 3°) vs el ganador de un octavo.
+    "BRONCE-C1": ("QF", "BRONCE", "THIRD:3", "WINNER:BRONCE-O1"),
+    "BRONCE-C2": ("QF", "BRONCE", "THIRD:4", "WINNER:BRONCE-O2"),
+    "BRONCE-C3": ("QF", "BRONCE", "THIRD:5", "WINNER:BRONCE-O3"),
+    "BRONCE-C4": ("QF", "BRONCE", "THIRD:6", "WINNER:BRONCE-O4"),
     "BRONCE-S1": ("SF", "BRONCE", "WINNER:BRONCE-C1", "WINNER:BRONCE-C2"),
     "BRONCE-S2": ("SF", "BRONCE", "WINNER:BRONCE-C3", "WINNER:BRONCE-C4"),
     "BRONCE-F": ("F", "BRONCE", "WINNER:BRONCE-S1", "WINNER:BRONCE-S2"),
@@ -144,7 +145,10 @@ COPA_PROUD_2026 = {
     "match_minutes": 40,
     "groups": ["A", "B", "C", "D", "E", "F", "G"],
     "group_size": 4,
-    "venues": [f"Cancha {i}" for i in range(1, 7)],
+    # Canchas reales del predio (2026-10-07): columna 1..6 de las grillas → cancha 9, 10, 11, 13,
+    # 14 y 15 (de 11 a 19, sábado y domingo). El número es el que se ve en el sitio y en el veedor.
+    "venues": ["Cancha 9", "Cancha 10", "Cancha 11", "Cancha 13", "Cancha 14", "Cancha 15"],
+    "venue_numbers": [9, 10, 11, 13, 14, 15],
     "settings": {
         # Reglamento 5.2 (el PDF dice "empatado: o puntos" en el 3er ítem → es perdido: 0).
         "points": {"win": 3, "draw": 1, "loss": 0},
@@ -178,6 +182,8 @@ COPA_PROUD_2026 = {
     "swap_rules": [
         {"match": "ORO-O1", "side": "away", "other_match": "ORO-O3", "other_side": "away"},
         {"match": "ORO-O2", "side": "away", "other_match": "ORO-O4", "other_side": "away"},
+        # Bronce: si el 7° mejor 3° es de la Zona B, pasa a O1 (vs 4°A) y el 4°G a O2 (vs 4°B).
+        {"match": "BRONCE-O2", "side": "away", "other_match": "BRONCE-O1", "other_side": "away"},
     ],
     "matches": _build_copa_proud_matches(),
 }

@@ -49,6 +49,8 @@ seed_mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(seed_mod)
 
 SLUG = FMT["slug"]
+# Primera cancha real del formato (las canchas se numeran 9, 10, 11, 13, 14, 15).
+V1 = (FMT.get("venue_numbers") or [1])[0]
 ADM = f"/admin/competitions/{SLUG}"
 PUB = f"/public/competitions/{SLUG}"
 DEMO_TOKENS: dict = {}
@@ -177,7 +179,7 @@ def main_sim():
                       headers=H), 404, "TEAM_NOT_FOUND")
     reserve = expect(client.post(f"{ADM}/staff", json={"full_name": "Veedor Reserva"}, headers=H), 200)
     staff_tokens["Veedor Reserva"] = reserve["token"]
-    r = expect(client.post(f"{ADM}/staff/{reserve['staff_id']}/assign", json={"venue": 1, "date": FMT["starts_on"]},
+    r = expect(client.post(f"{ADM}/staff/{reserve['staff_id']}/assign", json={"venue": V1, "date": FMT["starts_on"]},
                            headers=H), 200)
     ok(r["assigned"] == 7, "reserva asignada a los 7 partidos de cancha 1 del sábado")
 
@@ -187,7 +189,7 @@ def main_sim():
     ok(len(by_name["Veedor 01"]["team_ids"]) == 2 and len(by_name["Veedor 02"]["team_ids"]) == 2, "equipos por veedor")
     ok(all(t["veedor_staff_id"] for t in snap["teams"]), "todos los equipos tienen veedor")
     sat_snap = [m for m in snap["matches"] if m["stage"] == "GROUP"]
-    ok(all(len(m["veedor_names"]) == (3 if m["venue"] == 1 else 2) for m in sat_snap),
+    ok(all(len(m["veedor_names"]) == (3 if m["venue"] == V1 else 2) for m in sat_snap),
        "sábado: veedor de cada equipo (+ reserva en cancha 1)")
     ok(by_name["Veedor 01"]["contact"].startswith("+54"), "contacto del veedor descifrado para admin")
 
@@ -211,7 +213,7 @@ def main_sim():
     ok(all(m["my_team_ids"] and len(m["other_veedors"]) >= 1 for m in me["matches"]), "marca su equipo y el otro veedor")
     rme = expect(client.get(f"{PUB}/staff/me", headers={"X-Staff-Token": staff_tokens["Veedor Reserva"]}), 200)
     ok(len(rme["matches"]) == 7 and all(not m["my_team_ids"] for m in rme["matches"]), "reserva ve su cancha, sin equipos propios")
-    ok(rme["staff"]["courts"] == [{"venue": 1, "date": FMT["starts_on"], "matches": 7}] and me["staff"]["courts"] == [],
+    ok(rme["staff"]["courts"] == [{"venue": V1, "date": FMT["starts_on"], "matches": 7}] and me["staff"]["courts"] == [],
        "me.staff.courts: cancha y día (fecha local) del veedor por cancha; vacío para el de equipos")
     with_roster = next(t for t in snap["teams"] if t["players"])
     me_r = expect(client.get(f"{PUB}/staff/me", headers={"X-Staff-Token": team_token[with_roster["id"]]}), 200)
@@ -257,7 +259,7 @@ def main_sim():
             if cards and rng.random() < 0.4:
                 expect(client.post(f"{base}/events", json={"team_id": tid, "type": rng.choice(["YELLOW", "YELLOW", "RED"]),
                                                           "shirt_number": 5}, headers=h), 200)
-        if cards and m["venue"] == 1 and rng.random() < 0.3:  # la reserva de la cancha 1 también puede cargar
+        if cards and m["venue"] == V1 and rng.random() < 0.3:  # la reserva de la cancha 1 también puede cargar
             expect(client.post(f"{base}/events", json={"team_id": m["home"]["team_id"], "type": "YELLOW"},
                                headers={"X-Staff-Token": staff_tokens["Veedor Reserva"]}), 200)
         if rng.random() < 0.25:  # gol cargado por error: el otro veedor NO puede borrarlo; el que lo cargó sí
@@ -345,7 +347,11 @@ def main_sim():
     for c in (1, 2, 3, 4):
         m = by[f"ORO-O{c}"]
         ok(grp[m["home"]["team_id"]] != grp[m["away"]["team_id"]], f"ORO-O{c} sin cruce intra-zona")
-    ok({by["BRONCE-C3"]["home"]["team_id"], by["BRONCE-C3"]["away"]["team_id"]} == {thirds[2], thirds[5]}, "Bronce C3 = 3° vs 6°")
+    for c in (1, 2, 3, 4):  # cuartos de Bronce: 3°..6° mejor 3° vs ganador del octavo c
+        ok(by[f"BRONCE-C{c}"]["home"]["team_id"] == thirds[1 + c], f"Bronce C{c}: local = {2 + c}° mejor 3°")
+    for c in (1, 2):
+        m = by[f"BRONCE-O{c}"]
+        ok(grp[m["home"]["team_id"]] != grp[m["away"]["team_id"]], f"BRONCE-O{c} sin cruce intra-zona")
 
     # ---- DOMINGO ----
     sunday = sorted((m for m in snap["matches"] if m["stage"] != "GROUP"), key=lambda m: (m["scheduled_at"], m["venue"]))
