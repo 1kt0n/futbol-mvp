@@ -13,6 +13,7 @@ const NAV = [
   ['/copas', 'nav.cups'],
   ['/equipos', 'nav.teams'],
   ['/estadisticas', 'nav.stats'],
+  ['/mapa', 'nav.map'],
 ]
 
 function LangSwitch() {

@@ -83,6 +83,22 @@ function DrawPromo() {
   )
 }
 
+/** Dónde se juega: acceso al mapa de canchas. */
+function VenueCard() {
+  const { t } = useI18n()
+  return (
+    <Link to="/mapa" className="card reveal focus-ring mb-8 flex items-center gap-4 p-3 pr-4 hover:border-white/25" style={{ '--i': 2 }}>
+      <img src="/brand/mapa-canchas.webp" alt="" className="h-20 w-16 shrink-0 rounded-lg object-cover object-top" />
+      <span className="min-w-0 flex-1">
+        <span className="kicker block">{t('home.where')}</span>
+        <span className="block text-lg font-extrabold">Polideportivo Cramer</span>
+        <span className="block truncate text-sm text-white/60">Av. Crámer 3249, Núñez · CABA</span>
+      </span>
+      <span className="hidden text-sm font-extrabold text-gold-light sm:block">{t('home.see_map')} →</span>
+    </Link>
+  )
+}
+
 function Champions() {
   const { t } = useI18n()
   const { model } = useCompetition()
@@ -144,6 +160,7 @@ export default function Home() {
     <>
       <Hero />
       <DrawPromo />
+      <VenueCard />
       <Champions />
       {model.pending.length + model.liveMatches.length > 0 && <Courts />}
       {next.length > 0 && (
