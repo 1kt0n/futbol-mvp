@@ -33,6 +33,7 @@ const SCENES = [
   ['split', 'Cámara + Tablero', 'Ventana transparente a la izquierda para la cámara; zonas a la derecha.', true],
   ['tablero', 'Tablero', 'Las 7 zonas a pantalla completa, con la revelación en el centro.', false],
   ['pausa', 'Pausa', 'Volvemos enseguida.', false],
+  ['pausa?texto=Ya%20arrancamos', 'Ya arrancamos', 'Cartel de "Ya arrancamos" (la pausa con otro texto).', false],
   ['cancion', 'Canción oficial', 'Fondo con una ventana vertical para el video de la canción (fuente multimedia debajo).', true],
   ['cierre', 'Cierre', 'Así quedaron las zonas + dónde seguir el torneo.', false],
 ]
@@ -480,6 +481,9 @@ function Board() {
 // ------------------------------------------------------------------ 8 · Pausa
 
 function Pause() {
+  // ?texto=… cambia el mensaje (escena "Ya arrancamos"); sin texto: "Volvemos enseguida".
+  const [params] = useSearchParams()
+  const message = params.get('texto') || 'Volvemos enseguida'
   const { state, shownSeq } = useFeed({ animate: false })
   const view = state ? visibleView(state, shownSeq) : null
   return (
@@ -487,7 +491,7 @@ function Pause() {
       <div className="absolute inset-0 grid place-items-center text-center">
         <div>
           <img src="/brand/logo-dark-bg.webp" alt="" className="mx-auto h-[520px] w-auto object-contain drop-shadow-[0_30px_70px_rgba(54,7,119,0.95)]" />
-          <div className="mt-[30px] text-[96px] font-extrabold leading-none tracking-tight">Volvemos enseguida</div>
+          <div className="mt-[30px] text-[96px] font-extrabold leading-none tracking-tight">{message}</div>
           {view && state.picks.length > 0 && (
             <div className="mt-[20px] text-[34px] font-bold text-white/70">
               Ya hay <span className="text-gold">{view.placed}</span> de {state.teams.length} equipos sorteados

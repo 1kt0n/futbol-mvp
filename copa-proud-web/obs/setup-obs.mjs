@@ -114,7 +114,7 @@ Se puede correr las veces que haga falta: actualiza lo que ya existe, no duplica
 function parseArgs(argv) {
   const opts = {
     demo: false, base: null, host: '127.0.0.1', port: 4455, coleccion: null, cancion: null,
-    conductor: 'Conducción', rol: 'Copa Proud Sudamericana 2026', dryRun: false, help: false,
+    conductor: null, rol: 'Copa Proud Sudamericana 2026', dryRun: false, help: false,
   };
   const withValue = { '--base': 'base', '--host': 'host', '--port': 'port', '--conductor': 'conductor', '--rol': 'rol', '--coleccion': 'coleccion', '--cancion': 'cancion' };
   for (let i = 0; i < argv.length; i++) {
@@ -149,7 +149,7 @@ function parseArgs(argv) {
 function buildPlan(opts) {
   const base = opts.base ?? (opts.demo ? DEMO_BASE : PROD_BASE);
   const label = opts.base ? 'una base personalizada' : opts.demo ? 'el ENSAYO (demo)' : 'el SHOW REAL';
-  const zocalo = `nombre=${encodeURIComponent(opts.conductor)}&rol=${encodeURIComponent(opts.rol)}`;
+  const zocalo = `nombre=${encodeURIComponent(opts.conductor || 'Conducción')}&rol=${encodeURIComponent(opts.rol)}`;
   const sources = [
     ['CP · Espera', '/obs/espera', false, 'cuenta regresiva antes del show'],
     ['CP · Reglamento', '/obs/reglas', false, 'reglamento del sorteo'],
@@ -159,12 +159,17 @@ function buildPlan(opts) {
     ['CP · Tablero', '/obs/tablero', false, 'tablero completo de zonas'],
     ['CP · Cámara + Tablero', '/obs/split', true, 'hueco para la cámara a la izquierda, tablero a la derecha'],
     ['CP · Pausa', '/obs/pausa', false, 'pausa'],
+    ['CP · Ya arrancamos', '/obs/pausa?texto=Ya%20arrancamos', false, 'cartel "Ya arrancamos"'],
     ['CP · Cierre', '/obs/cierre', false, 'cierre'],
     ['CP · Canción', '/obs/cancion', true, 'fondo de la canción oficial, con ventana vertical para el video'],
   ].map(([name, path, transparent, desc]) => ({ name, url: base + path, transparent, desc }));
 
   const urlOf = Object.fromEntries(sources.map((s) => [s.name, s.url]));
-  const page = (name) => ({ source: name, kind: BROWSER_KIND, settings: browserSettings(urlOf[name], name === 'CP · Zócalo conductor'), transform: PAGE_TRANSFORM });
+  // Sin --conductor, el zócalo existente no se toca (no se pisa el nombre que ya tenía).
+  const page = (name) => ({
+    source: name, kind: BROWSER_KIND, settings: browserSettings(urlOf[name], name === 'CP · Zócalo conductor'), transform: PAGE_TRANSFORM,
+    createOnly: name === 'CP · Zócalo conductor' && !opts.conductor,
+  });
   const camera = (box) => ({ source: CAMERA_SCENE, transform: fillBox(box), crop: true });
   // El video arranca de cero cada vez que la escena sale al aire y se apaga al salir.
   const song = (file) => ({
@@ -181,6 +186,7 @@ function buildPlan(opts) {
     { name: '7 · Sorteo · Cámara + Tablero', items: [camera(SPLIT_WINDOW), page('CP · Cámara + Tablero')] },
     { name: '8 · Pausa', items: [page('CP · Pausa')] },
     { name: '9 · Cierre', items: [page('CP · Cierre')] },
+    { name: '11 · Ya arrancamos', items: [page('CP · Ya arrancamos')] },
     { name: '10 · Canción oficial', items: [...(opts.cancion ? [song(opts.cancion)] : []), page('CP · Canción')] },
   ];
   return { base, label, sources, scenes, startScene: scenes[0].name, wantedCollection: opts.coleccion, song: opts.cancion };
@@ -413,7 +419,7 @@ async function syncScene(obs, scene, ctx) {
       ctx.log.created(`fuente "${spec.source}" (${spec.kind}) en "${scene.name}"`);
       item = { sceneItemId, sceneItemEnabled: true };
     } else {
-      if (spec.settings && !ctx.synced.has(spec.source)) {
+      if (spec.settings && !spec.createOnly && !ctx.synced.has(spec.source)) {
         await syncBrowserSettings(obs, spec, ctx);
         ctx.synced.add(spec.source);
       }
@@ -497,7 +503,15 @@ async function setup(obs, plan, log) {
     }
   }
 
-  await obs.call('SetCurrentProgramScene', { sceneName: plan.startScene });
+  if (await isLive(obs)) log.info(`\nEstás transmitiendo o grabando: no toco la escena al aire.`);
+  else await obs.call('SetCurrentProgramScene', { sceneName: plan.startScene });
+}
+
+/** ¿OBS está transmitiendo o grabando? (para no cambiar lo que sale al aire) */
+async function isLive(obs) {
+  const stream = await obs.call('GetStreamStatus').catch(() => ({}));
+  const record = await obs.call('GetRecordStatus').catch(() => ({}));
+  return Boolean(stream.outputActive || record.outputActive);
 }
 
 /** Colección de escenas: la pedida con --coleccion (si existe) o la que está abierta. */
@@ -507,6 +521,9 @@ async function useCollection(obs, wanted, log) {
   if (wanted && wanted !== current) {
     if (!sceneCollections.includes(wanted)) {
       throw new Error(`No existe la colección de escenas "${wanted}". En OBS: menú Colección de escenas → Duplicar → llamala "${wanted}" y volvé a correr esto. (Hay: ${sceneCollections.join(', ')})`);
+    }
+    if (await isLive(obs)) {
+      throw new Error(`Estás transmitiendo o grabando: cambiar a la colección "${wanted}" cambiaría lo que sale al aire. Cortá la transmisión, o corré esto sin --coleccion parado en la colección que querés.`);
     }
     await obs.call('SetCurrentSceneCollection', { sceneCollectionName: wanted });
     // OBS cambia de colección en segundo plano: esperar a que la reporte como abierta.
