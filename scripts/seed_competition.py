@@ -21,10 +21,21 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # La base es Supabase. Si la URL viene como postgresql://… (o postgres://…) se pasa al driver psycopg 3.
+def _looks_like_db_url(u: str) -> bool:
+    return u.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")) and "@" in u and "<" not in u
+
+
 _url = os.environ.get("DATABASE_URL", "").strip()
-if (not _url or "<" in _url) and sys.stdin.isatty():
-    _url = getpass.getpass("Pegá la URL de la base (DATABASE_URL del servicio futbol-mvp en Railway; no se va a ver) y apretá Enter: ").strip()
-if not _url or "<" in _url:
+if not _looks_like_db_url(_url) and sys.stdin.isatty():
+    # Hasta 3 intentos: si lo pegado no es una URL de la base (p. ej. el portapapeles tenía
+    # otra cosa), se vuelve a pedir en vez de cortar con un error. Nunca se muestra lo pegado.
+    for _try in range(3):
+        _url = getpass.getpass("Pegá la URL de la base (DATABASE_URL del servicio futbol-mvp en Railway; no se va a ver) y apretá Enter: ").strip()
+        if _looks_like_db_url(_url):
+            break
+        print("  Eso no parece la URL de la base (tiene que empezar con postgresql:// y tener un @). "
+              "Copiala de nuevo desde Railway → futbol-mvp → Variables → DATABASE_URL.")
+if not _looks_like_db_url(_url):
     sys.exit("Falta la URL de la base (copiá DATABASE_URL del servicio futbol-mvp en Railway: es la de Supabase).")
 for _prefix in ("postgres://", "postgresql://"):
     if _url.startswith(_prefix):
