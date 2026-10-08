@@ -410,3 +410,15 @@ Planilla de cruces de la organización:
 `scripts/actualizar_cruces.py [--demo]` lo aplica a una competencia ya sorteada: renumera las canchas
 conservando su identidad (partidos y veedores intactos) y reescribe solo los cruces eliminatorios que
 cambiaron. Se niega si cambiaría cualquier partido de la fase de grupos. Prueba en seco + APLICAR.
+
+## 20. Mesa de control y jugador en eventos (2026-10-08)
+
+- **Mesa de control** `live.copaproud.com/control/<token>` (y `/demo/control/<token>`): link privado sin
+  login para la organización. Partidos con filtros (día, cancha, en juego, para confirmar, confirmados,
+  marcador ≠ goles), edición de cada partido (resultado final o solo corregir marcador, estado, W.O.,
+  penales, goles y tarjetas con jugador, confirmar/desconfirmar), zonas con sorteos de desempate y
+  **cierre / reapertura de la fase de grupos**, e historial. Backend: `app/routers/competitions_control.py`
+  reusa las funciones del router admin con `actor_user_id=None` (mismas reglas). Link:
+  `scripts/control_link.py [--demo]` (cada link nuevo anula el anterior).
+- **Veedor:** "Asignar jugador" / "Cambiar" en sus goles y tarjetas, también con el partido terminado,
+  hasta que la mesa lo confirme (no toca el marcador).

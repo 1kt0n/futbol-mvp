@@ -23,6 +23,7 @@ const Veedor = lazy(() => import('./veedor/VeedorApp.jsx'))
 const DrawStage = lazy(() => import('./draw/DrawStage.jsx'))
 const ProducerPanel = lazy(() => import('./draw/ProducerPanel.jsx'))
 const ObsApp = lazy(() => import('./obs/ObsApp.jsx'))
+const ControlPanel = lazy(() => import('./control/ControlPanel.jsx'))
 
 if (IS_DEMO) {
   // La demo no se indexa ni se confunde con el sitio real en la pestaña del navegador.
@@ -112,6 +113,14 @@ createRoot(document.getElementById('root')).render(
             element={
               <Suspense fallback={null}>
                 <ObsApp />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/control/:token"
+            element={
+              <Suspense fallback={<Splash />}>
+                <ControlPanel />
               </Suspense>
             }
           />

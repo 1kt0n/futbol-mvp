@@ -46,6 +46,17 @@ router = APIRouter()
 VIEW, MANAGE, RESULTS = "competitions.view", "competitions.manage", "competitions.results"
 
 
+def _authorize(conn, actor_user_id, perm) -> None:
+    """
+    Usuario logueado con el permiso. `actor_user_id=None` = la MESA DE CONTROL
+    (competitions_control.py), que llama a estas funciones después de validar su link privado.
+    Por HTTP este router nunca recibe None: get_actor_user_id exige sesión válida (401/422 si no).
+    """
+    if actor_user_id is None:
+        return
+    require_permission(conn, actor_user_id, perm)
+
+
 def _integrity_detail(exc: IntegrityError) -> str:
     msg = str(exc.orig)
     if "uq_competition_teams_name" in msg:
@@ -64,7 +75,7 @@ def _integrity_detail(exc: IntegrityError) -> str:
 @router.get("/competitions")
 def list_competitions(actor_user_id: str = Depends(get_actor_user_id)):
     with engine.connect() as conn:
-        require_permission(conn, actor_user_id, VIEW)
+        _authorize(conn, actor_user_id, VIEW)
         rows = conn.execute(text("""
             SELECT c.slug, c.name, c.status, c.starts_on, c.ends_on, c.group_stage_closed_at,
                    (SELECT COUNT(*) FROM public.competition_teams t WHERE t.competition_id = c.id) AS teams,
@@ -83,7 +94,7 @@ def list_competitions(actor_user_id: str = Depends(get_actor_user_id)):
 @router.get("/competitions/{slug}")
 def get_competition_admin(slug: str, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.connect() as conn:
-        require_permission(conn, actor_user_id, VIEW)
+        _authorize(conn, actor_user_id, VIEW)
         comp = svc.get_competition(conn, slug)
         return svc.build_snapshot(conn, comp, include_admin=True)
 
@@ -91,7 +102,7 @@ def get_competition_admin(slug: str, actor_user_id: str = Depends(get_actor_user
 @router.patch("/competitions/{slug}")
 def update_competition(slug: str, body: CompetitionUpdateRequest, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         conn.execute(text("""
             UPDATE public.competitions
@@ -107,7 +118,7 @@ def update_competition(slug: str, body: CompetitionUpdateRequest, actor_user_id:
 @router.get("/competitions/{slug}/audit")
 def get_audit(slug: str, limit: int = Query(100, ge=1, le=500), actor_user_id: str = Depends(get_actor_user_id)):
     with engine.connect() as conn:
-        require_permission(conn, actor_user_id, VIEW)
+        _authorize(conn, actor_user_id, VIEW)
         comp = svc.get_competition(conn, slug)
         rows = conn.execute(text("""
             SELECT a.created_at, a.action, a.metadata, m.code AS match_code,
@@ -127,7 +138,7 @@ def get_audit(slug: str, limit: int = Query(100, ge=1, le=500), actor_user_id: s
 def sync(slug: str, actor_user_id: str = Depends(get_actor_user_id)):
     """Recalcula llaves (idempotente). Útil tras resolver un conflicto a mano."""
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         plan = svc.sync_bracket(conn, comp, actor_user_id=actor_user_id)
         svc.bump_version(conn, comp["id"])
@@ -156,7 +167,7 @@ def _insert_team(conn, comp_id, t) -> str:
 def create_team(slug: str, body: CompetitionTeamRequest, actor_user_id: str = Depends(get_actor_user_id)):
     try:
         with engine.begin() as conn:
-            require_permission(conn, actor_user_id, MANAGE)
+            _authorize(conn, actor_user_id, MANAGE)
             comp = svc.lock_competition(conn, slug)
             team_id = _insert_team(conn, comp["id"], body)
             svc.audit(conn, comp["id"], "TEAM_CREATE", actor_user_id=actor_user_id,
@@ -172,7 +183,7 @@ def create_teams_bulk(slug: str, body: CompetitionTeamBulkRequest, actor_user_id
     """Alta masiva (pegar las 28 filas). Si traen zona+posición, también carga el sorteo."""
     try:
         with engine.begin() as conn:
-            require_permission(conn, actor_user_id, MANAGE)
+            _authorize(conn, actor_user_id, MANAGE)
             comp = svc.lock_competition(conn, slug)
             fmt = svc.get_format(comp)
             created = []
@@ -202,7 +213,7 @@ def update_team(slug: str, team_id: str, body: CompetitionTeamUpdateRequest,
     sets = ", ".join(f"{k} = :{k}" for k in fields if k in allowed)
     try:
         with engine.begin() as conn:
-            require_permission(conn, actor_user_id, MANAGE)
+            _authorize(conn, actor_user_id, MANAGE)
             comp = svc.lock_competition(conn, slug)
             res = conn.execute(text(f"""
                 UPDATE public.competition_teams SET {sets}
@@ -221,7 +232,7 @@ def update_team(slug: str, team_id: str, body: CompetitionTeamUpdateRequest,
 @router.delete("/competitions/{slug}/teams/{team_id}")
 def delete_team(slug: str, team_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         played = conn.execute(text("""
             SELECT 1 FROM public.competition_matches
@@ -266,7 +277,7 @@ def create_player(slug: str, team_id: str, body: CompetitionPlayerRequest,
                   actor_user_id: str = Depends(get_actor_user_id)):
     try:
         with engine.begin() as conn:
-            require_permission(conn, actor_user_id, MANAGE)
+            _authorize(conn, actor_user_id, MANAGE)
             comp = svc.lock_competition(conn, slug)
             _team_in_comp(conn, comp["id"], team_id)
             player_id = _insert_player(conn, comp["id"], team_id, body)
@@ -282,7 +293,7 @@ def create_players_bulk(slug: str, team_id: str, body: CompetitionPlayerBulkRequ
     """Lista de buena fe completa (reglamento 4.1: hasta 15). El front parsea el CSV."""
     try:
         with engine.begin() as conn:
-            require_permission(conn, actor_user_id, MANAGE)
+            _authorize(conn, actor_user_id, MANAGE)
             comp = svc.lock_competition(conn, slug)
             _team_in_comp(conn, comp["id"], team_id)
             ids = [_insert_player(conn, comp["id"], team_id, p) for p in body.players]
@@ -303,7 +314,7 @@ def update_player(slug: str, player_id: str, body: CompetitionPlayerUpdateReques
     sets = ", ".join(f"{k} = :{k}" for k in fields)
     try:
         with engine.begin() as conn:
-            require_permission(conn, actor_user_id, MANAGE)
+            _authorize(conn, actor_user_id, MANAGE)
             comp = svc.lock_competition(conn, slug)
             res = conn.execute(text(f"""
                 UPDATE public.competition_players SET {sets}
@@ -320,7 +331,7 @@ def update_player(slug: str, player_id: str, body: CompetitionPlayerUpdateReques
 @router.delete("/competitions/{slug}/players/{player_id}")
 def delete_player(slug: str, player_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         res = conn.execute(text("""
             DELETE FROM public.competition_players WHERE id = :pid AND competition_id = :cid
@@ -364,7 +375,7 @@ def assign_slots(slug: str, body: CompetitionSlotsRequest, actor_user_id: str = 
     """Carga el resultado del sorteo: el fixture del sábado se completa solo."""
     try:
         with engine.begin() as conn:
-            require_permission(conn, actor_user_id, MANAGE)
+            _authorize(conn, actor_user_id, MANAGE)
             comp = svc.lock_competition(conn, slug)
             if comp["group_stage_closed_at"] is not None:
                 raise HTTPException(status_code=409, detail="GROUP_STAGE_CLOSED")
@@ -387,7 +398,7 @@ def set_draw(slug: str, body: CompetitionDrawRequest, actor_user_id: str = Depen
     if len(set(ranks)) != len(ranks):
         raise HTTPException(status_code=400, detail="DUPLICATE_RANKS")
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         for r in body.ranks:
             _team_in_comp(conn, comp["id"], r.team_id)
@@ -413,7 +424,7 @@ def set_draw(slug: str, body: CompetitionDrawRequest, actor_user_id: str = Depen
 @router.get("/competitions/{slug}/group-stage/preview")
 def group_stage_preview(slug: str, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.connect() as conn:
-        require_permission(conn, actor_user_id, VIEW)
+        _authorize(conn, actor_user_id, VIEW)
         comp = svc.get_competition(conn, slug)
         state = svc.load_state(conn, comp["id"])
         standings = svc.compute_standings(comp, state)
@@ -426,7 +437,7 @@ def group_stage_preview(slug: str, actor_user_id: str = Depends(get_actor_user_i
 @router.post("/competitions/{slug}/group-stage/close")
 def close_group_stage(slug: str, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         if comp["group_stage_closed_at"] is not None:
             raise HTTPException(status_code=409, detail="GROUP_STAGE_ALREADY_CLOSED")
@@ -455,7 +466,7 @@ def close_group_stage(slug: str, actor_user_id: str = Depends(get_actor_user_id)
 def reopen_group_stage(slug: str, actor_user_id: str = Depends(get_actor_user_id)):
     """Solo mientras ningún partido eliminatorio haya empezado (vacía los cruces del domingo)."""
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         started = conn.execute(text("""
             SELECT 1 FROM public.competition_matches
@@ -485,7 +496,7 @@ def create_staff(slug: str, body: CompetitionStaffRequest, actor_user_id: str = 
     """Crea el veedor y devuelve su link UNA sola vez (en la DB queda solo el hash)."""
     token = gen_management_token()
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         row = conn.execute(text("""
             INSERT INTO public.competition_staff
@@ -532,7 +543,7 @@ def set_staff_teams(slug: str, staff_id: str, body: CompetitionStaffTeamsRequest
                     actor_user_id: str = Depends(get_actor_user_id)):
     """Equipos a cargo de un veedor: puede cargar todos los partidos de esos equipos (también el domingo)."""
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         ok = conn.execute(text("""
             SELECT 1 FROM public.competition_staff WHERE id = :sid AND competition_id = :cid
@@ -551,7 +562,7 @@ def rotate_staff_token(slug: str, staff_id: str, actor_user_id: str = Depends(ge
     """Nuevo link (el anterior deja de funcionar al instante). También reactiva un revocado."""
     token = gen_management_token()
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         res = conn.execute(text("""
             UPDATE public.competition_staff
@@ -568,7 +579,7 @@ def rotate_staff_token(slug: str, staff_id: str, actor_user_id: str = Depends(ge
 @router.post("/competitions/{slug}/staff/{staff_id}/revoke")
 def revoke_staff(slug: str, staff_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         res = conn.execute(text("""
             UPDATE public.competition_staff SET revoked_at = now()
@@ -585,7 +596,7 @@ def assign_staff_to_venue(slug: str, staff_id: str, body: CompetitionStaffAssign
                           actor_user_id: str = Depends(get_actor_user_id)):
     """Asigna el veedor a TODOS los partidos de una cancha en un día (atajo de la grilla)."""
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, MANAGE)
+        _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
         ok = conn.execute(text("""
             SELECT 1 FROM public.competition_staff WHERE id = :sid AND competition_id = :cid
@@ -617,7 +628,7 @@ def patch_match(slug: str, code: str, body: CompetitionMatchPatchRequest,
                 actor_user_id: str = Depends(get_actor_user_id)):
     """Corrige marcador/penales/veedor/árbitro/notas. Un partido confirmado hay que desconfirmarlo antes."""
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         fields = body.model_dump(exclude_unset=True)
@@ -670,7 +681,7 @@ def set_final_result(slug: str, code: str, body: CompetitionMatchPatchRequest,
     if body.home_goals is None or body.away_goals is None:
         raise HTTPException(status_code=400, detail="SCORE_REQUIRED")
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         svc.assert_editable(match)
@@ -703,7 +714,7 @@ def set_final_result(slug: str, code: str, body: CompetitionMatchPatchRequest,
 def admin_match_status(slug: str, code: str, body: CompetitionMatchStatusRequest,
                        actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         svc.assert_editable(match)
@@ -716,7 +727,7 @@ def walkover(slug: str, code: str, body: CompetitionWalkoverRequest,
              actor_user_id: str = Depends(get_actor_user_id)):
     """W.O. (reglamento 5.5 / 7.4): 3-0 para el equipo presente."""
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         svc.assert_editable(match)
@@ -741,7 +752,7 @@ def walkover(slug: str, code: str, body: CompetitionWalkoverRequest,
 def confirm_match(slug: str, code: str, actor_user_id: str = Depends(get_actor_user_id)):
     """✓ Resultado oficial (cotejado con la planilla firmada). Bloquea ediciones del veedor."""
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         if match["status"] not in ce.FINISHED_STATUSES:
@@ -759,7 +770,7 @@ def confirm_match(slug: str, code: str, actor_user_id: str = Depends(get_actor_u
 @router.post("/competitions/{slug}/matches/{code}/unconfirm")
 def unconfirm_match(slug: str, code: str, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         conn.execute(text("""
@@ -776,7 +787,7 @@ def unconfirm_match(slug: str, code: str, actor_user_id: str = Depends(get_actor
 def admin_add_event(slug: str, code: str, body: CompetitionEventRequest,
                     actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         svc.assert_editable(match)
@@ -792,7 +803,7 @@ def admin_add_event(slug: str, code: str, body: CompetitionEventRequest,
 @router.delete("/competitions/{slug}/matches/{code}/events/{event_id}")
 def admin_delete_event(slug: str, code: str, event_id: str, actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         svc.assert_editable(match)
@@ -804,7 +815,7 @@ def admin_delete_event(slug: str, code: str, event_id: str, actor_user_id: str =
 def admin_event_player(slug: str, code: str, event_id: str, body: CompetitionEventPlayerRequest,
                        actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         svc.assert_editable(match)
@@ -815,7 +826,7 @@ def admin_event_player(slug: str, code: str, event_id: str, body: CompetitionEve
 def admin_penalties(slug: str, code: str, body: CompetitionPenaltiesRequest,
                     actor_user_id: str = Depends(get_actor_user_id)):
     with engine.begin() as conn:
-        require_permission(conn, actor_user_id, RESULTS)
+        _authorize(conn, actor_user_id, RESULTS)
         comp = svc.lock_competition(conn, slug)
         match = svc.get_match(conn, comp["id"], code, for_update=True)
         svc.assert_editable(match)
