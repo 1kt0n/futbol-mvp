@@ -525,9 +525,13 @@ function Penalties({ match, onSave }) {
 
 function EventLog({ match, locked, enqueue, base }) {
   const { t } = useI18n()
+  // Evento al que se le está asignando jugador (vale aun con el partido terminado, hasta que la
+  // mesa lo confirme; no toca el marcador).
+  const [editing, setEditing] = useState(null)
   const players = new Map([...(match.home?.players || []), ...(match.away?.players || [])].map((p) => [p.id, p]))
   const events = [...(match.events || [])].reverse()
   if (!events.length) return null
+  const teamOfEvent = (e) => (e.team_id === match.home?.id ? match.home : match.away)
   return (
     <section className="mb-4">
       <p className="kicker mb-2">{t('veedor.log')}</p>
@@ -539,15 +543,27 @@ function EventLog({ match, locked, enqueue, base }) {
             <li key={e.id} className="flex items-center gap-3 px-3 py-2 text-sm">
               <span className="w-24 shrink-0 font-bold">{t(`event.${e.type}`)}</span>
               <span className="min-w-0 flex-1 text-white/70">
-                <span className="block truncate">{p ? `${p.shirt_number != null ? `#${p.shirt_number} ` : ''}${p.full_name}` : team?.name}</span>
+                <span className="block truncate">
+                  {p ? `${p.shirt_number != null ? `#${p.shirt_number} ` : ''}${p.full_name}` : team?.name}
+                  {!p && <span className="ml-1 italic text-gold-light/80">· {t('veedor.unidentified')}</span>}
+                </span>
                 {!e.mine && e.loaded_by && (
                   <span className="block truncate text-[11px] text-white/40">{t('veedor.by', { name: e.loaded_by })}</span>
                 )}
               </span>
+              {!match.confirmed && e.mine && (
+                <button
+                  type="button"
+                  className={`focus-ring shrink-0 rounded px-2 py-1 text-xs font-bold ${p ? 'text-white/60' : 'bg-gold/15 text-gold-light'}`}
+                  onClick={() => setEditing(e)}
+                >
+                  {p ? t('veedor.change_player') : t('veedor.set_player')}
+                </button>
+              )}
               {!locked && e.mine && (
                 <button
                   type="button"
-                  className="focus-ring rounded px-2 py-1 text-xs font-bold text-[#ff9db3]"
+                  className="focus-ring shrink-0 rounded px-2 py-1 text-xs font-bold text-[#ff9db3]"
                   onClick={() => enqueue({ method: 'DELETE', path: `${base}/events/${e.id}`, label: t('veedor.undo') })}
                 >
                   {t('veedor.undo')}
@@ -557,6 +573,17 @@ function EventLog({ match, locked, enqueue, base }) {
           )
         })}
       </ul>
+      {editing && (
+        <PlayerPicker
+          team={teamOfEvent(editing)}
+          type={editing.type}
+          onPick={(p) => {
+            enqueue({ method: 'PATCH', path: `${base}/events/${editing.id}`, body: { player_id: p?.id ?? null }, label: t('veedor.set_player') })
+            setEditing(null)
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </section>
   )
 }

@@ -297,10 +297,29 @@ def main_sim():
                                headers=VA(m)), 200)
             veedor_only.add(m["code"])
             if i % 3 == 2:
+                # Con el partido TERMINADO el veedor todavía puede asignarle jugador a lo que cargó
+                # "sin identificar" (no toca el marcador); el otro veedor no; con la mesa, nadie.
+                base = f"{PUB}/staff/matches/{m['code']}"
+                ev = expect(client.post(f"{base}/events", json={"team_id": m["home"]["team_id"], "type": "YELLOW"},
+                                        headers=VH(m)), 200)
+                mine = next(x for x in expect(client.get(f"{PUB}/staff/me", headers=VH(m)), 200)["matches"]
+                            if x["code"] == m["code"])
+                roster = (mine["home"] or {}).get("players") or []
+                if roster:
+                    r = expect(client.patch(f"{base}/events/{ev['event_id']}", json={"player_id": roster[0]["id"]},
+                                            headers=VH(m)), 200)
+                    ok(r["changed"] is True, "veedor asigna jugador con el partido terminado")
+                expect(client.patch(f"{base}/events/{ev['event_id']}", json={"player_id": str(uuid.uuid4())},
+                                    headers=VH(m)), 400, "PLAYER_NOT_IN_TEAM")
+                if team_token[m["home"]["team_id"]] != team_token[m["away"]["team_id"]]:
+                    expect(client.patch(f"{base}/events/{ev['event_id']}", json={"player_id": None},
+                                        headers=VA(m)), 403, "EVENT_NOT_YOURS")
                 expect(client.post(f"{ADM}/matches/{m['code']}/confirm", headers=H), 200)
                 expect(client.post(f"{PUB}/staff/matches/{m['code']}/events",
                                    json={"team_id": m["home"]["team_id"], "type": "GOAL"},
                                    headers=VH(m)), 409, "MATCH_CONFIRMED")
+                expect(client.patch(f"{base}/events/{ev['event_id']}", json={"player_id": None},
+                                    headers=VH(m)), 409, "MATCH_CONFIRMED")
         expected_scores[m["code"]] = (hg, ag)
 
     # Corrección de la mesa: un partido del veedor con marcador mal → PATCH (queda desfasaje con eventos).

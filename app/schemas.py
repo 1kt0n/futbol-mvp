@@ -551,6 +551,10 @@ class CompetitionEventRequest(BaseModel):
     client_event_id: str | None = Field(None, min_length=8, max_length=64)
 
 
+class CompetitionEventPlayerRequest(BaseModel):
+    player_id: str | None = None  # None = "sin identificar"
+
+
 class CompetitionPenaltiesRequest(BaseModel):
     home_pens: int = Field(..., ge=0, le=99)
     away_pens: int = Field(..., ge=0, le=99)

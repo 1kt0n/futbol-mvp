@@ -15,7 +15,12 @@ import re
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from sqlalchemy import text
 
-from app.schemas import CompetitionEventRequest, CompetitionMatchStatusRequest, CompetitionPenaltiesRequest
+from app.schemas import (
+    CompetitionEventPlayerRequest,
+    CompetitionEventRequest,
+    CompetitionMatchStatusRequest,
+    CompetitionPenaltiesRequest,
+)
 from app.settings import engine
 from app.utils import competition_service as svc
 from app.utils.ratelimit import client_ip, rate_limit
@@ -220,6 +225,24 @@ def staff_delete_event(
         match = _staff_match(conn, comp, staff, code)
         svc.delete_event(conn, comp, match, event_id, actor_staff_id=staff["id"])
         return {"deleted": True}
+
+
+@router.patch("/public/competitions/{slug}/staff/matches/{code}/events/{event_id}")
+def staff_event_player(
+    slug: str,
+    code: str,
+    event_id: str,
+    body: CompetitionEventPlayerRequest,
+    request: Request,
+    x_staff_token: str | None = Header(None, alias="X-Staff-Token"),
+):
+    """Asignar o corregir el jugador de un gol/tarjeta propio. Vale también con el partido
+    terminado, hasta que la mesa central lo confirme."""
+    with engine.begin() as conn:
+        comp = svc.lock_competition(conn, slug)
+        staff = _require_staff(conn, request, comp, x_staff_token)
+        match = _staff_match(conn, comp, staff, code)
+        return svc.set_event_player(conn, comp, match, event_id, body.player_id, actor_staff_id=staff["id"])
 
 
 @router.put("/public/competitions/{slug}/staff/matches/{code}/penalties")

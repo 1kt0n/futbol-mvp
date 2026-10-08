@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.schemas import (
     CompetitionDrawRequest,
+    CompetitionEventPlayerRequest,
     CompetitionEventRequest,
     CompetitionMatchPatchRequest,
     CompetitionMatchStatusRequest,
@@ -797,6 +798,17 @@ def admin_delete_event(slug: str, code: str, event_id: str, actor_user_id: str =
         svc.assert_editable(match)
         svc.delete_event(conn, comp, match, event_id, actor_user_id=actor_user_id)
     return {"deleted": True}
+
+
+@router.patch("/competitions/{slug}/matches/{code}/events/{event_id}")
+def admin_event_player(slug: str, code: str, event_id: str, body: CompetitionEventPlayerRequest,
+                       actor_user_id: str = Depends(get_actor_user_id)):
+    with engine.begin() as conn:
+        require_permission(conn, actor_user_id, RESULTS)
+        comp = svc.lock_competition(conn, slug)
+        match = svc.get_match(conn, comp["id"], code, for_update=True)
+        svc.assert_editable(match)
+        return svc.set_event_player(conn, comp, match, event_id, body.player_id, actor_user_id=actor_user_id)
 
 
 @router.put("/competitions/{slug}/matches/{code}/penalties")

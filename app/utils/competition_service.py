@@ -422,6 +422,38 @@ def delete_event(conn, comp: dict, match: dict, event_id: str, *,
     _after_result_change(conn, comp, match, actor_user_id=actor_user_id, actor_staff_id=actor_staff_id)
 
 
+def set_event_player(conn, comp: dict, match: dict, event_id: str, player_id, *,
+                     actor_user_id=None, actor_staff_id=None) -> dict:
+    """
+    Asigna, cambia o quita el jugador de un gol/tarjeta ya cargado (p. ej. uno cargado "sin
+    identificar"). No toca el marcador. Un veedor, solo en los eventos que cargó él.
+    """
+    ev = conn.execute(text("""
+        SELECT team_id, type, player_id, created_by_staff_id FROM public.competition_match_events
+        WHERE id = :eid AND match_id = :mid FOR UPDATE
+    """), {"eid": event_id, "mid": match["id"]}).mappings().first()
+    if not ev:
+        raise HTTPException(status_code=404, detail="EVENT_NOT_FOUND")
+    if actor_staff_id and _s(ev["created_by_staff_id"]) != actor_staff_id:
+        raise HTTPException(status_code=403, detail="EVENT_NOT_YOURS")
+    if player_id is not None:
+        ok = conn.execute(text("""
+            SELECT 1 FROM public.competition_players WHERE id = :pid AND team_id = :tid
+        """), {"pid": player_id, "tid": ev["team_id"]}).first()
+        if not ok:
+            raise HTTPException(status_code=400, detail="PLAYER_NOT_IN_TEAM")
+    if _s(ev["player_id"]) == player_id:
+        return {"event_id": event_id, "player_id": player_id, "changed": False}
+    conn.execute(text("""
+        UPDATE public.competition_match_events SET player_id = :pid WHERE id = :eid
+    """), {"pid": player_id, "eid": event_id})
+    audit(conn, comp["id"], f"EVENT_PLAYER_{ev['type']}", actor_user_id=actor_user_id,
+          actor_staff_id=actor_staff_id, match_id=match["id"],
+          metadata={"event_id": event_id, "from": _s(ev["player_id"]), "to": player_id})
+    bump_version(conn, comp["id"])
+    return {"event_id": event_id, "player_id": player_id, "changed": True}
+
+
 def _apply_goal_delta(conn, match: dict, team_id: str, type_: str, delta: int) -> None:
     if type_ not in ("GOAL", "OWN_GOAL"):
         return
