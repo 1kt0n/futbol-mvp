@@ -640,6 +640,7 @@ const ACTIONS = {
   MATCH_CLAIM: 'Tomó el partido', MATCH_TAKEOVER: 'Tomó el partido (se lo sacó a otro)', MATCH_RELEASE: 'Soltó el partido',
   STAFF_CREATE: 'Alta de veedor', STAFF_ROTATE_TOKEN: 'Link nuevo de veedor', STAFF_REVOKE: 'Baja de veedor',
   DEMO_RESET_ALL: 'Demo reiniciada', DRAW_RESET: 'Sorteo reiniciado',
+  MATCH_LIVE: 'Estado: en juego', MATCH_HALFTIME: 'Estado: entretiempo', MATCH_FINISHED: 'Estado: terminado',
 }
 const actionLabel = (a) => {
   if (ACTIONS[a]) return ACTIONS[a]

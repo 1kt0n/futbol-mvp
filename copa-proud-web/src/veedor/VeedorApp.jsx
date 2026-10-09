@@ -326,8 +326,12 @@ function HolderPill({ m }) {
   const base = 'inline-block max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider'
   if (!m.holder) return <span className={`${base} bg-gold text-night`}>{t('veedor.free')}</span>
   if (m.holder.me) return <span className={`${base} bg-gold/20 text-gold`}>★ {t('veedor.yours')}</span>
-  // Con nombre: sin mayúsculas ni tracking, así entra el nombre completo en la tarjeta.
-  return <span className={`${base} bg-white/10 text-[11px] normal-case tracking-normal text-white/75`}>{t('veedor.held_by', { name: m.holder.name || '—' })}</span>
+  // Con nombre: sin mayúsculas y en hasta 2 líneas, así se lee el nombre completo en la tarjeta.
+  return (
+    <span className="inline-block max-w-full rounded-lg bg-white/10 px-2 py-0.5 text-[11px] font-extrabold leading-tight text-white/75">
+      {t('veedor.held_by', { name: m.holder.name || '—' })}
+    </span>
+  )
 }
 
 /** Una cancha: sus partidos sin terminar (el actual resaltado), por día. Se toca el que se va a cargar. */
@@ -512,7 +516,7 @@ function MatchControl({ match, queue, enqueue, skew = 0, busy, onClaim, onReleas
             {t('common.penalties')} {match.home_pens}–{match.away_pens}
           </p>
         )}
-        {match.other_veedors?.length > 0 && (
+        {canLoad && match.other_veedors?.length > 0 && (
           <p className="mt-3 text-center text-[11px] font-semibold text-white/50">
             {t('veedor.also_loading', { names: match.other_veedors.join(', ') })}
           </p>
@@ -689,10 +693,11 @@ function EventLog({ match, locked, enqueue, base }) {
           const p = e.player_id ? players.get(e.player_id) : null
           const team = e.team_id === match.home?.id ? match.home : match.away
           return (
-            <li key={e.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-              <span className="w-24 shrink-0 font-bold">{t(`event.${e.type}`)}</span>
-              <span className="min-w-0 flex-1 text-white/70">
-                <span className="block truncate">
+            <li key={e.id} className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-x-2 gap-y-1 px-3 py-2 text-sm">
+              <span className="font-bold leading-tight">{t(`event.${e.type}`)}</span>
+              <span className="min-w-0 text-white/70">
+                {/* Nombres completos (planillas sin dorsal): hasta 2 líneas; los botones van abajo. */}
+                <span className="line-clamp-2 break-words leading-tight">
                   {p ? `${p.shirt_number != null ? `#${p.shirt_number} ` : ''}${p.full_name}` : team?.name}
                   {!p && <span className="ml-1 italic text-gold-light/80">· {t('veedor.unidentified')}</span>}
                 </span>
@@ -700,23 +705,27 @@ function EventLog({ match, locked, enqueue, base }) {
                   <span className="block truncate text-[11px] text-white/40">{t('veedor.by', { name: e.loaded_by })}</span>
                 )}
               </span>
-              {!match.confirmed && e.editable && (
-                <button
-                  type="button"
-                  className={`focus-ring shrink-0 rounded px-2 py-1 text-xs font-bold ${p ? 'text-white/60' : 'bg-gold/15 text-gold-light'}`}
-                  onClick={() => setEditing(e)}
-                >
-                  {p ? t('veedor.change_player') : t('veedor.set_player')}
-                </button>
-              )}
-              {!locked && e.editable && (
-                <button
-                  type="button"
-                  className="focus-ring shrink-0 rounded px-2 py-1 text-xs font-bold text-[#ff9db3]"
-                  onClick={() => enqueue({ method: 'DELETE', path: `${base}/events/${e.id}`, label: t('veedor.undo') })}
-                >
-                  {t('veedor.undo')}
-                </button>
+              {e.editable && (!match.confirmed || !locked) && (
+                <span className="col-start-2 flex flex-wrap gap-2">
+                  {!match.confirmed && (
+                    <button
+                      type="button"
+                      className={`focus-ring rounded px-2 py-1 text-xs font-bold ${p ? 'bg-white/5 text-white/60' : 'bg-gold/15 text-gold-light'}`}
+                      onClick={() => setEditing(e)}
+                    >
+                      {p ? t('veedor.change_player') : t('veedor.set_player')}
+                    </button>
+                  )}
+                  {!locked && (
+                    <button
+                      type="button"
+                      className="focus-ring rounded px-2 py-1 text-xs font-bold text-[#ff9db3]"
+                      onClick={() => enqueue({ method: 'DELETE', path: `${base}/events/${e.id}`, label: t('veedor.undo') })}
+                    >
+                      {t('veedor.undo')}
+                    </button>
+                  )}
+                </span>
               )}
             </li>
           )
