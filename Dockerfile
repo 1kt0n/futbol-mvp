@@ -1,5 +1,6 @@
+# Imágenes oficiales desde el espejo público de AWS (no Docker Hub: su límite de pulls (429) frenó un deploy el 9/10).
 # Stage 1: Build frontend
-FROM node:20-alpine AS frontend-build
+FROM public.ecr.aws/docker/library/node:20-alpine AS frontend-build
 
 WORKDIR /app/frontend
 COPY futbol-mvp-web/package*.json ./
@@ -11,7 +12,7 @@ ENV VITE_API_BASE_URL=""
 RUN npm run build
 
 # Stage 2: Python backend
-FROM python:3.13-slim
+FROM public.ecr.aws/docker/library/python:3.13-slim
 
 WORKDIR /app
 
