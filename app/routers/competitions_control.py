@@ -23,6 +23,7 @@ from app.schemas import (
     CompetitionMatchPatchRequest,
     CompetitionMatchStatusRequest,
     CompetitionPenaltiesRequest,
+    CompetitionStaffRequest,
     CompetitionWalkoverRequest,
 )
 from app.settings import engine
@@ -230,3 +231,26 @@ def control_gallery_link(slug: str, album_id: str, body: CompetitionGalleryLinkR
     svc.invalidate_cache(slug)
     with engine.connect() as conn:
         return gal.control_payload(conn, svc.get_competition(conn, slug))
+
+
+# ------------------------------------------------------------------ veedores (con nombre, rotativos)
+
+@router.post(R + "/staff")
+def control_create_staff(slug: str, body: CompetitionStaffRequest, request: Request,
+                         x_control_token: str | None = Tok):
+    """Alta de un veedor con su nombre. El link (token) se devuelve UNA sola vez."""
+    _auth(request, slug, x_control_token)
+    return adm.create_staff(slug, body, actor_user_id=None)
+
+
+@router.post(R + "/staff/{staff_id}/rotate-token")
+def control_rotate_staff(slug: str, staff_id: str, request: Request, x_control_token: str | None = Tok):
+    """Link nuevo (el anterior deja de andar al instante). También reactiva a uno dado de baja."""
+    _auth(request, slug, x_control_token)
+    return adm.rotate_staff_token(slug, staff_id, actor_user_id=None)
+
+
+@router.post(R + "/staff/{staff_id}/revoke")
+def control_revoke_staff(slug: str, staff_id: str, request: Request, x_control_token: str | None = Tok):
+    _auth(request, slug, x_control_token)
+    return adm.revoke_staff(slug, staff_id, actor_user_id=None)

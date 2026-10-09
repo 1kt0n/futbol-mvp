@@ -1,5 +1,10 @@
 """
-Veedores POR CANCHA (decisión 2026-10-02): lo habitual es un veedor por cancha, el mismo los dos
+⚠ Desde el 2026-10-08 lo habitual es otro modelo: veedores CON NOMBRE que ROTAN entre canchas y
+TOMAN el partido en la cancha (app del veedor → "Tomar este partido"). Se dan de alta desde la mesa
+de control (/control/<token> → Veedores). Este script queda para el modelo anterior, por cancha: un
+partido preasignado acá es simplemente un partido ya tomado por ese veedor.
+
+Veedores POR CANCHA (decisión 2026-10-02): un veedor por cancha, el mismo los dos
 días o uno distinto por día. Cada veedor tiene un link privado (`/v/<token>`) que abre el modo
 veedor con los partidos de su cancha (antes del sorteo se ven igual, con "Zona A · Eq. 1", etc.).
 

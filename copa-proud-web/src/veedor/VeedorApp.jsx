@@ -24,38 +24,36 @@ function dayLabel(date, locale) {
   return `${weekdayName(date, locale)} ${dm}`
 }
 
-/**
- * Canchas a cargo (`me.staff.courts`: [{venue, date, matches}]) → una etiqueta por cancha:
- * un día → 'Sábado 10/10'; los dos → 'Sáb y Dom'.
- */
-function courtChips(courts, locale, t) {
-  const byVenue = new Map()
-  for (const c of courts || []) {
-    if (!byVenue.has(c.venue)) byVenue.set(c.venue, new Set())
-    byVenue.get(c.venue).add(c.date)
-  }
-  return [...byVenue.entries()].map(([venue, set]) => {
-    const dates = [...set].sort()
-    const days = dates.length === 1 ? dayLabel(dates[0], locale) : dates.map((d) => weekdayName(d, locale, true)).reduce((a, b) => t('veedor.days_and', { a, b }))
-    return { venue, days }
-  })
-}
-
 function errorText(t, code) {
-  const known = ['MATCH_CONFIRMED', 'MATCH_NOT_ASSIGNED', 'TEAMS_NOT_DEFINED', 'PENALTIES_REQUIRED', 'INVALID_STAFF_TOKEN', 'MATCH_NOT_STARTED', 'EVENT_NOT_YOURS']
+  const known = ['MATCH_CONFIRMED', 'MATCH_NOT_ASSIGNED', 'TEAMS_NOT_DEFINED', 'PENALTIES_REQUIRED', 'INVALID_STAFF_TOKEN', 'MATCH_NOT_STARTED', 'EVENT_NOT_YOURS', 'MATCH_TAKEN', 'MATCH_ALREADY_STARTED', 'OFFLINE']
   if (known.includes(code)) return t(`veedor.err.${code}`)
   if (typeof code === 'string' && code.startsWith('INVALID_TRANSITION')) return t('veedor.err.INVALID_TRANSITION')
   return t('veedor.err.generic')
 }
 
+/** Todos los partidos (el veedor elige la cancha), con sus equipos y la hora del predio, en orden. */
+function withTeams(me) {
+  const offset = offsetMinutes(me.competition.utc_offset)
+  return me.matches
+    .map((m) => ({ ...m, home: me.teams[m.home_team_id] || null, away: me.teams[m.away_team_id] || null, local: localParts(m.scheduled_at, offset) }))
+    .sort((a, b) => (a.local?.ms ?? 0) - (b.local?.ms ?? 0) || (a.venue ?? 0) - (b.venue ?? 0))
+}
+
+/**
+ * Modo veedor. Los veedores ROTAN entre canchas: en la cancha donde está, el veedor toca el
+ * partido y lo TOMA; desde ahí es el único que lo carga (así no hay resultados duplicados).
+ * Inicio = "Mis partidos" (los que tomó) + las canchas con el partido actual de cada una.
+ */
 export default function VeedorApp() {
   const { token } = useParams()
-  const { t, lang, setLang, locale } = useI18n()
+  const { t, lang, setLang } = useI18n()
   const [me, setMe] = useState(null)
   const [fatal, setFatal] = useState(null)
   const [queue, setQueue] = useState(() => loadQueue(token))
   const [notice, setNotice] = useState(null)
+  const [court, setCourt] = useState(null) // cancha abierta (número)
   const [openCode, setOpenCode] = useState(null)
+  const [busy, setBusy] = useState(false)
   const flushing = useRef(false)
 
   const refresh = useCallback(async () => {
@@ -96,6 +94,33 @@ export default function VeedorApp() {
     [token, flush],
   )
 
+  /** Tomar / soltar el partido: van directo (no a la cola), hace falta la respuesta en el momento. */
+  const claimAction = useCallback(
+    async (code, action, body) => {
+      setBusy(true)
+      let res = null
+      try {
+        res = await staffFetch(token, 'POST', `/matches/${code}/${action}`, body)
+      } catch {
+        res = null
+      }
+      setBusy(false)
+      if (!res) setNotice({ kind: 'error', text: errorText(t, 'OFFLINE') })
+      else if (!res.ok) setNotice({ kind: 'error', text: errorText(t, res.data?.detail) })
+      else if (action === 'claim') setNotice({ kind: 'ok', text: t('veedor.claimed') })
+      await refresh()
+      return Boolean(res?.ok)
+    },
+    [token, refresh, t],
+  )
+  const claim = useCallback((code, force = false) => claimAction(code, 'claim', { force }), [claimAction])
+  const release = useCallback(
+    async (code) => {
+      if (await claimAction(code, 'release')) setOpenCode(null)
+    },
+    [claimAction],
+  )
+
   const fastRef = useRef(false)
   useEffect(() => {
     const m = me?.matches.find((x) => x.code === openCode)
@@ -124,6 +149,10 @@ export default function VeedorApp() {
     return () => clearTimeout(id)
   }, [notice])
 
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [openCode, court])
+
   if (fatal) {
     return (
       <Shell>
@@ -141,12 +170,8 @@ export default function VeedorApp() {
     )
   }
 
-  const offset = offsetMinutes(me.competition.utc_offset)
-  const matches = me.matches
-    .map((m) => ({ ...m, local: localParts(m.scheduled_at, offset) }))
-    .sort((a, b) => (a.local?.ms ?? 0) - (b.local?.ms ?? 0) || (a.venue ?? 0) - (b.venue ?? 0))
+  const matches = withTeams(me)
   const open = matches.find((m) => m.code === openCode)
-  const chips = courtChips(me.staff.courts, locale, t)
 
   return (
     <Shell
@@ -163,19 +188,6 @@ export default function VeedorApp() {
       <div className="mb-4">
         <div className="kicker">{t('veedor.title')}</div>
         <div className="text-lg font-extrabold">{me.staff.full_name}</div>
-        {chips.length > 0 && (
-          <div className="mt-2">
-            <div className="kicker mb-1">{t(chips.length > 1 ? 'veedor.your_courts' : 'veedor.your_court')}</div>
-            <div className="flex flex-wrap gap-2">
-              {chips.map((c) => (
-                <span key={c.venue} className="inline-flex items-baseline gap-2 rounded-xl bg-gold/15 px-3 py-1.5 ring-1 ring-gold/40">
-                  <span className="board-num text-3xl leading-none text-gold">{t('common.court_n', { n: c.venue })}</span>
-                  <span className="text-sm font-bold text-gold-light">{c.days}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
         {me.staff.teams?.length > 0 && (
           <div className="mt-0.5 text-xs font-semibold text-white/60">
             {t('veedor.your_teams')}: <span className="text-gold-light">{me.staff.teams.join(' · ')}</span>
@@ -189,15 +201,27 @@ export default function VeedorApp() {
         </div>
       )}
       {notice && (
-        <div role="alert" className="mb-3 rounded-xl bg-live/20 px-3 py-2 text-sm font-semibold text-[#ffb3c4]">
+        <div role={notice.kind === 'ok' ? 'status' : 'alert'} className={`mb-3 rounded-xl px-3 py-2 text-sm font-semibold ${notice.kind === 'ok' ? 'bg-gold/15 text-gold-light' : 'bg-live/20 text-[#ffb3c4]'}`}>
           {notice.text}
         </div>
       )}
 
       {open ? (
-        <MatchControl match={open} queue={queue} enqueue={enqueue} skew={me.skew} onBack={() => setOpenCode(null)} />
+        <MatchControl
+          match={open}
+          queue={queue}
+          enqueue={enqueue}
+          skew={me.skew}
+          busy={busy}
+          onClaim={claim}
+          onRelease={release}
+          backLabel={court != null ? t('common.court_n', { n: court }) : t('veedor.home')}
+          onBack={() => setOpenCode(null)}
+        />
+      ) : court != null ? (
+        <CourtView venue={court} matches={matches.filter((m) => m.venue === court)} onOpen={setOpenCode} onBack={() => setCourt(null)} />
       ) : (
-        <MatchList matches={matches} onOpen={setOpenCode} />
+        <Home matches={matches} venues={me.venues} onOpen={setOpenCode} onCourt={setCourt} />
       )}
     </Shell>
   )
@@ -217,60 +241,127 @@ function Shell({ children, right }) {
   )
 }
 
-/**
- * Partidos agrupados por día (un veedor de cancha tiene ~7 el sábado y ~6 el domingo). Si tiene más
- * de un día, los días ya terminados quedan plegados para que lo próximo quede arriba.
- */
-function MatchList({ matches, onOpen }) {
-  const { t, locale } = useI18n()
+/** Inicio: los partidos que tomó (en vivo primero) + las canchas para tomar el próximo. */
+function Home({ matches, venues, onOpen, onCourt }) {
+  const { t } = useI18n()
+  const mine = matches.filter((m) => m.mine)
+  const active = mine.filter((m) => !m.confirmed).sort((a, b) => Number(LIVE.has(b.status)) - Number(LIVE.has(a.status)))
+  const confirmed = mine.filter((m) => m.confirmed)
   if (!matches.length) return <p className="card p-5 text-center text-white/60">{t('veedor.no_matches')}</p>
-  const nextCode = matches.find((m) => !DONE.has(m.status))?.code
-  // Con una sola cancha ya está arriba en grande: no se repite en cada partido.
-  const showCourt = new Set(matches.map((m) => m.venue)).size > 1
+  return (
+    <div className="space-y-6">
+      <section>
+        <h2 className="kicker mb-2 px-1">{t('veedor.my_matches')}</h2>
+        {active.length > 0 ? (
+          <ul className="space-y-2">
+            {active.map((m) => (
+              <MatchRow key={m.code} m={m} showCourt onOpen={onOpen} />
+            ))}
+          </ul>
+        ) : (
+          <p className="card p-4 text-center text-sm font-semibold text-white/70">{t('veedor.courts_hint')}</p>
+        )}
+        {confirmed.length > 0 && (
+          <details className="group mt-2">
+            <summary className="focus-ring card cursor-pointer list-none px-3 py-2 text-sm font-bold text-white/60 [&::-webkit-details-marker]:hidden">
+              <span className="mr-2 inline-block transition group-open:rotate-90">›</span>
+              {t('veedor.confirmed_section', { n: confirmed.length })}
+            </summary>
+            <ul className="mt-2 space-y-2">
+              {confirmed.map((m) => (
+                <MatchRow key={m.code} m={m} showCourt onOpen={onOpen} />
+              ))}
+            </ul>
+          </details>
+        )}
+      </section>
+
+      <section>
+        <h2 className="kicker mb-2 px-1">{t('veedor.courts')}</h2>
+        <div className="grid grid-cols-2 gap-2">
+          {venues.map((v) => (
+            <CourtCard key={v} venue={v} matches={matches.filter((m) => m.venue === v)} onOpen={() => onCourt(v)} />
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+const teamName = (m, side, t) => m[side]?.short_name || m[side]?.name || sourceLabel(m[`${side}_source`], t)
+
+/** Tarjeta de cancha: el partido de ahora (el primero sin terminar) y quién lo tiene. */
+function CourtCard({ venue, matches, onOpen }) {
+  const { t, locale } = useI18n()
+  const current = matches.find((m) => !DONE.has(m.status))
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={`card focus-ring flex min-h-[124px] flex-col items-start p-3 text-left ${current && LIVE.has(current.status) ? 'live-frame' : ''}`}
+    >
+      <span className="board-num text-2xl leading-none text-gold">{t('common.court_n', { n: venue })}</span>
+      {current ? (
+        <>
+          <span className="mt-1 text-[11px] font-bold text-white/55">
+            {current.local?.date ? `${weekdayName(current.local.date, locale, true)} ` : ''}
+            {current.local?.time}
+            {LIVE.has(current.status) && <span className="ml-1 text-[#ff8aa5]">● {t(`status.${current.status}`)}</span>}
+          </span>
+          <span className="mt-1 block w-full truncate text-sm font-bold leading-tight">{teamName(current, 'home', t)}</span>
+          <span className="block w-full truncate text-sm font-bold leading-tight">{teamName(current, 'away', t)}</span>
+          <span className="mt-auto max-w-full pt-2">
+            <HolderPill m={current} />
+          </span>
+        </>
+      ) : (
+        <span className="mt-2 text-sm text-white/50">{t('veedor.court_done')}</span>
+      )}
+    </button>
+  )
+}
+
+function HolderPill({ m }) {
+  const { t } = useI18n()
+  const base = 'inline-block max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider'
+  if (!m.holder) return <span className={`${base} bg-gold text-night`}>{t('veedor.free')}</span>
+  if (m.holder.me) return <span className={`${base} bg-gold/20 text-gold`}>★ {t('veedor.yours')}</span>
+  // Con nombre: sin mayúsculas ni tracking, así entra el nombre completo en la tarjeta.
+  return <span className={`${base} bg-white/10 text-[11px] normal-case tracking-normal text-white/75`}>{t('veedor.held_by', { name: m.holder.name || '—' })}</span>
+}
+
+/** Una cancha: sus partidos sin terminar (el actual resaltado), por día. Se toca el que se va a cargar. */
+function CourtView({ venue, matches, onOpen, onBack }) {
+  const { t, locale } = useI18n()
+  const pending = matches.filter((m) => !DONE.has(m.status))
+  const finished = matches.length - pending.length
   const days = []
-  for (const m of matches) {
+  for (const m of pending) {
     const date = m.local?.date ?? ''
     if (days[days.length - 1]?.date !== date) days.push({ date, matches: [] })
     days[days.length - 1].matches.push(m)
   }
   return (
-    <div className="space-y-5">
-      {days.map((d) => {
-        const done = d.matches.filter((m) => DONE.has(m.status)).length
-        const head = (
-          <span className="flex items-baseline justify-between gap-3">
-            <span className="kicker">{d.date ? dayLabel(d.date, locale) : t('common.tbd')}</span>
-            <span className="sr-only"> · </span>
-            <span className="text-[11px] font-bold text-white/50">{t('veedor.day_progress', { done, n: d.matches.length })}</span>
-          </span>
-        )
-        const list = (
-          <ul className="space-y-2">
-            {d.matches.map((m) => (
-              <MatchRow key={m.code} m={m} next={m.code === nextCode} showCourt={showCourt} onOpen={onOpen} />
-            ))}
-          </ul>
-        )
-        if (days.length > 1 && done === d.matches.length) {
-          return (
-            <details key={d.date} className="group">
-              <summary className="focus-ring card mb-2 cursor-pointer list-none px-3 py-2 [&::-webkit-details-marker]:hidden">
-                <span className="flex items-center gap-2">
-                  <span className="text-white/50 transition group-open:rotate-90">›</span>
-                  <span className="flex-1">{head}</span>
-                </span>
-              </summary>
-              {list}
-            </details>
-          )
-        }
-        return (
+    <div>
+      <button type="button" onClick={onBack} className="focus-ring mb-3 rounded text-sm font-bold text-gold-light">
+        ← {t('veedor.home')}
+      </button>
+      <h2 className="board-num text-5xl leading-none text-gold">{t('common.court_n', { n: venue })}</h2>
+      <p className="mb-4 mt-1 text-sm font-semibold text-white/60">{t('veedor.court_hint')}</p>
+      {!pending.length && <p className="card p-5 text-center text-white/60">{t('veedor.court_done')}</p>}
+      <div className="space-y-5">
+        {days.map((d) => (
           <section key={d.date}>
-            <h2 className="mb-2 px-1">{head}</h2>
-            {list}
+            <h3 className="kicker mb-2 px-1">{d.date ? dayLabel(d.date, locale) : t('common.tbd')}</h3>
+            <ul className="space-y-2">
+              {d.matches.map((m) => (
+                <MatchRow key={m.code} m={m} next={m.code === pending[0]?.code} onOpen={onOpen} />
+              ))}
+            </ul>
           </section>
-        )
-      })}
+        ))}
+      </div>
+      {finished > 0 && <p className="mt-4 px-1 text-xs text-white/40">{t('veedor.court_finished', { n: finished })}</p>}
     </div>
   )
 }
@@ -301,22 +392,29 @@ function MatchRow({ m, next, showCourt, onOpen }) {
             )
           })}
         </span>
-        <span className="text-right">
-          {m.status !== 'SCHEDULED' && <span className="board-num block text-2xl">{m.home_goals ?? 0}–{m.away_goals ?? 0}</span>}
+        <span className="flex max-w-[40%] shrink-0 flex-col items-end gap-1 text-right">
+          {m.status !== 'SCHEDULED' && <span className="board-num block text-2xl leading-none">{m.home_goals ?? 0}–{m.away_goals ?? 0}</span>}
           <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
             {m.confirmed ? t('common.official') : t(`status.${m.status}`)}
           </span>
+          {!m.confirmed && <HolderPill m={m} />}
         </span>
       </button>
     </li>
   )
 }
 
-function MatchControl({ match, queue, enqueue, skew = 0, onBack }) {
+/**
+ * Pantalla del partido. Si no lo tiene este veedor (`match.mine`), se ve en vivo pero solo lectura,
+ * con "Tomar este partido" (libre) o "Tomarlo igual" (lo tiene otro: pide confirmación).
+ */
+function MatchControl({ match, queue, enqueue, skew = 0, busy, onClaim, onRelease, backLabel, onBack }) {
   const { t } = useI18n()
   const [picker, setPicker] = useState(null) // {side, type}
   const [dup, setDup] = useState(null) // posible duplicado a confirmar
   const [armFinish, setArmFinish] = useState(false)
+  const [takeover, setTakeover] = useState(false)
+  const canLoad = match.mine
   const base = `/matches/${match.code}`
   const live = LIVE.has(match.status)
   const locked = match.confirmed || match.status === 'FINISHED' || match.status === 'WALKOVER'
@@ -374,12 +472,12 @@ function MatchControl({ match, queue, enqueue, skew = 0, onBack }) {
   }
 
   const tied = (match.home_goals ?? 0) + pendingDelta.h === (match.away_goals ?? 0) + pendingDelta.a
-  const needsPens = match.stage !== 'GROUP' && tied && live
+  const needsPens = canLoad && match.stage !== 'GROUP' && tied && live
 
   return (
     <div>
       <button type="button" onClick={onBack} className="focus-ring mb-3 rounded text-sm font-bold text-gold-light">
-        ← {t('veedor.my_matches')}
+        ← {backLabel}
       </button>
       <div className="kicker mb-2">
         {match.local?.time} · {t('common.court_n', { n: match.venue })} · {matchLabel(match.code, t)}
@@ -421,7 +519,7 @@ function MatchControl({ match, queue, enqueue, skew = 0, onBack }) {
         )}
       </section>
 
-      {live && !match.confirmed && (
+      {canLoad && live && !match.confirmed && (
         <div className="mb-4 grid grid-cols-2 gap-3">
           {['home', 'away'].map((side) => (
             <div key={side} className="space-y-2">
@@ -448,8 +546,34 @@ function MatchControl({ match, queue, enqueue, skew = 0, onBack }) {
 
       <EventLog match={match} locked={locked} enqueue={enqueue} base={base} />
 
+      {match.holder?.me && match.status === 'SCHEDULED' && !match.confirmed && (
+        <button type="button" disabled={busy} onClick={() => onRelease(match.code)} className="focus-ring mx-auto mb-4 block rounded px-3 py-2 text-sm font-bold text-white/50 underline">
+          {t('veedor.release')}
+        </button>
+      )}
+
+      {/* sin tomar: tomarlo (libre) o tomarlo igual (lo tiene otro) */}
+      {!canLoad && !match.confirmed && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-night/90 p-3 backdrop-blur-md" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+          <div className="mx-auto max-w-lg">
+            {match.holder ? (
+              <>
+                <p className="mb-2 text-center text-sm font-bold text-white/80">{t('veedor.taken_by', { name: match.holder.name || '—' })}</p>
+                <BigButton tone="outline" className="w-full" disabled={busy} onClick={() => setTakeover(true)}>
+                  {t('veedor.take_anyway')}
+                </BigButton>
+              </>
+            ) : (
+              <BigButton tone="gold" className="w-full" disabled={busy} onClick={() => onClaim(match.code)}>
+                {t('veedor.take')}
+              </BigButton>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* barra de estado fija abajo */}
-      {!match.confirmed && match.status !== 'FINISHED' && match.status !== 'WALKOVER' && (
+      {canLoad && !match.confirmed && match.status !== 'FINISHED' && match.status !== 'WALKOVER' && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-night/90 p-3 backdrop-blur-md" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
           <div className="mx-auto grid max-w-lg grid-cols-2 gap-2">
             {match.status === 'SCHEDULED' && (
@@ -467,9 +591,33 @@ function MatchControl({ match, queue, enqueue, skew = 0, onBack }) {
           </div>
         </div>
       )}
-      {match.status === 'FINISHED' && !match.confirmed && <p className="card p-3 text-center text-sm text-white/60">{t('veedor.waiting_confirm')}</p>}
+      {canLoad && match.status === 'FINISHED' && !match.confirmed && <p className="card p-3 text-center text-sm text-white/60">{t('veedor.waiting_confirm')}</p>}
 
       {picker && <PlayerPicker team={teamOf(picker.side)} type={picker.type} onPick={(p) => addEvent(picker.side, picker.type, p)} onClose={() => setPicker(null)} />}
+
+      {takeover && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-6" role="alertdialog" aria-modal="true">
+          <div className="w-full max-w-sm rounded-2xl bg-indigo-800 p-5 text-center ring-1 ring-gold/40">
+            <p className="kicker mb-2">{t('veedor.takeover_title')}</p>
+            <p className="mb-5 text-base font-bold">{t('veedor.takeover_text', { name: match.holder?.name || '—' })}</p>
+            <div className="grid gap-2">
+              <BigButton
+                tone="gold"
+                disabled={busy}
+                onClick={() => {
+                  setTakeover(false)
+                  onClaim(match.code, true)
+                }}
+              >
+                {t('veedor.takeover_yes')}
+              </BigButton>
+              <BigButton tone="outline" onClick={() => setTakeover(false)}>
+                {t('veedor.cancel')}
+              </BigButton>
+            </div>
+          </div>
+        </div>
+      )}
 
       {dup && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-6" role="alertdialog" aria-modal="true">
@@ -526,7 +674,8 @@ function Penalties({ match, onSave }) {
 function EventLog({ match, locked, enqueue, base }) {
   const { t } = useI18n()
   // Evento al que se le está asignando jugador (vale aun con el partido terminado, hasta que la
-  // mesa lo confirme; no toca el marcador).
+  // mesa lo confirme; no toca el marcador). `editable`: los suyos y, si tiene el partido, los que
+  // cargó el veedor anterior (nunca los de la mesa): lo decide el server.
   const [editing, setEditing] = useState(null)
   const players = new Map([...(match.home?.players || []), ...(match.away?.players || [])].map((p) => [p.id, p]))
   const events = [...(match.events || [])].reverse()
@@ -551,7 +700,7 @@ function EventLog({ match, locked, enqueue, base }) {
                   <span className="block truncate text-[11px] text-white/40">{t('veedor.by', { name: e.loaded_by })}</span>
                 )}
               </span>
-              {!match.confirmed && e.mine && (
+              {!match.confirmed && e.editable && (
                 <button
                   type="button"
                   className={`focus-ring shrink-0 rounded px-2 py-1 text-xs font-bold ${p ? 'text-white/60' : 'bg-gold/15 text-gold-light'}`}
@@ -560,7 +709,7 @@ function EventLog({ match, locked, enqueue, base }) {
                   {p ? t('veedor.change_player') : t('veedor.set_player')}
                 </button>
               )}
-              {!locked && e.mine && (
+              {!locked && e.editable && (
                 <button
                   type="button"
                   className="focus-ring shrink-0 rounded px-2 py-1 text-xs font-bold text-[#ff9db3]"

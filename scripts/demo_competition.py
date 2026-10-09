@@ -5,13 +5,14 @@ Es una competencia aparte (slug `copa-proud-2026-demo`) con el mismo formato que
 los 28 equipos con sus escudos, un sorteo al azar HECHO CON EL PROCEDIMIENTO OFICIAL (tandas,
 cupo de extranjeros, parejas y regla de salto), planteles de prueba y veedores de prueba con
 sus links. El sorteo en vivo queda configurado con las tandas oficiales: para ensayarlo, en el
-panel de producción "Reiniciar sorteo" (antes, `reiniciar` si ya hay resultados cargados).
+panel de producción "Reiniciar TODO (demo)" (resultados + sorteo a cero).
 Al recrearla se conservan el link de producción del sorteo y la transmisión (YouTube / hora). Nada de lo que se cargue acá toca el torneo real. Solo opera sobre slugs que
 terminan en "-demo".
 
-Veedores POR CANCHA (como en el torneo real): 6 de prueba, "Veedor Demo Cancha N", cada uno con
-todos los partidos de su cancha los dos días. Para ponerles los nombres reales sin rehacer la
-demo: `veedores_cancha.py renombrar --demo ...` o `veedores_cancha.py crear --demo --archivo ... --reemplazar`.
+Veedores: `crear` deja 6 de prueba POR CANCHA ("Veedor Demo Cancha N", modelo anterior). Lo
+habitual ahora (decisión 2026-10-08) es que los veedores ROTEN y tomen el partido en la cancha:
+se dan de alta con su nombre desde la mesa de control (/demo/control/<token> → Veedores) y
+"Reiniciar TODO" deja todos los partidos sin veedor.
 
 Uso (pide la URL de la base sin mostrarla, igual que el seed):
   ./.venv/bin/python scripts/demo_competition.py crear  [--fecha 2026-10-04] [--por-equipo N]
@@ -20,8 +21,10 @@ Uso (pide la URL de la base sin mostrarla, igual que el seed):
         si está instalado `qrcode`), con un mensaje listo para mandar por WhatsApp.
         --por-equipo N: modelo anterior, N veedores con equipos a cargo en vez de canchas.
   ./.venv/bin/python scripts/demo_competition.py reiniciar
-      → borra SOLO los resultados (goles, tarjetas, estados, cruces del domingo). Equipos,
-        veedores y links quedan iguales: se puede volver a ensayar sin reenviar nada.
+      → borra SOLO los resultados (goles, tarjetas, estados, cruces del domingo, quién tomó cada
+        partido). Zonas, equipos, veedores y links quedan iguales: se puede volver a ensayar sin
+        reenviar nada. Para volver a hacer también el SORTEO: "Reiniciar TODO" en el panel de
+        producción de la demo.
   ./.venv/bin/python scripts/demo_competition.py borrar
       → elimina la demo entera.
 """
@@ -199,21 +202,9 @@ def reiniciar(conn) -> int:
     cid = _comp_id(conn)
     if not cid:
         sys.exit("No hay demo creada. Corré primero: demo_competition.py crear")
-    conn.execute(text("DELETE FROM public.competition_match_events WHERE competition_id = :cid"), {"cid": cid})
-    conn.execute(text("DELETE FROM public.competition_draws WHERE competition_id = :cid"), {"cid": cid})
-    n = conn.execute(text("""
-        UPDATE public.competition_matches
-        SET status = 'SCHEDULED', home_goals = NULL, away_goals = NULL, home_pens = NULL, away_pens = NULL,
-            started_at = NULL, ended_at = NULL, confirmed_at = NULL, confirmed_by_user_id = NULL,
-            home_team_id = CASE WHEN stage = 'GROUP' THEN home_team_id END,
-            away_team_id = CASE WHEN stage = 'GROUP' THEN away_team_id END,
-            updated_at = now()
-        WHERE competition_id = :cid
-    """), {"cid": cid}).rowcount
-    conn.execute(text("""
-        UPDATE public.competitions SET status = 'PUBLISHED', group_stage_closed_at = NULL,
-               group_stage_closed_by = NULL WHERE id = :cid
-    """), {"cid": cid})
+    n = svc.reset_all_results(conn, cid)
+    comp = svc.get_competition(conn, DEMO_SLUG, for_update=True)
+    svc.sync_bracket(conn, comp)  # vuelve a poner los equipos del sábado desde las zonas
     svc.bump_version(conn, cid)
     return n
 
@@ -242,7 +233,7 @@ def main():
         vc.print_rows(links)
         vc.print_outputs(csv_path, png, demo=True)
     elif args.accion == "reiniciar":
-        print(f"✓ Resultados de la demo borrados ({n} partidos vuelven a 'programado'). Equipos, veedores y links intactos.")
+        print(f"✓ Resultados de la demo borrados ({n} partidos vuelven a 'programado', sin veedor). Zonas, equipos, veedores y links intactos.")
     else:
         print("✓ Demo eliminada." if ok else "No había demo para borrar.")
 

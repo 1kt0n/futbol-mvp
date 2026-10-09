@@ -555,6 +555,11 @@ class CompetitionEventPlayerRequest(BaseModel):
     player_id: str | None = None  # None = "sin identificar"
 
 
+class CompetitionClaimRequest(BaseModel):
+    """El veedor toma el partido de la cancha. force=True: lo saca a otro veedor que lo tenía."""
+    force: bool = False
+
+
 class CompetitionGalleryRequest(BaseModel):
     """Mesa de control: carpeta de fotos de Drive y crédito del fotógrafo. None = no cambia; "" = borrar."""
     folder_url: str | None = Field(None, max_length=500)

@@ -412,17 +412,28 @@ def add_event(conn, comp: dict, match: dict, *, team_id: str, type_: str, player
     return {"event_id": _s(ev["id"]), "duplicate": False}
 
 
+def staff_can_edit_event(event: dict, staff_id: str, *, holder: bool) -> bool:
+    """
+    Un veedor toca los eventos que cargó él. El que TIENE el partido (lo tomó en la cancha)
+    además toca los que cargó otro veedor antes (p. ej. al que se le murió el celular), nunca
+    los de la mesa central.
+    """
+    if _s(event.get("created_by_staff_id")) == staff_id:
+        return True
+    return holder and event.get("source") == "VEEDOR"
+
+
 def delete_event(conn, comp: dict, match: dict, event_id: str, *,
-                 actor_user_id=None, actor_staff_id=None) -> None:
-    """La mesa central borra cualquier evento; un veedor, solo los que cargó él."""
+                 actor_user_id=None, actor_staff_id=None, holder: bool = False) -> None:
+    """La mesa central borra cualquier evento; un veedor, ver `staff_can_edit_event`."""
     if actor_staff_id:
         owner = conn.execute(text("""
-            SELECT created_by_staff_id FROM public.competition_match_events
+            SELECT created_by_staff_id, source FROM public.competition_match_events
             WHERE id = :eid AND match_id = :mid
         """), {"eid": event_id, "mid": match["id"]}).mappings().first()
         if not owner:
             raise HTTPException(status_code=404, detail="EVENT_NOT_FOUND")
-        if _s(owner["created_by_staff_id"]) != actor_staff_id:
+        if not staff_can_edit_event(dict(owner), actor_staff_id, holder=holder):
             raise HTTPException(status_code=403, detail="EVENT_NOT_YOURS")
     ev = conn.execute(text("""
         DELETE FROM public.competition_match_events
@@ -439,18 +450,18 @@ def delete_event(conn, comp: dict, match: dict, event_id: str, *,
 
 
 def set_event_player(conn, comp: dict, match: dict, event_id: str, player_id, *,
-                     actor_user_id=None, actor_staff_id=None) -> dict:
+                     actor_user_id=None, actor_staff_id=None, holder: bool = False) -> dict:
     """
     Asigna, cambia o quita el jugador de un gol/tarjeta ya cargado (p. ej. uno cargado "sin
-    identificar"). No toca el marcador. Un veedor, solo en los eventos que cargó él.
+    identificar"). No toca el marcador. Un veedor, ver `staff_can_edit_event`.
     """
     ev = conn.execute(text("""
-        SELECT team_id, type, player_id, created_by_staff_id FROM public.competition_match_events
+        SELECT team_id, type, player_id, created_by_staff_id, source FROM public.competition_match_events
         WHERE id = :eid AND match_id = :mid FOR UPDATE
     """), {"eid": event_id, "mid": match["id"]}).mappings().first()
     if not ev:
         raise HTTPException(status_code=404, detail="EVENT_NOT_FOUND")
-    if actor_staff_id and _s(ev["created_by_staff_id"]) != actor_staff_id:
+    if actor_staff_id and not staff_can_edit_event(dict(ev), actor_staff_id, holder=holder):
         raise HTTPException(status_code=403, detail="EVENT_NOT_YOURS")
     if player_id is not None:
         ok = conn.execute(text("""
@@ -504,6 +515,35 @@ def set_penalties(conn, comp: dict, match: dict, home_pens, away_pens, *,
           actor_staff_id=actor_staff_id, match_id=match["id"],
           metadata={"home_pens": home_pens, "away_pens": away_pens})
     _after_result_change(conn, comp, match, actor_user_id=actor_user_id, actor_staff_id=actor_staff_id)
+
+
+# ============================================================
+# Reinicio (solo demo)
+# ============================================================
+
+def reset_all_results(conn, comp_id) -> int:
+    """
+    Deja TODOS los partidos como recién creados: sin goles, tarjetas, penales, estados,
+    confirmaciones, cierre de zonas, sorteos de desempate ni veedor que lo haya tomado. Los
+    equipos de cada partido quedan en NULL: `sync_bracket` los vuelve a poner desde las zonas.
+    Equipos, planteles, veedores y sus links no se tocan. Solo para la demo (lo controla quien llama).
+    """
+    p = {"cid": comp_id}
+    conn.execute(text("DELETE FROM public.competition_match_events WHERE competition_id = :cid"), p)
+    conn.execute(text("DELETE FROM public.competition_draws WHERE competition_id = :cid"), p)
+    n = conn.execute(text("""
+        UPDATE public.competition_matches
+        SET status = 'SCHEDULED', home_goals = NULL, away_goals = NULL, home_pens = NULL, away_pens = NULL,
+            started_at = NULL, ended_at = NULL, confirmed_at = NULL, confirmed_by_user_id = NULL,
+            home_team_id = NULL, away_team_id = NULL, veedor_staff_id = NULL, updated_at = now()
+        WHERE competition_id = :cid
+    """), p).rowcount
+    conn.execute(text("""
+        UPDATE public.competitions SET status = 'PUBLISHED', group_stage_closed_at = NULL,
+               group_stage_closed_by = NULL, updated_at = now()
+        WHERE id = :cid
+    """), p)
+    return n
 
 
 # ============================================================

@@ -19,7 +19,10 @@ const ERRORS = {
   POT_EMPTY: 'No quedan equipos para sortear en este bombo.',
   NO_FREE_SLOT: 'No quedan lugares libres.',
   DRAW_INCOMPLETE: 'Faltan equipos por ubicar.',
-  GROUP_STAGE_ALREADY_STARTED: 'Ya empezó algún partido de la fase de grupos: el sorteo no se puede tocar.',
+  GROUP_STAGE_ALREADY_STARTED: IS_DEMO
+    ? 'Ya empezó algún partido de la fase de grupos. En la demo usá "Reiniciar TODO (demo)".'
+    : 'Ya empezó algún partido de la fase de grupos: el sorteo no se puede tocar.',
+  DEMO_ONLY: 'Reiniciar TODO es solo para la demo.',
   DRAW_ALREADY_HAS_PICKS: 'La configuración se cambia antes del primer equipo (o después de reiniciar).',
   TANDAS_NOT_CONFIGURED: 'Faltan las tandas: tocá "Cargar procedimiento oficial".',
   NO_OFFICIAL_PROCEDURE: 'Este torneo no tiene procedimiento oficial cargado.',
@@ -369,7 +372,7 @@ export default function ProducerPanel() {
               })}
               {!state.picks.length && <li className="px-3 py-4 text-sm text-white/50">Todavía no salió ningún equipo.</li>}
             </ol>
-            <Danger arm={arm} setArm={setArm} act={act} busy={busy} />
+            <Danger arm={arm} setArm={setArm} act={act} busy={busy} setToast={setToast} />
           </aside>
         </div>
       )}
@@ -613,18 +616,29 @@ function Setup({ state, act, busy, arm, setArm, setToast, teamById }) {
         <p className="card mb-3 p-4 text-sm text-white/70">
           Al iniciar, las pantallas pasan a <b>EN VIVO</b>. En cada tanda: escribí el equipo + Enter, apretá la letra de la bolilla (en la última tanda, letra + número del casillero), mirá la vista previa (avisa si hay salto) y Enter para revelar.
         </p>
-        <Danger arm={arm} setArm={setArm} act={act} busy={busy} />
+        <Danger arm={arm} setArm={setArm} act={act} busy={busy} setToast={setToast} />
       </aside>
     </div>
   )
 }
 
-function Danger({ arm, setArm, act, busy }) {
+function Danger({ arm, setArm, act, busy, setToast }) {
+  // Solo la demo: además del sorteo, resultados, goles, tarjetas, cierre de zonas y quién tomó
+  // cada partido (el server lo rechaza en el torneo real).
+  const resetAll = async () => {
+    const out = await act('reset_all')
+    if (out) setToast({ kind: 'ok', text: 'Listo: todo en cero. Equipos, planteles y veedores intactos; el sorteo está listo para empezar.' })
+  }
   return (
-    <div className="mt-4 rounded-xl border border-live/30 p-3">
+    <div className="mt-4 space-y-2 rounded-xl border border-live/30 p-3">
       <button type="button" disabled={busy} onClick={() => (arm === 'reset' ? act('reset') : setArm('reset'))} className={`focus-ring w-full rounded-lg px-3 py-2 text-sm font-extrabold ${arm === 'reset' ? 'bg-live text-white' : 'text-[#ff9db3]'}`}>
         {arm === 'reset' ? 'Tocá de nuevo: se vacían TODAS las zonas' : 'Reiniciar sorteo'}
       </button>
+      {IS_DEMO && (
+        <button type="button" disabled={busy} onClick={() => (arm === 'reset_all' ? resetAll() : setArm('reset_all'))} className={`focus-ring w-full rounded-lg px-3 py-2 text-sm font-extrabold ${arm === 'reset_all' ? 'bg-live text-white' : 'text-[#ff9db3] ring-1 ring-live/40'}`}>
+          {arm === 'reset_all' ? 'Tocá de nuevo: se borran resultados, goles, tarjetas, cierre de zonas, veedores de cada partido y el sorteo' : 'Reiniciar TODO (demo)'}
+        </button>
+      )}
     </div>
   )
 }

@@ -6,16 +6,14 @@ API pública de competencias (sitio de la Copa Proud) + modo veedor. SIN login d
   PUBLISHED/LIVE/FINISHED (en DRAFT responde 404: la mesa central prepara sin exponer).
 - Modo veedor: el link `/v/<token>` del sitio manda el token en el header `X-Staff-Token`
   (nunca en la URL de la API → no queda en logs). El token es opaco (~256 bits) y en la DB
-  solo vive su SHA-256. Cada veedor opera únicamente sus partidos asignados y no puede
-  tocar un partido ya confirmado por la mesa central.
+  solo vive su SHA-256. Los veedores ROTAN entre canchas: el que llega TOMA el partido
+  (`/claim`) y desde ahí es el único que lo carga; no puede tocar uno ya confirmado por la mesa.
 """
-import datetime as dt
-import re
-
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from sqlalchemy import text
 
 from app.schemas import (
+    CompetitionClaimRequest,
     CompetitionEventPlayerRequest,
     CompetitionEventRequest,
     CompetitionMatchStatusRequest,
@@ -77,15 +75,6 @@ def _require_staff(conn, request: Request, comp: dict, token: str | None) -> dic
     return {"id": str(row["id"]), "full_name": row["full_name"], "role": row["role"]}
 
 
-def _venue_tz(utc_offset: str | None) -> dt.timezone:
-    """'-03:00' → zona fija del predio (la del cronograma). Si no se entiende, UTC."""
-    m = re.fullmatch(r"([+-])(\d{2}):(\d{2})", utc_offset or "")
-    if not m:
-        return dt.timezone.utc
-    delta = dt.timedelta(hours=int(m[2]), minutes=int(m[3]))
-    return dt.timezone(-delta if m[1] == "-" else delta)
-
-
 def _staff_match(conn, comp: dict, staff: dict, code: str) -> dict:
     """Partido que el veedor puede operar: asignado al partido o veedor de alguno de los dos equipos."""
     match = svc.get_match(conn, comp["id"], code, for_update=True)
@@ -101,76 +90,142 @@ def staff_me(
     request: Request,
     x_staff_token: str | None = Header(None, alias="X-Staff-Token"),
 ):
+    """
+    TODOS los partidos (para elegir la cancha) con quién tiene cada uno (`holder`). Los veedores
+    rotan: el que llega a la cancha TOMA el partido (`/claim`) y desde ahí es el único que lo carga.
+    Los equipos van una sola vez en `teams` (con planteles); cada partido los referencia por id.
+    """
     with engine.connect() as conn:
         comp = svc.get_competition(conn, slug)
         staff = _require_staff(conn, request, comp, x_staff_token)
         state = svc.load_state(conn, comp["id"])
         server_now = conn.execute(text("SELECT now()")).scalar()
 
-    teams = {t["id"]: t for t in state["teams"]}
+    me = staff["id"]
     team_veedor = {t["id"]: t["veedor_staff_id"] for t in state["teams"] if t["veedor_staff_id"]}
     staff_names = {s["id"]: s["full_name"] for s in state["staff"]}
-    my_team_ids = [t["id"] for t in state["teams"] if t["veedor_staff_id"] == staff["id"]]
+    my_team_ids = [t["id"] for t in state["teams"] if t["veedor_staff_id"] == me]
     players_by_team: dict = {}
     for p in state["players"]:
         players_by_team.setdefault(p["team_id"], []).append({
             "id": p["id"], "full_name": p["full_name"], "shirt_number": p["shirt_number"],
             "is_captain": p["is_captain"], "is_goalkeeper": p["is_goalkeeper"],
         })
+    teams = {
+        t["id"]: {"id": t["id"], "name": t["name"], "short_name": t["short_name"],
+                  "country_code": t["country_code"], "logo_url": t["logo_url"], "color": t["color"],
+                  "players": players_by_team.get(t["id"], [])}
+        for t in state["teams"]
+    }
     venues = {v["id"]: v for v in state["venues"]}
-    tz = _venue_tz(comp["utc_offset"])
-    # Asignación POR CANCHA (veedor_staff_id del partido): (fecha local, cancha) → partidos.
-    courts: dict = {}
+    events_by_match: dict = {}
+    for e in state["events"]:
+        events_by_match.setdefault(e["match_code"], []).append(e)
 
-    def team_payload(tid):
-        if not tid or tid not in teams:
-            return None
-        t = teams[tid]
-        return {"id": tid, "name": t["name"], "short_name": t["short_name"],
-                "country_code": t["country_code"], "logo_url": t["logo_url"], "color": t["color"],
-                "players": players_by_team.get(tid, [])}
-
-    mine = []
+    matches = []
     for m in state["matches"]:
         veedor_ids = svc.match_veedor_ids(m, team_veedor)
-        if staff["id"] not in veedor_ids:
-            continue
+        holder_id = m["veedor_staff_id"]
+        holder = holder_id == me
+        can_operate = me in veedor_ids
         venue = venues.get(m["venue_id"])
-        if m["veedor_staff_id"] == staff["id"] and venue and m["scheduled_at"]:
-            key = (m["scheduled_at"].astimezone(tz).date().isoformat(), venue["number"])
-            courts[key] = courts.get(key, 0) + 1
-        mine.append({
+        matches.append({
             "code": m["code"], "stage": m["stage"], "cup": m["cup"], "group": m["group"],
             "venue": venue["number"] if venue else None,
             "scheduled_at": m["scheduled_at"].isoformat() if m["scheduled_at"] else None,
             "status": m["status"], "confirmed": m["confirmed_at"] is not None,
             "home_source": m["home_source"], "away_source": m["away_source"],
-            "home": team_payload(m["home_team_id"]), "away": team_payload(m["away_team_id"]),
+            "home_team_id": m["home_team_id"], "away_team_id": m["away_team_id"],
             "home_goals": m["home_goals"], "away_goals": m["away_goals"],
             "home_pens": m["home_pens"], "away_pens": m["away_pens"],
-            # Cuáles de los dos equipos son de este veedor (los dos pueden cargar; se resaltan los suyos).
+            # Quién lo tomó (o se lo asignó la mesa). None = libre.
+            "holder": {"name": staff_names.get(holder_id), "me": holder} if holder_id else None,
+            # Puede cargarlo: lo tiene él o es veedor de alguno de los dos equipos (modelo anterior).
+            "mine": can_operate,
             "my_team_ids": [t for t in (m["home_team_id"], m["away_team_id"]) if t in my_team_ids],
-            "other_veedors": [staff_names[i] for i in veedor_ids if i != staff["id"] and i in staff_names],
+            "other_veedors": [staff_names[i] for i in veedor_ids if i != me and i in staff_names],
             "events": [
                 {"id": e["id"], "type": e["type"], "team_id": e["team_id"],
                  "player_id": e["player_id"], "minute": e["minute"],
-                 "mine": e["created_by_staff_id"] == staff["id"],
+                 "mine": e["created_by_staff_id"] == me,
+                 # Deshacer / asignar jugador: solo en un partido que puede operar (ver svc).
+                 "editable": can_operate and svc.staff_can_edit_event(e, me, holder=holder),
                  "loaded_by": staff_names.get(e["created_by_staff_id"]) if e["created_by_staff_id"] else None,
                  "created_at": e["created_at"].isoformat() if e["created_at"] else None}
-                for e in state["events"] if e["match_code"] == m["code"]
+                for e in events_by_match.get(m["code"], [])
             ],
         })
     return {
         "competition": {"slug": comp["slug"], "name": comp["name"], "utc_offset": comp["utc_offset"]},
         "staff": {"full_name": staff["full_name"], "role": staff["role"],
-                  "teams": [teams[t]["name"] for t in my_team_ids],
-                  # Canchas a cargo (lo habitual: una cancha, uno o los dos días), por fecha y cancha.
-                  "courts": [{"venue": venue_n, "date": date, "matches": n}
-                             for (date, venue_n), n in sorted(courts.items())]},
+                  "teams": [teams[t]["name"] for t in my_team_ids]},
+        "venues": [v["number"] for v in state["venues"]],
+        "teams": teams,
         # Hora del servidor: el teléfono compara la antigüedad de los eventos sin depender de su reloj.
         "server_now": server_now.isoformat() if server_now else None,
-        "matches": mine,
+        "matches": matches,
     }
+
+
+def _holder_id(match: dict) -> str | None:
+    return str(match["veedor_staff_id"]) if match.get("veedor_staff_id") else None
+
+
+@router.post("/public/competitions/{slug}/staff/matches/{code}/claim")
+def staff_claim(
+    slug: str,
+    code: str,
+    request: Request,
+    body: CompetitionClaimRequest | None = None,
+    x_staff_token: str | None = Header(None, alias="X-Staff-Token"),
+):
+    """
+    El veedor toma el partido de la cancha donde está: desde ahí es el único que lo carga (así no
+    hay dos cargando el mismo). Si lo tiene otro → 409 MATCH_TAKEN; con force=True se lo saca
+    (al otro le deja de andar). Con el lock de la competencia dos veedores no lo toman a la vez.
+    """
+    with engine.begin() as conn:
+        comp = svc.lock_competition(conn, slug)
+        staff = _require_staff(conn, request, comp, x_staff_token)
+        match = svc.get_match(conn, comp["id"], code, for_update=True)
+        svc.assert_editable(match)
+        current = _holder_id(match)
+        if current == staff["id"]:
+            return {"claimed": True, "changed": False}
+        if current and not (body and body.force):
+            raise HTTPException(status_code=409, detail="MATCH_TAKEN")
+        conn.execute(text("""
+            UPDATE public.competition_matches SET veedor_staff_id = :sid, updated_at = now() WHERE id = :mid
+        """), {"sid": staff["id"], "mid": match["id"]})
+        svc.audit(conn, comp["id"], "MATCH_TAKEOVER" if current else "MATCH_CLAIM",
+                  actor_staff_id=staff["id"], match_id=match["id"],
+                  metadata={"from": current, "to": staff["id"]} if current else {"to": staff["id"]})
+        svc.bump_version(conn, comp["id"])
+        return {"claimed": True, "changed": True, "took_over": bool(current)}
+
+
+@router.post("/public/competitions/{slug}/staff/matches/{code}/release")
+def staff_release(
+    slug: str,
+    code: str,
+    request: Request,
+    x_staff_token: str | None = Header(None, alias="X-Staff-Token"),
+):
+    """Soltar un partido tomado por error. Solo antes de empezar; después, lo reasigna la mesa."""
+    with engine.begin() as conn:
+        comp = svc.lock_competition(conn, slug)
+        staff = _require_staff(conn, request, comp, x_staff_token)
+        match = svc.get_match(conn, comp["id"], code, for_update=True)
+        if _holder_id(match) != staff["id"]:
+            raise HTTPException(status_code=403, detail="MATCH_NOT_ASSIGNED")
+        if match["status"] != "SCHEDULED":
+            raise HTTPException(status_code=409, detail="MATCH_ALREADY_STARTED")
+        conn.execute(text("""
+            UPDATE public.competition_matches SET veedor_staff_id = NULL, updated_at = now() WHERE id = :mid
+        """), {"mid": match["id"]})
+        svc.audit(conn, comp["id"], "MATCH_RELEASE", actor_staff_id=staff["id"], match_id=match["id"])
+        svc.bump_version(conn, comp["id"])
+        return {"released": True}
 
 
 @router.post("/public/competitions/{slug}/staff/matches/{code}/status")
@@ -223,7 +278,8 @@ def staff_delete_event(
         comp = svc.lock_competition(conn, slug)
         staff = _require_staff(conn, request, comp, x_staff_token)
         match = _staff_match(conn, comp, staff, code)
-        svc.delete_event(conn, comp, match, event_id, actor_staff_id=staff["id"])
+        svc.delete_event(conn, comp, match, event_id, actor_staff_id=staff["id"],
+                         holder=_holder_id(match) == staff["id"])
         return {"deleted": True}
 
 
@@ -242,7 +298,8 @@ def staff_event_player(
         comp = svc.lock_competition(conn, slug)
         staff = _require_staff(conn, request, comp, x_staff_token)
         match = _staff_match(conn, comp, staff, code)
-        return svc.set_event_player(conn, comp, match, event_id, body.player_id, actor_staff_id=staff["id"])
+        return svc.set_event_player(conn, comp, match, event_id, body.player_id, actor_staff_id=staff["id"],
+                                    holder=_holder_id(match) == staff["id"])
 
 
 @router.put("/public/competitions/{slug}/staff/matches/{code}/penalties")

@@ -5,7 +5,8 @@ Sorteo de zonas EN VIVO: pantalla de transmisión (pública) + panel de producci
 - `GET  /public/competitions/{slug}/draw/control`        → mismo estado + config (producción).
 - `POST /public/competitions/{slug}/draw/control/{acción}` con header `X-Draw-Token`:
     config · preset (procedimiento oficial) · start · preview · pick · undo · finish · reset ·
-    broadcast (link de YouTube + hora de inicio, se puede cambiar en cualquier momento)
+    broadcast (link de YouTube + hora de inicio, se puede cambiar en cualquier momento) ·
+    reset_all (SOLO demo: resultados + cierre de zonas + veedores de cada partido + sorteo a cero)
 
 El estado vive en `competitions.settings.live_draw` (sin migración): status, modo, bombos/tandas,
 reglas, la lista de equipos que fueron saliendo (`picks`, con la bolilla y el salto si hubo, para
@@ -458,6 +459,21 @@ def control_action(slug: str, action: str, request: Request,
             draw.pop("finished_at", None)
             _save_draw(conn, comp["id"], draw)
             _commit_slots(conn, comp, "DRAW_RESET", {})
+
+        elif action == "reset_all":
+            # Solo la demo: resultados, eventos, cierre de zonas, veedores de cada partido y el
+            # sorteo vuelven a cero. Quedan equipos, planteles, veedores, tandas y transmisión.
+            if not comp["slug"].endswith("-demo"):
+                raise HTTPException(status_code=403, detail="DEMO_ONLY")
+            n = svc.reset_all_results(conn, comp["id"])
+            conn.execute(text("UPDATE public.competition_group_slots SET team_id = NULL WHERE competition_id = :cid"),
+                         {"cid": comp["id"]})
+            draw.update(status="IDLE", picks=[])
+            draw.pop("started_at", None)
+            draw.pop("finished_at", None)
+            _save_draw(conn, comp["id"], draw)
+            _commit_slots(conn, comp, "DEMO_RESET_ALL", {"matches": n})
+            result = {"matches_reset": n}
 
         else:
             raise HTTPException(status_code=404, detail="UNKNOWN_ACTION")

@@ -6,6 +6,7 @@ import { Crest } from '../components/TeamBadge.jsx'
 import { buildModel, matchLabel, sourceLabel } from '../lib/model.js'
 import { controlCall } from './controlApi.js'
 import { GalleryTab } from './GalleryTab.jsx'
+import StaffTab from './StaffTab.jsx'
 
 /*
  * MESA DE CONTROL (/control/<token>): resultados de todos los partidos y sus correcciones.
@@ -120,9 +121,9 @@ function Panel() {
           <h1 className="text-2xl font-extrabold">Resultados</h1>
         </div>
         <span className="text-xs text-white/45">{updatedAt ? `Actualizado ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}</span>
-        <nav className="ml-auto flex gap-1 rounded-full bg-white/5 p-1 ring-1 ring-white/10">
-          {[['partidos', 'Partidos'], ['zonas', 'Zonas y cierre'], ['fotos', 'Fotos'], ['historial', 'Historial']].map(([k, label]) => (
-            <button key={k} type="button" onClick={() => setTab(k)} className={`focus-ring rounded-full px-4 py-1.5 text-sm font-bold ${tab === k ? 'bg-white text-night' : 'text-white/70 hover:text-white'}`}>
+        <nav className="ml-auto flex max-w-full gap-1 overflow-x-auto rounded-full bg-white/5 p-1 ring-1 ring-white/10">
+          {[['partidos', 'Partidos'], ['zonas', 'Zonas y cierre'], ['veedores', 'Veedores'], ['fotos', 'Fotos'], ['historial', 'Historial']].map(([k, label]) => (
+            <button key={k} type="button" onClick={() => setTab(k)} className={`focus-ring shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-bold ${tab === k ? 'bg-white text-night' : 'text-white/70 hover:text-white'}`}>
               {label}
             </button>
           ))}
@@ -137,10 +138,11 @@ function Panel() {
 
       {tab === 'partidos' && <MatchesTab model={model} onOpen={setOpenCode} />}
       {tab === 'zonas' && <GroupsTab model={model} token={token} act={act} busy={busy} />}
+      {tab === 'veedores' && <StaffTab staff={snap.staff || []} model={model} act={act} busy={busy} />}
       {tab === 'fotos' && <GalleryTab token={token} model={model} />}
       {tab === 'historial' && <AuditTab token={token} model={model} />}
 
-      {open && <MatchEditor key={open.code} match={open} model={model} act={act} busy={busy} onClose={() => setOpenCode(null)} />}
+      {open && <MatchEditor key={open.code} match={open} model={model} staff={snap.staff || []} act={act} busy={busy} onClose={() => setOpenCode(null)} />}
     </Shell>
   )
 }
@@ -254,7 +256,7 @@ function MatchesTab({ model, onOpen }) {
 
 // ------------------------------------------------------------------ edición de un partido
 
-function MatchEditor({ match, model, act, busy, onClose }) {
+function MatchEditor({ match, model, staff, act, busy, onClose }) {
   const { t } = useI18n()
   const base = `/matches/${match.code}`
   const home = match.home.team_id ? model.teamById.get(match.home.team_id) : null
@@ -286,7 +288,7 @@ function MatchEditor({ match, model, act, busy, onClose }) {
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <StatusChip status={match.status} />
               {match.confirmed && <span className="rounded-full bg-[#008026]/30 px-2 py-0.5 text-[11px] font-extrabold text-[#b6f5c8]">✓ CONFIRMADO</span>}
-              {match.veedor_name && <span className="text-xs text-white/50">Veedor: {match.veedor_name}</span>}
+              <VeedorSelect match={match} staff={staff} act={act} busy={busy} />
             </div>
           </div>
           <button type="button" onClick={onClose} className="focus-ring rounded-lg px-3 py-1 text-white/60 ring-1 ring-white/15">Cerrar ✕</button>
@@ -429,6 +431,30 @@ function MatchEditor({ match, model, act, busy, onClose }) {
         </div>
       </div>
     </div>
+  )
+}
+
+/** Quién tiene el partido (los veedores lo toman en la cancha). Acá se cambia o se libera. */
+function VeedorSelect({ match, staff, act, busy }) {
+  const active = staff.filter((s) => s.role === 'VEEDOR' && !s.revoked)
+  const current = match.veedor_staff_id || ''
+  const change = (e) => {
+    const id = e.target.value
+    if (id === current) return
+    const name = active.find((s) => s.id === id)?.full_name
+    act('PATCH', `/matches/${match.code}`, id ? { veedor_staff_id: id } : { clear_veedor: true }, id ? `Ahora lo carga ${name}.` : 'Partido sin veedor: lo puede tomar cualquiera.')
+  }
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-white/55">
+      Veedor
+      <select value={current} onChange={change} disabled={busy} className="focus-ring max-w-[200px] rounded-lg bg-white/10 px-2 py-1 text-sm font-bold text-white [&>option]:bg-indigo-800">
+        <option value="">— Libre (sin veedor) —</option>
+        {active.map((s) => (
+          <option key={s.id} value={s.id}>{s.full_name}</option>
+        ))}
+        {current && !active.some((s) => s.id === current) && <option value={current}>{match.veedor_name || 'Dado de baja'}</option>}
+      </select>
+    </label>
   )
 }
 
@@ -611,6 +637,9 @@ const ACTIONS = {
   MATCH_UNCONFIRM: 'Desconfirmado', MATCH_STATUS: 'Estado', GROUP_STAGE_CLOSE: 'Cierre de grupos', GROUP_STAGE_REOPEN: 'Reapertura de grupos',
   DRAW_SET: 'Sorteo de desempate', BRACKET_SYNC: 'Cruces actualizados',
   GALLERY_CONFIG: 'Fotos: carpeta / crédito', GALLERY_LINK: 'Fotos: álbum vinculado',
+  MATCH_CLAIM: 'Tomó el partido', MATCH_TAKEOVER: 'Tomó el partido (se lo sacó a otro)', MATCH_RELEASE: 'Soltó el partido',
+  STAFF_CREATE: 'Alta de veedor', STAFF_ROTATE_TOKEN: 'Link nuevo de veedor', STAFF_REVOKE: 'Baja de veedor',
+  DEMO_RESET_ALL: 'Demo reiniciada', DRAW_RESET: 'Sorteo reiniciado',
 }
 const actionLabel = (a) => {
   if (ACTIONS[a]) return ACTIONS[a]
