@@ -133,26 +133,31 @@ def main():
     ap.add_argument("--si", action="store_true", help="no pedir APLICAR")
     args = ap.parse_args()
 
-    with engine.begin() as conn:
-        comp = svc.lock_competition(conn, DEMO_SLUG)
+    # Primero el plan, sin tomar la competencia: mientras se espera el APLICAR, los veedores y la
+    # mesa de la demo siguen pudiendo cargar.
+    with engine.connect() as conn:
+        comp = svc.get_competition(conn, DEMO_SLUG)
         if not comp["slug"].endswith("-demo"):
             sys.exit("Solo para la demo.")
-        cid = comp["id"]
-        p = plan(conn, cid, args.tercero, args.cuarto)
-        if not p["pendiente"]:
-            sys.exit("No encontré el partido 3° vs 4° de la Zona A.")
-        n = p["names"]
-        print(f"== Escenario Bronce · {comp['name']}")
-        print("  Borra TODOS los resultados de la demo (deja el sorteo, equipos, planteles y veedores) y carga:")
-        for g, ids in p["finish"].items():
-            extra = "  ← el 3° y el 4° no jugaron entre ellos" if g == ZONA else ""
-            print(f"    Zona {g}: " + " · ".join(f"{i + 1}° {n[t]}" for i, t in enumerate(ids)) + extra)
-        print(f"  {len(p['results'])} partidos terminados y confirmados; queda 1 sin jugar.")
-        if not args.si:
-            if input("\n¿Guardar? Escribí APLICAR y Enter: ").strip() != "APLICAR":
-                print("No se guardó nada.")
-                raise SystemExit(0)
-        aplicar(conn, cid, p)
+        p = plan(conn, comp["id"], args.tercero, args.cuarto)
+    if not p["pendiente"]:
+        sys.exit("No encontré el partido 3° vs 4° de la Zona A.")
+    n = p["names"]
+    print(f"== Escenario Bronce · {comp['name']}")
+    print("  Borra TODOS los resultados de la demo (deja el sorteo, equipos, planteles y veedores) y carga:")
+    for g, ids in p["finish"].items():
+        extra = "  ← el 3° y el 4° no jugaron entre ellos" if g == ZONA else ""
+        print(f"    Zona {g}: " + " · ".join(f"{i + 1}° {n[t]}" for i, t in enumerate(ids)) + extra)
+    print(f"  {len(p['results'])} partidos terminados y confirmados; queda 1 sin jugar.")
+    if not args.si:
+        if input("\n¿Guardar? Escribí APLICAR y Enter: ").strip() != "APLICAR":
+            print("No se guardó nada.")
+            raise SystemExit(0)
+    print("  aplicando…", flush=True)
+    with engine.begin() as conn:
+        comp = svc.lock_competition(conn, DEMO_SLUG)
+        p = plan(conn, comp["id"], args.tercero, args.cuarto)  # de nuevo, ya con la competencia tomada
+        aplicar(conn, comp["id"], p)
 
     pend = p["pendiente"]
     t3 = pend["home"] if pend["tercero_es_local"] else pend["away"]
