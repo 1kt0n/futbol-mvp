@@ -80,12 +80,11 @@ _KNOCKOUT = {
     "PLATA-S1": ("SF", "PLATA", "WINNER:PLATA-C1", "WINNER:PLATA-C2"),
     "PLATA-S2": ("SF", "PLATA", "WINNER:PLATA-C3", "WINNER:PLATA-C4"),
     "PLATA-F": ("F", "PLATA", "WINNER:PLATA-S1", "WINNER:PLATA-S2"),
-    # ---- COPA DE BRONCE ---- (planilla de cruces de la organización, 2026-10-07)
-    # Octavos: 4°A vs 4°G/7° mejor 3°, 4°B vs 4°G/7° mejor 3°, 4°C vs 4°F, 4°D vs 4°E. La planilla
-    # deja el 4°G y el 7° mejor 3° "en O1 u O2": base O1 = 4°G, O2 = 7° mejor 3°, y si ese 3° es de
-    # la Zona B (le tocaría su propia zona) se intercambian (ver `swap_rules`).
-    "BRONCE-O1": ("R16", "BRONCE", "GROUP:A:4", "GROUP:G:4"),
-    "BRONCE-O2": ("R16", "BRONCE", "GROUP:B:4", "THIRD:7"),
+    # ---- COPA DE BRONCE ---- (planilla "Cronograma.xlsx" de la organización, 2026-10-08)
+    # Octavos: 4°A vs 7° mejor 3°, 4°B vs 4°G, 4°C vs 4°F, 4°D vs 4°E. Si el 7° mejor 3° es de la
+    # Zona A (le tocaría su propia zona) se intercambia con el 4°G (ver `swap_rules`).
+    "BRONCE-O1": ("R16", "BRONCE", "GROUP:A:4", "THIRD:7"),
+    "BRONCE-O2": ("R16", "BRONCE", "GROUP:B:4", "GROUP:G:4"),
     "BRONCE-O3": ("R16", "BRONCE", "GROUP:C:4", "GROUP:F:4"),
     "BRONCE-O4": ("R16", "BRONCE", "GROUP:D:4", "GROUP:E:4"),
     # Cuartos: cada uno, un clasificado directo (3°..6° mejor 3°) vs el ganador de un octavo.
@@ -182,8 +181,8 @@ COPA_PROUD_2026 = {
     "swap_rules": [
         {"match": "ORO-O1", "side": "away", "other_match": "ORO-O3", "other_side": "away"},
         {"match": "ORO-O2", "side": "away", "other_match": "ORO-O4", "other_side": "away"},
-        # Bronce: si el 7° mejor 3° es de la Zona B, pasa a O1 (vs 4°A) y el 4°G a O2 (vs 4°B).
-        {"match": "BRONCE-O2", "side": "away", "other_match": "BRONCE-O1", "other_side": "away"},
+        # Bronce: si el 7° mejor 3° es de la Zona A, pasa a O2 (vs 4°B) y el 4°G a O1 (vs 4°A).
+        {"match": "BRONCE-O1", "side": "away", "other_match": "BRONCE-O2", "other_side": "away"},
     ],
     "matches": _build_copa_proud_matches(),
 }

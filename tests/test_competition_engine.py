@@ -255,7 +255,7 @@ def test_close_check_and_expected_pairings():
     by = {m["code"]: m for m in ms}
     assert (by["ORO-O1"]["home_team_id"], by["ORO-O1"]["away_team_id"]) == ("A1", "G3")
     assert (by["ORO-O8"]["home_team_id"], by["ORO-O8"]["away_team_id"]) == ("A2", "B2")
-    # Bronce (planilla 2026-10-07): 4°A-4°G, 4°B-7° mejor 3°, 4°C-4°F, 4°D-4°E;
+    # Bronce (planilla 2026-10-08): 4°A-7° mejor 3°, 4°B-4°G, 4°C-4°F, 4°D-4°E (acá el 7° es A3 → swap);
     # cuartos = 3°..6° mejor 3° vs ganador de cada octavo (este espera el resultado).
     assert thirds[6] == "A3"
     assert (by["BRONCE-O1"]["home_team_id"], by["BRONCE-O1"]["away_team_id"]) == ("A4", "G4")
@@ -308,10 +308,33 @@ def test_swap_rule_avoids_same_zone_best_third():
     by = {m["code"]: m for m in ms}
     assert (by["ORO-O1"]["home_team_id"], by["ORO-O1"]["away_team_id"]) == ("A1", "G2")
     assert (by["ORO-O3"]["home_team_id"], by["ORO-O3"]["away_team_id"]) == ("C1", "A3")
-    # Bronce: el 7° mejor 3° es B3 y le tocaría 4°B → pasa a O1 (vs 4°A) y el 4°G va a O2.
+    # Bronce: el 7° mejor 3° es B3 (no es de la Zona A) → se queda en O1 (vs 4°A); 4°G en O2.
     assert st.thirds["rows"][6]["team_id"] == "B3"
     assert (by["BRONCE-O1"]["home_team_id"], by["BRONCE-O1"]["away_team_id"]) == ("A4", "B3")
     assert (by["BRONCE-O2"]["home_team_id"], by["BRONCE-O2"]["away_team_id"]) == ("B4", "G4")
+
+
+def test_bronze_seventh_third_from_another_zone_and_oro_o2_swap():
+    # Planilla 2026-10-08: el 7° mejor 3° va a O1 (vs 4°A) salvo que sea de la Zona A.
+    ms = _fresh_matches()
+    res = _deterministic_results()
+    res[("A", "3", "4")] = (9, 0)  # A3 mejor 3°
+    res[("B", "3", "4")] = (8, 0)  # B3 2° mejor 3° → el 7° pasa a ser C3
+    slots = _play_groups(ms, _teams(), res)
+    st = ce.compute_standings(FMT["groups"], slots, ms, [], FMT["settings"])
+    thirds = [r["team_id"] for r in st.thirds["rows"]]
+    assert thirds == ["A3", "B3", "G3", "F3", "E3", "D3", "C3"]
+    _apply(ms, ce.plan_updates(ms, slots=slots, standings=st, group_stage_closed=True,
+                               swap_rules=FMT["swap_rules"])["updates"])
+    by = {m["code"]: m for m in ms}
+    pair = lambda code: (by[code]["home_team_id"], by[code]["away_team_id"])  # noqa: E731
+    # Oro: el 2° mejor 3° es de la Zona B → va a O4 (vs 1°D) y el 2°F a O2 (vs 1°B).
+    assert pair("ORO-O2") == ("B1", "F2")
+    assert pair("ORO-O4") == ("D1", "B3")
+    assert pair("BRONCE-O1") == ("A4", "C3")
+    assert pair("BRONCE-O2") == ("B4", "G4")
+    for i, code in enumerate(("BRONCE-C1", "BRONCE-C2", "BRONCE-C3", "BRONCE-C4")):
+        assert by[code]["home_team_id"] == thirds[2 + i]
 
 
 def test_conflict_and_revert():
@@ -476,6 +499,13 @@ def test_full_tournament_simulation():
         # Ningún mejor 3° cruza con el 1° de su zona en octavos de Oro.
         for c in (1, 2, 3, 4):
             h, a = by[f"ORO-O{c}"]["home_team_id"], by[f"ORO-O{c}"]["away_team_id"]
+            assert st.team_group[h] != st.team_group[a], (seed, c)
+        # Bronce (planilla 2026-10-08): el 7° mejor 3° va contra el 4°A salvo que sea de la Zona A.
+        seventh, g4 = st.thirds["rows"][6]["team_id"], st.tables["G"]["rows"][3]["team_id"]
+        o1, o2 = (seventh, g4) if st.team_group[seventh] != "A" else (g4, seventh)
+        assert by["BRONCE-O1"]["away_team_id"] == o1 and by["BRONCE-O2"]["away_team_id"] == o2, seed
+        for c in range(1, 5):
+            h, a = by[f"BRONCE-O{c}"]["home_team_id"], by[f"BRONCE-O{c}"]["away_team_id"]
             assert st.team_group[h] != st.team_group[a], (seed, c)
 
 

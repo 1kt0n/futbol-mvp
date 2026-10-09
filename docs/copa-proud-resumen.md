@@ -227,6 +227,7 @@ Pantalla para la organización en el predio, sin login:
 | `scripts/control_link.py [--demo]` | Link de la mesa de control |
 | `scripts/veedores_cancha.py crear\|links\|renombrar\|listar\|qr [--demo]` | Veedores **por cancha** (modelo anterior). Ahora los veedores se crean desde la mesa de control. |
 | `scripts/demo_competition.py crear\|reiniciar\|borrar` | Arma, limpia o borra la demo. `reiniciar` borra los resultados pero deja el sorteo. Para hacer también el sorteo desde cero: **"Reiniciar TODO (demo)"** en el panel de producción de la demo. |
+| `scripts/escenario_bronce.py [--tercero "…" --cuarto "…"] [--si]` | **Solo demo.** Deja 41 de los 42 partidos del sábado cargados para probar el intercambio de los octavos de Bronce. El que falta (3° vs 4° de la Zona A) lo cargás vos: 1-0 → se intercambia, 3-0 → no. Se puede repetir. |
 | `node copa-proud-web/obs/setup-obs.mjs [...]` | Arma OBS (ver sección 6) |
 
 ---

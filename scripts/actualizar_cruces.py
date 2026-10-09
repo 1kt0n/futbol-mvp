@@ -17,11 +17,15 @@ import argparse
 import os
 import sys
 
+# Si el pooler no da conexión, cortar con error en vez de esperar para siempre (libpq lo lee al conectar).
+os.environ.setdefault("PGCONNECT_TIMEOUT", "20")
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import seed_competition as seedmod  # noqa: E402  (pide la URL de la base si no está en el entorno)
 
 from sqlalchemy import text  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
+from sqlalchemy.exc import OperationalError  # noqa: E402
 
 from app.settings import engine  # noqa: E402
 from app.utils.competition_formats import COPA_PROUD_2026  # noqa: E402
@@ -31,6 +35,20 @@ FIELDS = ("venue_id", "scheduled_at", "home_source", "away_source", "home_team_i
 
 class Abort(Exception):
     pass
+
+
+LOCK_TIMEOUT_S = 15
+
+
+def quien_ocupa(conn) -> list[dict]:
+    """Otras conexiones con una transacción abierta (pueden tener tomada la fila de la competencia)."""
+    return [dict(r) for r in conn.execute(text("""
+        SELECT pid, application_name AS app, client_addr::text AS ip, state,
+               EXTRACT(EPOCH FROM now() - xact_start)::int AS segundos, left(query, 90) AS consulta
+        FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid() AND xact_start IS NOT NULL
+        ORDER BY xact_start
+    """)).mappings().all()]
 
 
 def fuente(src: str) -> str:
@@ -84,12 +102,19 @@ def renumerar(conn, cid, fmt: dict) -> list[tuple[int, int]]:
 
 
 def correr(slug: str, *, apply: bool) -> dict:
-    conn = engine.connect()
+    print("  conectando…", flush=True)
+    try:
+        conn = engine.connect()
+    except OperationalError as e:
+        raise Abort(f"No se pudo conectar a la base: {e.orig or e}") from None
     trans = conn.begin()
     try:
+        conn.execute(text(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT_S}s'"))
+        print("  conectado; tomando la competencia…", flush=True)
         comp = conn.execute(text("""
             SELECT id, slug, name, starts_on, ends_on FROM public.competitions WHERE slug = :s FOR UPDATE
         """), {"s": slug}).mappings().first()
+        print("  revisando los partidos…", flush=True)
         if not comp:
             raise Abort(f"No existe la competencia {slug}.")
         fmt = formato(comp)
@@ -113,6 +138,14 @@ def correr(slug: str, *, apply: bool) -> dict:
                "empezados": report["skipped_started"], "conflictos": report["conflicts"]}
         trans.commit() if apply else trans.rollback()
         return out
+    except OperationalError as e:
+        trans.rollback()
+        if getattr(e.orig, "sqlstate", None) != "55P03":  # lock_not_available
+            raise
+        lineas = [f"    pid {r['pid']} · {r['app'] or '-'} · {r['ip'] or '-'} · {r['state']} hace {r['segundos']} s · {r['consulta']}"
+                  for r in quien_ocupa(conn)]
+        raise Abort(f"Otra conexión tiene tomados datos de la competencia hace más de {LOCK_TIMEOUT_S} s; no se tocó nada.\n"
+                    "  Transacciones abiertas en la base:\n" + ("\n".join(lineas) or "    (ninguna visible)")) from None
     except Exception:
         trans.rollback()
         raise
