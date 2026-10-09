@@ -78,6 +78,12 @@ def broadcast_settings(comp: dict) -> dict:
     }
 
 
+def gallery_public(comp: dict) -> dict:
+    """"Reviví tu partido": si hay carpeta de fotos configurada (el sitio muestra la pestaña) y el crédito."""
+    g = dict(effective_settings(comp).get("gallery") or {})
+    return {"enabled": bool(g.get("folder_id")), "credit": g.get("credit")}
+
+
 def _s(v):
     return str(v) if v is not None else None
 
@@ -192,6 +198,16 @@ def compute_standings(comp: dict, state: dict) -> ce.Standings:
 # ============================================================
 # Escritura
 # ============================================================
+
+def save_setting(conn, comp_id, key: str, value: dict) -> None:
+    """Reemplaza competitions.settings[key] (el resto de las settings no se toca)."""
+    conn.execute(text("""
+        UPDATE public.competitions
+        SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), CAST(:path AS text[]), CAST(:d AS jsonb)),
+            updated_at = now()
+        WHERE id = :cid
+    """), {"path": [key], "d": json.dumps(value), "cid": comp_id})
+
 
 def bump_version(conn, comp_id) -> None:
     conn.execute(text("""
@@ -584,6 +600,7 @@ def build_snapshot(conn, comp: dict, *, include_admin: bool = False) -> dict:
             "draw_status": ((comp.get("settings") if isinstance(comp.get("settings"), dict)
                              else json.loads(comp.get("settings") or "{}")).get("live_draw") or {}).get("status", "IDLE"),
             "broadcast": broadcast_settings(comp),
+            "gallery": gallery_public(comp),
             "data_version": int(comp["data_version"]),
             "fair_play_weights": settings["fair_play"],
         },

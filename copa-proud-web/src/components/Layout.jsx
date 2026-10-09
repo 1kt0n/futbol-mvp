@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/I18nProvider.jsx'
 import { LANGS } from '../i18n/messages.js'
 import { useCompetition } from '../lib/CompetitionProvider.jsx'
 import { DemoBanner } from './DemoBanner.jsx'
+import { IS_DEMO } from '../lib/mode.js'
 
 const NAV = [
   ['/', 'nav.home'],
@@ -13,6 +14,7 @@ const NAV = [
   ['/copas', 'nav.cups'],
   ['/equipos', 'nav.teams'],
   ['/estadisticas', 'nav.stats'],
+  ['/revivi', 'nav.relive'],
   ['/mapa', 'nav.map'],
 ]
 
@@ -56,6 +58,8 @@ export function Layout() {
   const { t } = useI18n()
   const { offline, updatedAt, model } = useCompetition()
   const { pathname } = useLocation()
+  // "Reviví tu partido" aparece cuando la organización carga la carpeta de fotos (en la demo, siempre).
+  const nav = NAV.filter(([to]) => to !== '/revivi' || IS_DEMO || model?.comp?.gallery?.enabled)
 
   const navRef = useRef(null)
   useEffect(() => {
@@ -77,7 +81,7 @@ export function Layout() {
             </span>
           </NavLink>
           <nav ref={navRef} className="scroll-x no-scrollbar order-last -mx-1 flex w-full gap-1 px-1 sm:order-none sm:w-auto sm:flex-1" aria-label="Principal">
-            {NAV.map(([to, key]) => (
+            {nav.map(([to, key]) => (
               <NavLink
                 key={to}
                 to={to}

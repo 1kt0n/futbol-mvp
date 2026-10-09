@@ -1,7 +1,8 @@
 """
 MESA DE CONTROL: link privado `live.copaproud.com/control/<token>` para la organización, sin login.
 Hace lo mismo que la mesa central (/admin/competitions/…): ver todo, corregir resultados y eventos,
-W.O., confirmar, penales, sorteos de desempate y cerrar / reabrir la fase de grupos.
+W.O., confirmar, penales, sorteos de desempate y cerrar / reabrir la fase de grupos. También la
+carpeta de fotos de "Reviví tu partido" y a qué partido va cada álbum.
 
 Header `X-Control-Token`. En la base solo queda el hash (competitions.settings.control.token_hash),
 que genera scripts/control_link.py (cada link nuevo anula el anterior). Cada acción reusa la función
@@ -17,12 +18,15 @@ from app.schemas import (
     CompetitionDrawRequest,
     CompetitionEventPlayerRequest,
     CompetitionEventRequest,
+    CompetitionGalleryLinkRequest,
+    CompetitionGalleryRequest,
     CompetitionMatchPatchRequest,
     CompetitionMatchStatusRequest,
     CompetitionPenaltiesRequest,
     CompetitionWalkoverRequest,
 )
 from app.settings import engine
+from app.utils import competition_gallery as gal
 from app.utils import competition_service as svc
 from app.utils.ratelimit import client_ip, rate_limit
 from app.utils.security import hash_management_token
@@ -149,3 +153,80 @@ def control_penalties(slug: str, code: str, body: CompetitionPenaltiesRequest, r
                       x_control_token: str | None = Tok):
     _auth(request, slug, x_control_token)
     return adm.admin_penalties(slug, code, body, actor_user_id=None)
+
+
+# ------------------------------------------------------------------ fotos ("Reviví tu partido")
+
+def _gallery_cfg(comp: dict) -> dict:
+    settings = comp.get("settings") or {}
+    if isinstance(settings, str):
+        settings = json.loads(settings)
+    return gal.gallery_settings(settings)
+
+
+@router.get(R + "/gallery")
+def control_gallery(slug: str, request: Request, refresh: bool = Query(False), x_control_token: str | None = Tok):
+    """Carpeta, álbumes (también ocultos y vacíos) y su vínculo. ?refresh=1 vuelve a leer Drive ya."""
+    _auth(request, slug, x_control_token)
+    with engine.connect() as conn:
+        comp = svc.get_competition(conn, slug)
+        return gal.control_payload(conn, comp, force=refresh)
+
+
+@router.put(R + "/gallery")
+def control_gallery_config(slug: str, body: CompetitionGalleryRequest, request: Request,
+                           x_control_token: str | None = Tok):
+    _auth(request, slug, x_control_token)
+    folder = None
+    if body.folder_url is not None and body.folder_url.strip():
+        fid = gal.parse_folder_id(body.folder_url)
+        if not fid:
+            raise HTTPException(status_code=400, detail="INVALID_FOLDER_URL")
+        folder = {"id": fid, "name": None}
+        if gal.api_key():
+            # Antes de abrir la transacción: Drive puede tardar unos segundos.
+            try:
+                folder = gal.folder_meta(fid)
+            except gal.DriveError as e:
+                raise HTTPException(status_code=400, detail=e.code)
+    with engine.begin() as conn:
+        comp = svc.lock_competition(conn, slug)
+        cfg = _gallery_cfg(comp)
+        if body.folder_url is not None:
+            cfg["folder_id"] = folder["id"] if folder else None
+            cfg["folder_name"] = folder["name"] if folder else None
+        if body.credit is not None:
+            cfg["credit"] = body.credit.strip() or None
+        svc.save_setting(conn, comp["id"], "gallery", cfg)
+        svc.audit(conn, comp["id"], "GALLERY_CONFIG",
+                  metadata={"folder_id": cfg["folder_id"], "credit": cfg["credit"]})
+        svc.bump_version(conn, comp["id"])
+    svc.invalidate_cache(slug)
+    with engine.connect() as conn:
+        return gal.control_payload(conn, svc.get_competition(conn, slug), force=bool(folder))
+
+
+@router.put(R + "/gallery/albums/{album_id}")
+def control_gallery_link(slug: str, album_id: str, body: CompetitionGalleryLinkRequest, request: Request,
+                         x_control_token: str | None = Tok):
+    """Vincula un álbum a mano (partido / equipo / general / oculto); link=None vuelve al automático."""
+    _auth(request, slug, x_control_token)
+    if not gal.ALBUM_ID_RE.match(album_id):
+        raise HTTPException(status_code=404, detail="ALBUM_NOT_FOUND")
+    link = (body.link or "").strip() or None
+    with engine.begin() as conn:
+        comp = svc.lock_competition(conn, slug)
+        ctx = gal.link_context(svc.load_state(conn, comp["id"]), comp["utc_offset"])
+        if not gal.valid_link(link, ctx):
+            raise HTTPException(status_code=400, detail="INVALID_LINK")
+        cfg = _gallery_cfg(comp)
+        if link:
+            cfg["links"][album_id] = link
+        else:
+            cfg["links"].pop(album_id, None)
+        svc.save_setting(conn, comp["id"], "gallery", cfg)
+        svc.audit(conn, comp["id"], "GALLERY_LINK", metadata={"album_id": album_id, "link": link})
+        svc.bump_version(conn, comp["id"])
+    svc.invalidate_cache(slug)
+    with engine.connect() as conn:
+        return gal.control_payload(conn, svc.get_competition(conn, slug))

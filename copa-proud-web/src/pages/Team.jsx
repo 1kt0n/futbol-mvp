@@ -37,6 +37,11 @@ export default function Team() {
               {team.city}
             </p>
           )}
+          {model.comp.gallery?.enabled && (
+            <Link to={`/revivi?equipo=${team.id}`} className="focus-ring mt-3 inline-flex items-center gap-1.5 rounded-full bg-gold px-4 py-1.5 text-sm font-extrabold text-night">
+              📸 {t('relive.team_photos')}
+            </Link>
+          )}
         </div>
       </section>
 

@@ -555,6 +555,17 @@ class CompetitionEventPlayerRequest(BaseModel):
     player_id: str | None = None  # None = "sin identificar"
 
 
+class CompetitionGalleryRequest(BaseModel):
+    """Mesa de control: carpeta de fotos de Drive y crédito del fotógrafo. None = no cambia; "" = borrar."""
+    folder_url: str | None = Field(None, max_length=500)
+    credit: str | None = Field(None, max_length=120)
+
+
+class CompetitionGalleryLinkRequest(BaseModel):
+    """Vínculo manual de un álbum: "M:<código>" · "T:<team_id>" · "G" general · "X" oculto · None = automático."""
+    link: str | None = Field(None, max_length=60)
+
+
 class CompetitionPenaltiesRequest(BaseModel):
     home_pens: int = Field(..., ge=0, le=99)
     away_pens: int = Field(..., ge=0, le=99)

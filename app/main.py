@@ -37,6 +37,7 @@ from app.routers import (
     competitions_admin,
     competitions_control,
     competitions_draw,
+    competitions_gallery,
     competitions_public,
 )
 
@@ -149,6 +150,7 @@ app.include_router(competitions_admin.router, prefix="/admin", tags=["Admin - Co
 app.include_router(competitions_public.router, tags=["Public - Competitions"])
 app.include_router(competitions_draw.router, tags=["Public - Competition draw"])
 app.include_router(competitions_control.router, tags=["Public - Competition control desk"])
+app.include_router(competitions_gallery.router, tags=["Public - Competition gallery"])
 
 # =========================
 # Serve Frontend (production)

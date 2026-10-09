@@ -5,6 +5,7 @@ import { DemoBanner } from '../components/DemoBanner.jsx'
 import { Crest } from '../components/TeamBadge.jsx'
 import { buildModel, matchLabel, sourceLabel } from '../lib/model.js'
 import { controlCall } from './controlApi.js'
+import { GalleryTab } from './GalleryTab.jsx'
 
 /*
  * MESA DE CONTROL (/control/<token>): resultados de todos los partidos y sus correcciones.
@@ -120,7 +121,7 @@ function Panel() {
         </div>
         <span className="text-xs text-white/45">{updatedAt ? `Actualizado ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}</span>
         <nav className="ml-auto flex gap-1 rounded-full bg-white/5 p-1 ring-1 ring-white/10">
-          {[['partidos', 'Partidos'], ['zonas', 'Zonas y cierre'], ['historial', 'Historial']].map(([k, label]) => (
+          {[['partidos', 'Partidos'], ['zonas', 'Zonas y cierre'], ['fotos', 'Fotos'], ['historial', 'Historial']].map(([k, label]) => (
             <button key={k} type="button" onClick={() => setTab(k)} className={`focus-ring rounded-full px-4 py-1.5 text-sm font-bold ${tab === k ? 'bg-white text-night' : 'text-white/70 hover:text-white'}`}>
               {label}
             </button>
@@ -136,6 +137,7 @@ function Panel() {
 
       {tab === 'partidos' && <MatchesTab model={model} onOpen={setOpenCode} />}
       {tab === 'zonas' && <GroupsTab model={model} token={token} act={act} busy={busy} />}
+      {tab === 'fotos' && <GalleryTab token={token} model={model} />}
       {tab === 'historial' && <AuditTab token={token} model={model} />}
 
       {open && <MatchEditor key={open.code} match={open} model={model} act={act} busy={busy} onClose={() => setOpenCode(null)} />}
@@ -608,6 +610,7 @@ const ACTIONS = {
   MATCH_RESULT: 'Resultado final', MATCH_PATCH: 'Corrección', MATCH_WALKOVER: 'W.O.', MATCH_CONFIRM: 'Confirmado',
   MATCH_UNCONFIRM: 'Desconfirmado', MATCH_STATUS: 'Estado', GROUP_STAGE_CLOSE: 'Cierre de grupos', GROUP_STAGE_REOPEN: 'Reapertura de grupos',
   DRAW_SET: 'Sorteo de desempate', BRACKET_SYNC: 'Cruces actualizados',
+  GALLERY_CONFIG: 'Fotos: carpeta / crédito', GALLERY_LINK: 'Fotos: álbum vinculado',
 }
 const actionLabel = (a) => {
   if (ACTIONS[a]) return ACTIONS[a]

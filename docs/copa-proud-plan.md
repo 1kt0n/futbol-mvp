@@ -422,3 +422,27 @@ cambiaron. Se niega si cambiaría cualquier partido de la fase de grupos. Prueba
   `scripts/control_link.py [--demo]` (cada link nuevo anula el anterior).
 - **Veedor:** "Asignar jugador" / "Cambiar" en sus goles y tarjetas, también con el partido terminado,
   hasta que la mesa lo confirme (no toca el marcador).
+
+## 21. "Reviví tu partido": fotos del fotógrafo oficial (2026-10-08)
+
+Pestaña nueva del sitio (`/revivi`, ES/PT/EN) con las fotos del torneo, álbum por partido, leídas del
+**Google Drive del fotógrafo** (no se copian). Visible en la demo siempre; en el sitio real aparece cuando
+la mesa de control carga la carpeta.
+
+- **Drive:** una carpeta raíz compartida como "Cualquier persona con el enlace · Lector", con una subcarpeta
+  por partido (`Sáb 11:00 · Cancha 9`, `Dogos vs Zorros`; también vale `Sábado / Cancha 9 11:00`).
+- **Backend** (`app/utils/competition_gallery.py`, `app/routers/competitions_gallery.py`): API de Drive v3
+  con la API key `GOOGLE_DRIVE_API_KEY` (variable del servicio futbol-mvp en Railway). Caché en proceso:
+  Drive se relee como mucho cada 60 s y en segundo plano (stale-while-revalidate); si Drive falla se sigue
+  sirviendo lo último. Sin key, el sitio muestra la carpeta embebida de Drive.
+- **Vínculo álbum → partido** automático por el nombre de la carpeta: código del partido, cancha + hora
+  (día por nombre, carpeta padre o fecha de creación), los dos equipos, o un equipo (álbum del equipo).
+  La mesa de control lo corrige en la pestaña **Fotos** (`settings.gallery.links`: `M:<código>`,
+  `T:<team_id>`, `G` general, `X` oculto). Tests: `tests/test_competition_gallery.py`.
+- **Sitio** (`src/pages/Relive.jsx`, `src/gallery/`): filtro "Buscá tu equipo" (se recuerda en el
+  teléfono y va en `?equipo=`), álbumes por día (lo más reciente primero), grilla, visor a pantalla
+  completa con **Descargar HD** (archivo original de Drive), compartir (`?foto=<id>` abre esa foto) y
+  "Descargar álbum" (abre la carpeta en Drive → "Descargar todo"). Miniaturas de
+  `lh3.googleusercontent.com` con respaldo en `drive.google.com/thumbnail`.
+- **Configuración:** settings `gallery = {folder_id, folder_name, credit, links}`, sin migración; el
+  snapshot público expone `competition.gallery = {enabled, credit}`.

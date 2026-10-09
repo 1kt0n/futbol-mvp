@@ -16,6 +16,7 @@ import Team from './pages/Team.jsx'
 import Stats from './pages/Stats.jsx'
 import Draw from './pages/Draw.jsx'
 import MapPage from './pages/Map.jsx'
+import Relive from './pages/Relive.jsx'
 import NotFound from './pages/NotFound.jsx'
 
 // El modo veedor es una pantalla aparte (lo usan ~6 personas): se carga solo si se abre su link.
@@ -67,6 +68,8 @@ function PublicSite() {
         <Route path="estadisticas" element={<Stats />} />
         <Route path="sorteo" element={<Draw />} />
         <Route path="mapa" element={<MapPage />} />
+        <Route path="revivi" element={<Relive />} />
+        <Route path="revivi/:albumId" element={<Relive />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
