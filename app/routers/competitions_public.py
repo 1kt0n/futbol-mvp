@@ -18,6 +18,7 @@ from app.schemas import (
     CompetitionEventRequest,
     CompetitionMatchStatusRequest,
     CompetitionPenaltiesRequest,
+    CompetitionPlayerNumberRequest,
 )
 from app.settings import engine
 from app.utils import competition_service as svc
@@ -300,6 +301,48 @@ def staff_event_player(
         match = _staff_match(conn, comp, staff, code)
         return svc.set_event_player(conn, comp, match, event_id, body.player_id, actor_staff_id=staff["id"],
                                     holder=_holder_id(match) == staff["id"])
+
+
+@router.patch("/public/competitions/{slug}/staff/matches/{code}/players/{player_id}")
+def staff_player_number(
+    slug: str,
+    code: str,
+    player_id: str,
+    body: CompetitionPlayerNumberRequest,
+    request: Request,
+    x_staff_token: str | None = Header(None, alias="X-Staff-Token"),
+):
+    """
+    "Planilla" del partido: el veedor que lo tiene corrige en la cancha el número de camiseta de un
+    jugador de cualquiera de los dos equipos (hasta que la mesa confirme el partido). No toca eventos.
+    """
+    with engine.begin() as conn:
+        comp = svc.lock_competition(conn, slug)
+        staff = _require_staff(conn, request, comp, x_staff_token)
+        match = _staff_match(conn, comp, staff, code)
+        row = conn.execute(text("""
+            SELECT team_id, full_name, shirt_number FROM public.competition_players
+            WHERE id = CAST(:pid AS uuid) AND competition_id = :cid
+        """), {"pid": player_id, "cid": comp["id"]}).mappings().first()
+        if not row:
+            raise HTTPException(status_code=404, detail="PLAYER_NOT_FOUND")
+        if str(row["team_id"]) not in (str(match["home_team_id"]), str(match["away_team_id"])):
+            raise HTTPException(status_code=400, detail="PLAYER_NOT_IN_MATCH")
+        if row["shirt_number"] == body.shirt_number:
+            return {"changed": False}
+        if body.shirt_number is not None and conn.execute(text("""
+            SELECT 1 FROM public.competition_players
+            WHERE team_id = :tid AND shirt_number = :n AND id <> CAST(:pid AS uuid)
+        """), {"tid": row["team_id"], "n": body.shirt_number, "pid": player_id}).first():
+            raise HTTPException(status_code=409, detail="SHIRT_NUMBER_TAKEN")
+        conn.execute(text("""
+            UPDATE public.competition_players SET shirt_number = :n WHERE id = CAST(:pid AS uuid)
+        """), {"n": body.shirt_number, "pid": player_id})
+        svc.audit(conn, comp["id"], "PLAYER_UPDATE", actor_staff_id=staff["id"], match_id=match["id"],
+                  metadata={"player_id": player_id, "team_id": str(row["team_id"]),
+                            "shirt_number": body.shirt_number, "from": row["shirt_number"], "via": "planilla"})
+        svc.bump_version(conn, comp["id"])
+        return {"changed": True}
 
 
 @router.put("/public/competitions/{slug}/staff/matches/{code}/penalties")

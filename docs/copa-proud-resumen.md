@@ -176,6 +176,7 @@ La grilla del cronograma usa las columnas 1 a 6, que corresponden a las canchas 
   - Permite iniciar, entretiempo y finalizar, goles, goles en contra, amarillas, rojas y penales.
   - Funciona **sin señal**: guarda una cola y la reintenta sin duplicar. Si mientras tanto otro tomó el partido, avisa.
   - **"Asignar jugador" / "Cambiar"** en lo que cargó "sin identificar", también con el partido terminado, hasta que la mesa lo confirme. No toca el marcador.
+  - **📋 Planilla:** en cada partido, los jugadores de los dos equipos con su número de camiseta. Cualquiera la ve. El que tiene el partido corrige los números en la cancha: el número tipeado reemplaza al anterior y Enter guarda y pasa al siguiente. No deja repetir números. Funciona sin señal.
   - Puede deshacer o corregir lo que cargó él y, si tiene el partido, también lo que cargó el veedor anterior. Lo que cargó la mesa, nunca.
 - **Desde la mesa:** en cada partido, el selector **"Veedor"** sirve para pasárselo a otro o dejarlo libre.
 - **Modelo anterior** (veedores por cancha con `scripts/veedores_cancha.py`): sigue andando. Un partido preasignado es simplemente un partido ya tomado.

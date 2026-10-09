@@ -25,7 +25,7 @@ function dayLabel(date, locale) {
 }
 
 function errorText(t, code) {
-  const known = ['MATCH_CONFIRMED', 'MATCH_NOT_ASSIGNED', 'TEAMS_NOT_DEFINED', 'PENALTIES_REQUIRED', 'INVALID_STAFF_TOKEN', 'MATCH_NOT_STARTED', 'EVENT_NOT_YOURS', 'MATCH_TAKEN', 'MATCH_ALREADY_STARTED', 'OFFLINE']
+  const known = ['MATCH_CONFIRMED', 'MATCH_NOT_ASSIGNED', 'TEAMS_NOT_DEFINED', 'PENALTIES_REQUIRED', 'INVALID_STAFF_TOKEN', 'MATCH_NOT_STARTED', 'EVENT_NOT_YOURS', 'MATCH_TAKEN', 'MATCH_ALREADY_STARTED', 'OFFLINE', 'SHIRT_NUMBER_TAKEN', 'PLAYER_NOT_IN_MATCH']
   if (known.includes(code)) return t(`veedor.err.${code}`)
   if (typeof code === 'string' && code.startsWith('INVALID_TRANSITION')) return t('veedor.err.INVALID_TRANSITION')
   return t('veedor.err.generic')
@@ -418,6 +418,7 @@ function MatchControl({ match, queue, enqueue, skew = 0, busy, onClaim, onReleas
   const [dup, setDup] = useState(null) // posible duplicado a confirmar
   const [armFinish, setArmFinish] = useState(false)
   const [takeover, setTakeover] = useState(false)
+  const [sheet, setSheet] = useState(false) // planilla: jugadores y números de los dos equipos
   const canLoad = match.mine
   const base = `/matches/${match.code}`
   const live = LIVE.has(match.status)
@@ -483,8 +484,15 @@ function MatchControl({ match, queue, enqueue, skew = 0, busy, onClaim, onReleas
       <button type="button" onClick={onBack} className="focus-ring mb-3 rounded text-sm font-bold text-gold-light">
         ← {backLabel}
       </button>
-      <div className="kicker mb-2">
-        {match.local?.time} · {t('common.court_n', { n: match.venue })} · {matchLabel(match.code, t)}
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="kicker">
+          {match.local?.time} · {t('common.court_n', { n: match.venue })} · {matchLabel(match.code, t)}
+        </div>
+        {match.home && match.away && (
+          <button type="button" onClick={() => setSheet(true)} className="focus-ring shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-xs font-extrabold ring-1 ring-white/20 active:bg-white/20">
+            📋 {t('veedor.sheet')}
+          </button>
+        )}
       </div>
 
       <section className={`card mb-4 p-4 ${live ? 'live-frame' : ''}`}>
@@ -598,6 +606,8 @@ function MatchControl({ match, queue, enqueue, skew = 0, busy, onClaim, onReleas
       {canLoad && match.status === 'FINISHED' && !match.confirmed && <p className="card p-3 text-center text-sm text-white/60">{t('veedor.waiting_confirm')}</p>}
 
       {picker && <PlayerPicker team={teamOf(picker.side)} type={picker.type} onPick={(p) => addEvent(picker.side, picker.type, p)} onClose={() => setPicker(null)} />}
+
+      {sheet && <MatchSheet match={match} queue={queue} enqueue={enqueue} editable={canLoad && !match.confirmed} onClose={() => setSheet(false)} />}
 
       {takeover && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-6" role="alertdialog" aria-modal="true">
@@ -743,6 +753,151 @@ function EventLog({ match, locked, enqueue, base }) {
         />
       )}
     </section>
+  )
+}
+
+/**
+ * PLANILLA del partido: los jugadores de los dos equipos con su número de camiseta. Lo ve cualquier
+ * veedor; el que tiene el partido corrige los números en la cancha (Enter guarda y pasa al
+ * siguiente). Va por la cola: sin señal se guarda en el celular y se envía cuando vuelve.
+ */
+function MatchSheet({ match, queue, enqueue, editable, onClose }) {
+  const { t } = useI18n()
+  const [side, setSide] = useState('home')
+  const team = side === 'home' ? match.home : match.away
+  const players = useMemo(
+    () => [...(team?.players || [])].sort((a, b) => a.full_name.localeCompare(b.full_name, 'es', { sensitivity: 'base' })),
+    [team],
+  )
+  const refs = useRef(new Map())
+  // Números ya enviados a la cola y todavía sin confirmar por el server (se muestran igual).
+  const pending = useMemo(() => {
+    const m = new Map()
+    for (const q of queue) {
+      const hit = q.method === 'PATCH' && q.path.match(new RegExp(`^/matches/${match.code}/players/(.+)$`))
+      if (hit) m.set(hit[1], q.body.shirt_number)
+    }
+    return m
+  }, [queue, match.code])
+  const numberOf = (p) => (pending.has(p.id) ? pending.get(p.id) : p.shirt_number)
+  const withNumber = players.filter((p) => numberOf(p) != null).length
+
+  const focusNext = (id) => {
+    const i = players.findIndex((p) => p.id === id)
+    const next = players.at(i + 1)
+    if (next) refs.current.get(next.id)?.focus()
+    else document.activeElement?.blur()
+  }
+  const save = (p, value) => {
+    enqueue({ method: 'PATCH', path: `/matches/${match.code}/players/${p.id}`, body: { shirt_number: value }, label: `${t('veedor.sheet')} · ${p.full_name}` })
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end bg-black/60" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="mx-auto flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-2xl bg-indigo-800 p-4 ring-1 ring-white/10" onClick={(e) => e.stopPropagation()} style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="font-extrabold">📋 {t('veedor.sheet_title')}</p>
+          <button type="button" onClick={onClose} className="focus-ring rounded px-2 text-white/60" aria-label={t('veedor.close')}>
+            ✕
+          </button>
+        </div>
+        <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1">
+          {['home', 'away'].map((s) => {
+            const tm = s === 'home' ? match.home : match.away
+            return (
+              <button key={s} type="button" onClick={() => setSide(s)} className={`focus-ring flex min-w-0 items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-extrabold ${side === s ? 'bg-white text-night' : 'text-white/70'}`}>
+                <Crest team={tm} size="xs" />
+                <span className="truncate">{tm?.name}</span>
+              </button>
+            )
+          })}
+        </div>
+        <p className="mb-2 text-xs font-semibold text-white/55">
+          {editable ? t('veedor.sheet_hint') : t('veedor.sheet_readonly')} · {t('veedor.sheet_count', { n: withNumber, total: players.length })}
+        </p>
+        <ul className="-mx-1 flex-1 divide-y divide-white/5 overflow-y-auto px-1">
+          {players.map((p) => (
+            <SheetRow
+              key={`${side}-${p.id}`}
+              player={p}
+              value={numberOf(p)}
+              isPending={pending.has(p.id)}
+              players={players}
+              numberOf={numberOf}
+              editable={editable}
+              inputRef={(el) => (el ? refs.current.set(p.id, el) : refs.current.delete(p.id))}
+              onSave={(v) => save(p, v)}
+              onDone={() => focusNext(p.id)}
+            />
+          ))}
+          {!players.length && <li className="py-4 text-center text-sm text-white/50">{t('veedor.sheet_empty')}</li>}
+        </ul>
+        <BigButton className="mt-3 w-full" tone="outline" onClick={onClose}>
+          {t('veedor.close')}
+        </BigButton>
+      </div>
+    </div>
+  )
+}
+
+function SheetRow({ player, value, isPending, players, numberOf, editable, inputRef, onSave, onDone }) {
+  const { t } = useI18n()
+  const [draft, setDraft] = useState(value ?? '')
+  const editing = useRef(false)
+  const cancelled = useRef(false) // Esc: el blur que sigue no guarda
+  useEffect(() => {
+    if (!editing.current) setDraft(value ?? '')
+  }, [value])
+  const target = draft === '' ? null : Number(draft)
+  const dup = target != null && players.find((o) => o.id !== player.id && numberOf(o) === target)
+  const commit = () => {
+    editing.current = false
+    if (cancelled.current) {
+      cancelled.current = false
+      return false
+    }
+    if (dup || target === (value ?? null)) return !dup
+    onSave(target)
+    return true
+  }
+  return (
+    <li className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-3 py-2">
+      {editable ? (
+        <input
+          ref={inputRef}
+          inputMode="numeric"
+          enterKeyHint="next"
+          value={draft}
+          aria-label={`${t('veedor.sheet_number')} · ${player.full_name}`}
+          placeholder="–"
+          onFocus={(e) => {
+            editing.current = true
+            e.target.select() // lo que se tipea reemplaza el número, no se suma
+          }}
+          onChange={(e) => setDraft(e.target.value.replace(/\D/g, '').slice(0, 3))}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              if (commit()) onDone()
+            }
+            if (e.key === 'Escape') {
+              cancelled.current = true
+              setDraft(value ?? '')
+              e.currentTarget.blur()
+            }
+          }}
+          className={`focus-ring h-12 w-full rounded-xl text-center text-2xl font-extrabold tabular-nums placeholder:text-white/25 ${dup ? 'bg-live/25 text-[#ffc2cf] ring-1 ring-live' : draft === '' ? 'bg-white/5' : 'bg-white/10 text-gold'}`}
+        />
+      ) : (
+        <span className="board-num grid h-12 place-items-center rounded-xl bg-white/5 text-2xl text-gold">{value ?? '–'}</span>
+      )}
+      <span className="min-w-0">
+        <span className="line-clamp-2 break-words font-bold leading-tight">{player.full_name}</span>
+        {dup && <span className="block text-[11px] font-bold text-[#ff9db3]">{t('veedor.sheet_dup', { n: target, name: dup.full_name })}</span>}
+        {!dup && isPending && <span className="block text-[11px] font-bold text-gold-light">{t('veedor.sheet_pending')}</span>}
+      </span>
+    </li>
   )
 }
 

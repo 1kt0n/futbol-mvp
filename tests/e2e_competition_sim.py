@@ -631,6 +631,26 @@ def rotating_veedores(client, H):
     ok(ev["player_id"] is None, "jugador quitado: su gol queda sin identificar")
     expect(client.delete(f"{dpub}/control/players/{new['player_id']}", headers=C), 404, "PLAYER_NOT_FOUND")
 
+    # ---- "Planilla" del partido: el veedor que lo tiene corrige números en la cancha ----
+    expect(client.post(f"{base}/claim", json={}, headers=A), 200)
+    away_team = me_b["teams"][m["away_team_id"]]
+    pa, pb = away_team["players"][0], away_team["players"][1]
+    r = expect(client.patch(f"{base}/players/{pa['id']}", json={"shirt_number": 21}, headers=A), 200)
+    ok(r["changed"] is True, "planilla: el veedor que tiene el partido pone el 21")
+    ok(expect(client.patch(f"{base}/players/{pa['id']}", json={"shirt_number": 21}, headers=A), 200)["changed"] is False,
+       "planilla: reintento sin cambios (idempotente)")
+    expect(client.patch(f"{base}/players/{pb['id']}", json={"shirt_number": 21}, headers=A), 409, "SHIRT_NUMBER_TAKEN")
+    expect(client.patch(f"{base}/players/{pa['id']}", json={"shirt_number": 22}, headers=B), 403, "MATCH_NOT_ASSIGNED")
+    other = next(t for tid, t in me_b["teams"].items() if tid not in (m["home_team_id"], m["away_team_id"]) and t["players"])
+    expect(client.patch(f"{base}/players/{other['players'][0]['id']}", json={"shirt_number": 5}, headers=A),
+           400, "PLAYER_NOT_IN_MATCH")
+    expect(client.patch(f"{base}/players/{pa['id']}", json={}, headers=A), 422)
+    ok(next(x for x in expect(client.get(f"{dpub}/staff/me", headers=B), 200)["teams"][away_team["id"]]["players"]
+            if x["id"] == pa["id"])["shirt_number"] == 21, "planilla: el número lo ven todos")
+    expect(client.post(f"{dpub}/control/matches/{m['code']}/status", json={"status": "FINISHED"}, headers=C), 200)
+    expect(client.post(f"{dpub}/control/matches/{m['code']}/confirm", headers=C), 200)
+    expect(client.patch(f"{base}/players/{pa['id']}", json={"shirt_number": None}, headers=A), 409, "MATCH_CONFIRMED")
+
     acts = {r["action"] for r in expect(client.get(f"{dpub}/control/audit?limit=500", headers=C), 200)}
     ok({"MATCH_CLAIM", "MATCH_TAKEOVER", "MATCH_RELEASE", "DEMO_RESET_ALL", "STAFF_CREATE", "STAFF_REVOKE",
         "PLAYER_CREATE", "PLAYER_UPDATE", "PLAYER_DELETE"} <= acts,

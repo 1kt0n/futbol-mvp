@@ -555,6 +555,11 @@ class CompetitionEventPlayerRequest(BaseModel):
     player_id: str | None = None  # None = "sin identificar"
 
 
+class CompetitionPlayerNumberRequest(BaseModel):
+    """Planilla del partido (veedor): número de camiseta; null lo borra."""
+    shirt_number: int | None = Field(..., ge=0, le=999)
+
+
 class CompetitionClaimRequest(BaseModel):
     """El veedor toma el partido de la cancha. force=True: lo saca a otro veedor que lo tenía."""
     force: bool = False

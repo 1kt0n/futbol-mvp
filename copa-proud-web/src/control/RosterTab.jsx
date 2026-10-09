@@ -189,6 +189,7 @@ function PlayerRow({ player, players, events, act, busy, inputRef, onDone }) {
   const [state, setState] = useState(null) // 'saving' | 'ok' | 'error'
   const [arm, setArm] = useState(false)
   const editing = useRef(false)
+  const cancelled = useRef(false) // Esc: el blur que sigue no guarda
 
   // Lo que llega del server (refresco cada 10 s) pisa el campo solo si no se está editando.
   useEffect(() => {
@@ -214,6 +215,10 @@ function PlayerRow({ player, players, events, act, busy, inputRef, onDone }) {
   }
   const saveNumber = async () => {
     editing.current = false
+    if (cancelled.current) {
+      cancelled.current = false
+      return false
+    }
     if (target === (player.shirt_number ?? null)) return true
     if (dup) return false // lo explica el aviso "El N ya lo tiene …"
     return save({ shirt_number: target })
@@ -236,7 +241,10 @@ function PlayerRow({ player, players, events, act, busy, inputRef, onDone }) {
         inputMode="numeric"
         value={number}
         aria-label={`Número de ${player.full_name}`}
-        onFocus={() => (editing.current = true)}
+        onFocus={(e) => {
+          editing.current = true
+          e.target.select() // lo que se tipea reemplaza el número, no se suma
+        }}
         onChange={(e) => {
           setNumber(e.target.value.replace(/\D/g, '').slice(0, 3))
           setState(null)
@@ -248,7 +256,7 @@ function PlayerRow({ player, players, events, act, busy, inputRef, onDone }) {
             if (await saveNumber()) onDone()
           }
           if (e.key === 'Escape') {
-            editing.current = false
+            cancelled.current = true
             setNumber(player.shirt_number ?? '')
             setState(null)
             e.currentTarget.blur()
