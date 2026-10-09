@@ -204,7 +204,11 @@ Pantalla para la organización en el predio, sin login:
   - Qué partido tiene cada uno.
   - Link nuevo y dar de baja.
   - En cada partido, el selector "Veedor" lo reasigna o lo deja libre.
-- **Historial:** quién cambió qué y a qué hora, incluido quién tomó, soltó o se llevó cada partido. Lo hecho desde esta pantalla figura como "Mesa de control".
+- **Planteles (lista de buena fe):** para la acreditación. Muestra el avance ("N de 265 con número") y cada equipo con su contador.
+  - Se carga el **número de camiseta** de cada jugador: se escribe y se aprieta Enter, se guarda y pasa al siguiente. No deja repetir números dentro del equipo.
+  - También se corrige el nombre, se **agrega** a alguien que no estaba en la lista o se lo **quita**. Si tenía goles o tarjetas, esos eventos quedan "sin identificar".
+  - Los veedores ven los números al instante en el selector de jugador.
+- **Historial:** quién cambió qué y a qué hora, incluido quién tomó, soltó o se llevó cada partido y los cambios de planteles. Lo hecho desde esta pantalla figura como "Mesa de control".
 - **Backend:** reusa exactamente las reglas de la mesa central (`app/routers/competitions_control.py`).
 - **Link:** se genera con `scripts/control_link.py [--demo]`; cada link nuevo anula el anterior.
 

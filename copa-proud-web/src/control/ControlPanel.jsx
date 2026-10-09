@@ -7,6 +7,7 @@ import { buildModel, matchLabel, sourceLabel } from '../lib/model.js'
 import { controlCall } from './controlApi.js'
 import { GalleryTab } from './GalleryTab.jsx'
 import StaffTab from './StaffTab.jsx'
+import RosterTab from './RosterTab.jsx'
 
 /*
  * MESA DE CONTROL (/control/<token>): resultados de todos los partidos y sus correcciones.
@@ -37,6 +38,9 @@ const ERRORS = {
   CANNOT_CLOSE_GROUP_STAGE: 'Todavía no se puede cerrar: mirá lo que falta en la revisión.',
   KNOCKOUT_ALREADY_STARTED: 'Ya empezó algún cruce eliminatorio: no se puede reabrir.',
   DUPLICATE_RANKS: 'El orden del sorteo tiene posiciones repetidas.',
+  SHIRT_NUMBER_TAKEN: 'Ese número ya lo tiene otro jugador del equipo.',
+  PLAYER_NOT_FOUND: 'Ese jugador ya no existe (alguien lo quitó). Se actualizó la pantalla.',
+  NAME_REQUIRED: 'El nombre no puede quedar vacío.',
 }
 const errText = (d) => {
   const code = typeof d === 'object' && d ? d.code : d
@@ -122,7 +126,7 @@ function Panel() {
         </div>
         <span className="text-xs text-white/45">{updatedAt ? `Actualizado ${updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}</span>
         <nav className="ml-auto flex max-w-full gap-1 overflow-x-auto rounded-full bg-white/5 p-1 ring-1 ring-white/10">
-          {[['partidos', 'Partidos'], ['zonas', 'Zonas y cierre'], ['veedores', 'Veedores'], ['fotos', 'Fotos'], ['historial', 'Historial']].map(([k, label]) => (
+          {[['partidos', 'Partidos'], ['zonas', 'Zonas y cierre'], ['veedores', 'Veedores'], ['planteles', 'Planteles'], ['fotos', 'Fotos'], ['historial', 'Historial']].map(([k, label]) => (
             <button key={k} type="button" onClick={() => setTab(k)} className={`focus-ring shrink-0 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-bold ${tab === k ? 'bg-white text-night' : 'text-white/70 hover:text-white'}`}>
               {label}
             </button>
@@ -139,6 +143,7 @@ function Panel() {
       {tab === 'partidos' && <MatchesTab model={model} onOpen={setOpenCode} />}
       {tab === 'zonas' && <GroupsTab model={model} token={token} act={act} busy={busy} />}
       {tab === 'veedores' && <StaffTab staff={snap.staff || []} model={model} act={act} busy={busy} />}
+      {tab === 'planteles' && <RosterTab model={model} act={act} busy={busy} />}
       {tab === 'fotos' && <GalleryTab token={token} model={model} />}
       {tab === 'historial' && <AuditTab token={token} model={model} />}
 
@@ -640,6 +645,7 @@ const ACTIONS = {
   MATCH_CLAIM: 'Tomó el partido', MATCH_TAKEOVER: 'Tomó el partido (se lo sacó a otro)', MATCH_RELEASE: 'Soltó el partido',
   STAFF_CREATE: 'Alta de veedor', STAFF_ROTATE_TOKEN: 'Link nuevo de veedor', STAFF_REVOKE: 'Baja de veedor',
   DEMO_RESET_ALL: 'Demo reiniciada', DRAW_RESET: 'Sorteo reiniciado',
+  PLAYER_CREATE: 'Plantel: jugador agregado', PLAYER_UPDATE: 'Plantel: número / nombre', PLAYER_DELETE: 'Plantel: jugador quitado',
   MATCH_LIVE: 'Estado: en juego', MATCH_HALFTIME: 'Estado: entretiempo', MATCH_FINISHED: 'Estado: terminado',
 }
 const actionLabel = (a) => {

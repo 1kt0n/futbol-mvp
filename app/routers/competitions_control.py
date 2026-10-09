@@ -2,7 +2,8 @@
 MESA DE CONTROL: link privado `live.copaproud.com/control/<token>` para la organización, sin login.
 Hace lo mismo que la mesa central (/admin/competitions/…): ver todo, corregir resultados y eventos,
 W.O., confirmar, penales, sorteos de desempate y cerrar / reabrir la fase de grupos. También la
-carpeta de fotos de "Reviví tu partido" y a qué partido va cada álbum.
+carpeta de fotos de "Reviví tu partido" y a qué partido va cada álbum, los veedores (alta, link,
+baja) y los planteles (número de camiseta en la acreditación, nombre, agregar / quitar).
 
 Header `X-Control-Token`. En la base solo queda el hash (competitions.settings.control.token_hash),
 que genera scripts/control_link.py (cada link nuevo anula el anterior). Cada acción reusa la función
@@ -23,6 +24,8 @@ from app.schemas import (
     CompetitionMatchPatchRequest,
     CompetitionMatchStatusRequest,
     CompetitionPenaltiesRequest,
+    CompetitionPlayerRequest,
+    CompetitionPlayerUpdateRequest,
     CompetitionStaffRequest,
     CompetitionWalkoverRequest,
 )
@@ -254,3 +257,27 @@ def control_rotate_staff(slug: str, staff_id: str, request: Request, x_control_t
 def control_revoke_staff(slug: str, staff_id: str, request: Request, x_control_token: str | None = Tok):
     _auth(request, slug, x_control_token)
     return adm.revoke_staff(slug, staff_id, actor_user_id=None)
+
+
+# ------------------------------------------------------------------ planteles (lista de buena fe)
+
+@router.post(R + "/teams/{team_id}/players")
+def control_create_player(slug: str, team_id: str, body: CompetitionPlayerRequest, request: Request,
+                          x_control_token: str | None = Tok):
+    """Jugador que aparece en la acreditación y no estaba en la lista."""
+    _auth(request, slug, x_control_token)
+    return adm.create_player(slug, team_id, body, actor_user_id=None)
+
+
+@router.patch(R + "/players/{player_id}")
+def control_update_player(slug: str, player_id: str, body: CompetitionPlayerUpdateRequest, request: Request,
+                          x_control_token: str | None = Tok):
+    """Número de camiseta (acreditación) o nombre. shirt_number=null lo borra."""
+    _auth(request, slug, x_control_token)
+    return adm.update_player(slug, player_id, body, actor_user_id=None)
+
+
+@router.delete(R + "/players/{player_id}")
+def control_delete_player(slug: str, player_id: str, request: Request, x_control_token: str | None = Tok):
+    _auth(request, slug, x_control_token)
+    return adm.delete_player(slug, player_id, actor_user_id=None)

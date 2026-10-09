@@ -605,9 +605,36 @@ def rotating_veedores(client, H):
     expect(client.post(f"{dpub}/control/staff", json={"full_name": "x"}, headers=C), 422)
     expect(client.post(f"{dpub}/control/staff", json={"full_name": "Sin token"}), 401, "INVALID_CONTROL_TOKEN")
 
+    # ---- planteles desde la mesa (acreditación: número de camiseta) ----
+    B = {"X-Staff-Token": nb["token"]}  # Beto, con el link nuevo
+    team = me_b["teams"][m["home_team_id"]]
+    p1, p2 = team["players"][0], team["players"][1]
+    expect(client.patch(f"{dpub}/control/players/{p1['id']}", json={"shirt_number": 77}, headers=C), 200)
+    expect(client.patch(f"{dpub}/control/players/{p2['id']}", json={"shirt_number": 77}, headers=C), 409, "SHIRT_NUMBER_TAKEN")
+    expect(client.patch(f"{dpub}/control/players/{p1['id']}", json={"full_name": "  "}, headers=C), 400, "NAME_REQUIRED")
+    expect(client.patch(f"{dpub}/control/players/{p1['id']}", json={"full_name": "  Nombre Corregido "}, headers=C), 200)
+    new = expect(client.post(f"{dpub}/control/teams/{team['id']}/players",
+                             json={"full_name": "Acreditado Nuevo", "shirt_number": 88}, headers=C), 200)
+    expect(client.post(f"{dpub}/control/teams/{team['id']}/players",
+                       json={"full_name": "Otro", "shirt_number": 88}, headers=C), 409, "SHIRT_NUMBER_TAKEN")
+    roster = {x["id"]: x for x in expect(client.get(f"{dpub}/staff/me", headers=B), 200)["teams"][team["id"]]["players"]}
+    ok(roster[p1["id"]]["shirt_number"] == 77 and roster[p1["id"]]["full_name"] == "Nombre Corregido",
+       "el veedor ve el número y el nombre corregidos")
+    ok(roster[new["player_id"]]["shirt_number"] == 88, "el veedor ve al jugador agregado en la acreditación")
+    expect(client.patch(f"{dpub}/control/players/{p1['id']}", json={"shirt_number": None}, headers=C), 200)
+    # Quitar a un jugador con un gol cargado: el gol queda sin identificar (el marcador no cambia).
+    eg = expect(client.post(f"{dpub}/control/matches/{m['code']}/events",
+                            json={"team_id": team["id"], "type": "GOAL", "player_id": new["player_id"]}, headers=C), 200)
+    expect(client.delete(f"{dpub}/control/players/{new['player_id']}", headers=C), 200)
+    ev = next(e for x in expect(client.get(f"{dpub}/staff/me", headers=B), 200)["matches"] if x["code"] == m["code"]
+              for e in x["events"] if e["id"] == eg["event_id"])
+    ok(ev["player_id"] is None, "jugador quitado: su gol queda sin identificar")
+    expect(client.delete(f"{dpub}/control/players/{new['player_id']}", headers=C), 404, "PLAYER_NOT_FOUND")
+
     acts = {r["action"] for r in expect(client.get(f"{dpub}/control/audit?limit=500", headers=C), 200)}
-    ok({"MATCH_CLAIM", "MATCH_TAKEOVER", "MATCH_RELEASE", "DEMO_RESET_ALL", "STAFF_CREATE", "STAFF_REVOKE"} <= acts,
-       "auditoría: tomas, soltar, reinicio y altas/bajas")
+    ok({"MATCH_CLAIM", "MATCH_TAKEOVER", "MATCH_RELEASE", "DEMO_RESET_ALL", "STAFF_CREATE", "STAFF_REVOKE",
+        "PLAYER_CREATE", "PLAYER_UPDATE", "PLAYER_DELETE"} <= acts,
+       "auditoría: tomas, soltar, reinicio, altas/bajas y planteles")
 
     with engine.begin() as conn:
         demo.borrar(conn)

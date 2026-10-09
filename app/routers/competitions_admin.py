@@ -281,6 +281,9 @@ def create_player(slug: str, team_id: str, body: CompetitionPlayerRequest,
             comp = svc.lock_competition(conn, slug)
             _team_in_comp(conn, comp["id"], team_id)
             player_id = _insert_player(conn, comp["id"], team_id, body)
+            svc.audit(conn, comp["id"], "PLAYER_CREATE", actor_user_id=actor_user_id,
+                      metadata={"player_id": player_id, "team_id": team_id, "full_name": body.full_name.strip(),
+                                "shirt_number": body.shirt_number})
             svc.bump_version(conn, comp["id"])
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail=_integrity_detail(exc))
@@ -309,6 +312,13 @@ def create_players_bulk(slug: str, team_id: str, body: CompetitionPlayerBulkRequ
 def update_player(slug: str, player_id: str, body: CompetitionPlayerUpdateRequest,
                   actor_user_id: str = Depends(get_actor_user_id)):
     fields = body.model_dump(exclude_unset=True)
+    if "full_name" in fields:
+        if not (fields["full_name"] or "").strip():
+            raise HTTPException(status_code=400, detail="NAME_REQUIRED")
+        fields["full_name"] = fields["full_name"].strip()
+    for k in ("is_captain", "is_goalkeeper"):
+        if k in fields and fields[k] is None:
+            fields.pop(k)
     if not fields:
         return {"updated": False}
     sets = ", ".join(f"{k} = :{k}" for k in fields)
@@ -322,6 +332,8 @@ def update_player(slug: str, player_id: str, body: CompetitionPlayerUpdateReques
             """), {**fields, "pid": player_id, "cid": comp["id"]})
             if res.rowcount == 0:
                 raise HTTPException(status_code=404, detail="PLAYER_NOT_FOUND")
+            svc.audit(conn, comp["id"], "PLAYER_UPDATE", actor_user_id=actor_user_id,
+                      metadata={"player_id": player_id, **fields})
             svc.bump_version(conn, comp["id"])
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail=_integrity_detail(exc))
@@ -333,11 +345,16 @@ def delete_player(slug: str, player_id: str, actor_user_id: str = Depends(get_ac
     with engine.begin() as conn:
         _authorize(conn, actor_user_id, MANAGE)
         comp = svc.lock_competition(conn, slug)
-        res = conn.execute(text("""
+        row = conn.execute(text("""
             DELETE FROM public.competition_players WHERE id = :pid AND competition_id = :cid
-        """), {"pid": player_id, "cid": comp["id"]})
-        if res.rowcount == 0:
+            RETURNING team_id, full_name, shirt_number
+        """), {"pid": player_id, "cid": comp["id"]}).mappings().first()
+        if not row:
             raise HTTPException(status_code=404, detail="PLAYER_NOT_FOUND")
+        # Sus goles/tarjetas quedan "sin identificar" (FK ON DELETE SET NULL).
+        svc.audit(conn, comp["id"], "PLAYER_DELETE", actor_user_id=actor_user_id,
+                  metadata={"player_id": player_id, "team_id": str(row["team_id"]),
+                            "full_name": row["full_name"], "shirt_number": row["shirt_number"]})
         svc.bump_version(conn, comp["id"])
     return {"deleted": True}
 
