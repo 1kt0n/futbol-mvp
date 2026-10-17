@@ -6,6 +6,7 @@ import AdminAnnouncementForm from './calendar/AdminAnnouncementForm.jsx'
 import AuditoriaTab from './audit/AuditoriaTab.jsx'
 import RolesPermisosTab from './admin/RolesPermisosTab.jsx'
 import EventAccessPanel from './features/events/admin/EventAccessPanel.jsx'
+import { buildEventShareMessage, shareUrlFromPath, whatsAppHref } from './features/events/admin/shareMessage.js'
 import { can, canAccessAdmin } from './permissions/can.js'
 
 // Tabs del panel: cada una se muestra si el usuario tiene su permiso.
@@ -37,6 +38,35 @@ function isoToLocalDateTime(value) {
   if (Number.isNaN(date.getTime())) return ''
   const pad = (n) => String(n).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const WEEKDAYS_SHORT = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
+const pad2 = (n) => String(n).padStart(2, '0')
+
+// El backend manda "2026-10-29 22:00:00+00:00": con la "T" también lo entiende Safari.
+function parseApiDate(value) {
+  if (!value) return null
+  const date = new Date(String(value).replace(' ', 'T'))
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+// Repetir: misma franja (día y hora) que el evento, la próxima semana que todavía no pasó.
+function nextSlotDate(startsAt, now = new Date()) {
+  const next = parseApiDate(startsAt)
+  if (!next) return null
+  do {
+    next.setDate(next.getDate() + 7)
+  } while (next <= now)
+  return next
+}
+
+function isPastDate(date, now = new Date()) {
+  return !!date && date < now
+}
+
+// "jue 29/10"
+function slotLabel(date) {
+  return `${WEEKDAYS_SHORT[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`
 }
 
 // Modal genérico reutilizable
@@ -86,6 +116,10 @@ export default function AdminPanel() {
   const [showEditCourt, setShowEditCourt] = useState(false)
   const [selectedEventId, setSelectedEventId] = useState(null)
   const [selectedCourt, setSelectedCourt] = useState(null)
+  // Finalizados más recientes: el partido de la semana pasada, para poder repetirlo.
+  const [recentPlayed, setRecentPlayed] = useState([])
+  // Repetir partido: { source } con el form abierto; { source, created } en el paso Compartir.
+  const [repeat, setRepeat] = useState(null)
 
   // Estado para Usuarios
   const [users, setUsers] = useState([])
@@ -145,18 +179,22 @@ export default function AdminPanel() {
   async function loadEvents({ preferEventId } = {}) {
     setBusy(true)
     try {
-      const data = await apiFetch('/admin/events')
+      const [data, played] = await Promise.all([
+        apiFetch('/admin/events'),
+        apiFetch('/admin/events?status=FINALIZED&limit=8').catch(() => ({ events: [] })),
+      ])
       setEventsList(data.events || [])
+      setRecentPlayed(played.events || [])
       const urlEventId = new URLSearchParams(window.location.search).get('event_id') || null
-      // Si no hay evento seleccionado, seleccionar el primero
+      // Si no hay evento seleccionado, seleccionar el primero (o el último jugado, para repetirlo)
+      const firstId = data.events?.[0]?.id || played.events?.[0]?.id
       if (preferEventId) {
         setSelectedEventId(preferEventId)
         await loadEventDetail(preferEventId)
       } else if (urlEventId) {
         setSelectedEventId(urlEventId)
         await loadEventDetail(urlEventId)
-      } else if (!selectedEventId && data.events?.length > 0) {
-        const firstId = data.events[0].id
+      } else if (!selectedEventId && firstId) {
         setSelectedEventId(firstId)
         await loadEventDetail(firstId)
       } else if (selectedEventId) {
@@ -224,6 +262,22 @@ export default function AdminPanel() {
       await loadEvents({ preferEventId: created?.event_id })
     } catch (err) {
       setErr(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Handler: Repetir evento (misma franja, acceso y canchas). Los errores los muestra el form.
+  async function handleRepeatEvent(sourceEventId, payload) {
+    setBusy(true)
+    try {
+      const created = await apiFetch(`/admin/events/${sourceEventId}/duplicate`, {
+        method: 'POST',
+        body: payload,
+      })
+      setRepeat((prev) => ({ ...prev, created }))
+      // El evento nuevo queda seleccionado, como al crearlo a mano.
+      await loadEvents({ preferEventId: created?.event_id })
     } finally {
       setBusy(false)
     }
@@ -578,6 +632,7 @@ export default function AdminPanel() {
           {tab === 'eventos' && has('events.view') && (
             <EventosTab
               eventsList={eventsList}
+              recentPlayed={recentPlayed}
               selectedEventId={selectedEventId}
               onSelectEvent={(id) => loadEventDetail(id)}
               activeEvent={activeEvent}
@@ -586,8 +641,11 @@ export default function AdminPanel() {
                 canCreateEvent: has('events.create'),
                 canManageEvent: has('events.manage'),
                 canManageCourts: has('courts.manage'),
+                // Repetir crea el evento y sus canchas: pide los dos permisos, igual que el backend.
+                canRepeatEvent: has('events.create') && has('courts.manage'),
               }}
               onCreateEvent={() => setShowCreateEvent(true)}
+              onRepeatEvent={() => setRepeat({ source: activeEvent })}
               onEditEvent={() => setShowEditEvent(true)}
               onCloseEvent={handleCloseEvent}
               onReopenEvent={handleReopenEvent}
@@ -660,6 +718,24 @@ export default function AdminPanel() {
         {/* Modals */}
         <Modal isOpen={showCreateEvent} onClose={() => setShowCreateEvent(false)} title="Crear Evento">
           <EventForm onSubmit={handleCreateEvent} busy={busy} />
+        </Modal>
+
+        <Modal
+          isOpen={!!repeat}
+          onClose={() => setRepeat(null)}
+          title={repeat?.created ? 'Compartí el partido' : 'Repetir partido'}
+        >
+          {repeat?.created ? (
+            <QuickRepeatShare created={repeat.created} onDone={() => setRepeat(null)} />
+          ) : repeat?.source ? (
+            <QuickRepeatForm
+              source={repeat.source}
+              locations={uniqueLocations([...eventsList, ...recentPlayed])}
+              activeEvents={eventsList}
+              busy={busy}
+              onSubmit={(payload) => handleRepeatEvent(repeat.source.event.id, payload)}
+            />
+          ) : null}
         </Modal>
 
         <Modal isOpen={showEditEvent} onClose={() => setShowEditEvent(false)} title="Editar Evento">
@@ -783,12 +859,14 @@ function InvitedByChip({ name }) {
 
 function EventosTab({
   eventsList,
+  recentPlayed,
   selectedEventId,
   onSelectEvent,
   activeEvent,
   busy,
   perms,
   onCreateEvent,
+  onRepeatEvent,
   onEditEvent,
   onCloseEvent,
   onReopenEvent,
@@ -807,6 +885,7 @@ function EventosTab({
   const event = activeEvent?.event
   const courts = activeEvent?.courts || []
   const waitlist = activeEvent?.waitlist || []
+  const repeatDate = event ? nextSlotDate(event.starts_at) : null
 
   // Helper para determinar el badge de estado
   function getStatusBadge(status) {
@@ -820,6 +899,32 @@ function EventosTab({
       return <span className="px-3 py-1 rounded-full bg-zinc-500/20 text-zinc-300 text-sm font-semibold border border-zinc-500/30">FINALIZADO</span>
     }
     return null
+  }
+
+  function renderEventChip(ev) {
+    return (
+      <button
+        key={ev.id}
+        onClick={() => onSelectEvent(ev.id)}
+        data-testid={`admin-event-select-${ev.id}`}
+        className={cn(
+          "px-4 py-2 rounded-xl text-sm font-semibold transition-colors border",
+          selectedEventId === ev.id
+            ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-300"
+            : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+        )}
+      >
+        {ev.title}
+        <span className={cn(
+          "ml-2 px-2 py-0.5 rounded-full text-xs",
+          ev.status === 'OPEN' ? "bg-emerald-500/20 text-emerald-300" :
+          ev.status === 'CLOSED' ? "bg-rose-500/20 text-rose-300" :
+          "bg-zinc-500/20 text-zinc-300"
+        )}>
+          {ev.status === 'OPEN' ? 'Abierto' : ev.status === 'CLOSED' ? 'Cerrado' : 'Finalizado'}
+        </span>
+      </button>
+    )
   }
 
   return (
@@ -837,6 +942,15 @@ function EventosTab({
         )}
         {event && (
           <>
+            {perms.canRepeatEvent && repeatDate && (
+              <button
+                onClick={onRepeatEvent}
+                data-testid="admin-event-repeat-btn"
+                className="rounded-xl border border-emerald-400/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-100 px-4 py-2 font-semibold"
+              >
+                Repetir para el {slotLabel(repeatDate)}
+              </button>
+            )}
             {perms.canManageEvent && (
               <button
                 onClick={onEditEvent}
@@ -904,41 +1018,27 @@ function EventosTab({
       </div>
 
       {/* Selector de eventos */}
-      {eventsList.length > 0 && (
+      {(eventsList.length > 0 || recentPlayed.length > 0) && (
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
           <h3 className="text-sm font-semibold text-white/60 mb-3">Eventos ({eventsList.length})</h3>
           <div className="flex gap-2 flex-wrap">
-            {eventsList.map(ev => (
-              <button
-                key={ev.id}
-                onClick={() => onSelectEvent(ev.id)}
-                data-testid={`admin-event-select-${ev.id}`}
-                className={cn(
-                  "px-4 py-2 rounded-xl text-sm font-semibold transition-colors border",
-                  selectedEventId === ev.id
-                    ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-300"
-                    : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
-                )}
-              >
-                {ev.title}
-                <span className={cn(
-                  "ml-2 px-2 py-0.5 rounded-full text-xs",
-                  ev.status === 'OPEN' ? "bg-emerald-500/20 text-emerald-300" :
-                  ev.status === 'CLOSED' ? "bg-rose-500/20 text-rose-300" :
-                  "bg-zinc-500/20 text-zinc-300"
-                )}>
-                  {ev.status === 'OPEN' ? 'Abierto' : ev.status === 'CLOSED' ? 'Cerrado' : 'Finalizado'}
-                </span>
-              </button>
-            ))}
+            {eventsList.map(renderEventChip)}
           </div>
+          {recentPlayed.length > 0 && (
+            <div className="mt-4" data-testid="admin-events-recent-played">
+              <h3 className="text-sm font-semibold text-white/60 mb-3">Jugados hace poco</h3>
+              <div className="flex gap-2 flex-wrap">
+                {recentPlayed.map(renderEventChip)}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Evento seleccionado - detalle */}
       {!event ? (
         <Banner kind="info" title="Sin evento seleccionado">
-          {eventsList.length === 0 ? 'No hay eventos creados.' : 'Seleccioná un evento para ver su detalle.'}
+          {eventsList.length === 0 && recentPlayed.length === 0 ? 'No hay eventos creados.' : 'Seleccioná un evento para ver su detalle.'}
         </Banner>
       ) : (
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
@@ -1966,6 +2066,358 @@ function EventForm({
         {busy ? busyLabel : submitLabel}
       </button>
     </form>
+  )
+}
+
+const ACCESS_LABELS = {
+  MEMBERS_ONLY: 'Solo miembros',
+  LINK_ACCESS: 'Con enlace',
+  LINK_PASSWORD: 'Con enlace + clave',
+}
+
+// Lugares ya usados, sin repetir (sin importar mayúsculas): gana la escritura más reciente.
+function uniqueLocations(events) {
+  const seen = new Map()
+  for (const ev of events) {
+    const name = (ev.location_name || '').trim()
+    const key = name.toLowerCase()
+    if (name && !seen.has(key)) seen.set(key, name)
+  }
+  return [...seen.values()]
+}
+
+const MAX_REPEAT_COURTS = 12
+
+// "Repetir partido": misma franja +7, con canchas, cupo, lugar y título editables.
+function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
+  const event = source.event
+  const access = source.access
+  const [form, setForm] = useState(() => {
+    const date = nextSlotDate(event.starts_at)
+    const courts = (source.courts || []).length > 0
+      ? source.courts.map((c, i) => ({ key: i, name: c.name, capacity: c.capacity }))
+      : [{ key: 0, name: 'Cancha 1', capacity: 10 }]
+    return {
+      date: date ? `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` : '',
+      time: date ? `${pad2(date.getHours())}:${pad2(date.getMinutes())}` : '',
+      title: event.title || '',
+      location_name: event.location_name || '',
+      courts,
+      nextKey: courts.length,
+    }
+  })
+  const [localErr, setLocalErr] = useState('')
+
+  const startsLocal = form.date && form.time ? `${form.date}T${form.time}` : ''
+  const startsAt = startsLocal ? new Date(startsLocal) : null
+  const clash = startsAt && activeEvents.find((ev) => parseApiDate(ev.starts_at)?.getTime() === startsAt.getTime())
+
+  function setCourt(index, patch) {
+    setForm((f) => ({ ...f, courts: f.courts.map((c, i) => (i === index ? { ...c, ...patch } : c)) }))
+  }
+
+  function stepCapacity(index, delta) {
+    const current = Number(form.courts[index].capacity) || 0
+    setCourt(index, { capacity: Math.min(50, Math.max(1, current + delta)) })
+  }
+
+  function addCourt() {
+    setForm((f) => ({
+      ...f,
+      courts: [...f.courts, {
+        key: f.nextKey,
+        name: `Cancha ${f.courts.length + 1}`,
+        capacity: Number(f.courts[f.courts.length - 1]?.capacity) || 10,
+      }],
+      nextKey: f.nextKey + 1,
+    }))
+  }
+
+  function removeCourt(index) {
+    setForm((f) => ({ ...f, courts: f.courts.filter((_, i) => i !== index) }))
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setLocalErr('')
+    const startsAtIso = localDateTimeToIso(startsLocal)
+    const courts = form.courts.map((c) => ({ name: c.name.trim(), capacity: Number(c.capacity) }))
+    if (!startsAtIso) return setLocalErr('Elegí la fecha y la hora.')
+    if (form.title.trim().length < 3) return setLocalErr('El título necesita al menos 3 letras.')
+    if (form.location_name.trim().length < 2) return setLocalErr('Falta el lugar.')
+    if (courts.some((c) => c.name.length < 2)) return setLocalErr('Cada cancha necesita un nombre.')
+    if (courts.some((c) => !Number.isInteger(c.capacity) || c.capacity < 1 || c.capacity > 50)) {
+      return setLocalErr('El cupo de cada cancha va de 1 a 50.')
+    }
+    try {
+      await onSubmit({
+        starts_at: startsAtIso,
+        title: form.title.trim(),
+        location_name: form.location_name.trim(),
+        courts,
+      })
+    } catch (err) {
+      setLocalErr(err.message || 'No se pudo repetir el partido.')
+    }
+  }
+
+  const fieldClass = 'w-full rounded-xl border border-white/10 bg-black/20 py-2 text-base text-white focus:outline-none focus:ring-2 focus:ring-white/20'
+  const inputClass = `${fieldClass} px-4`
+  const stepClass = 'h-11 w-11 shrink-0 rounded-xl border border-white/10 bg-white/5 text-xl font-semibold hover:bg-white/10 disabled:opacity-30'
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4" data-testid="quick-repeat-form">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-sm font-semibold mb-2" htmlFor="quick-repeat-date">Fecha</label>
+          <input
+            id="quick-repeat-date"
+            type="date"
+            value={form.date}
+            onChange={(e) => setForm({ ...form, date: e.target.value })}
+            data-testid="quick-repeat-date-input"
+            required
+            className={`${fieldClass} px-3`}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-2" htmlFor="quick-repeat-time">Hora</label>
+          <input
+            id="quick-repeat-time"
+            type="time"
+            value={form.time}
+            onChange={(e) => setForm({ ...form, time: e.target.value })}
+            data-testid="quick-repeat-time-input"
+            required
+            className={`${fieldClass} px-3`}
+          />
+        </div>
+      </div>
+      {isPastDate(startsAt) && (
+        <p className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100" data-testid="quick-repeat-past-warning">
+          Esa fecha ya pasó.
+        </p>
+      )}
+      {clash && (
+        <p className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100" data-testid="quick-repeat-clash-warning">
+          Ya hay un partido ese día a esa hora: {clash.title}
+        </p>
+      )}
+
+      <div>
+        <div className="mb-2 text-sm font-semibold">Canchas ({form.courts.length})</div>
+        <div className="space-y-2">
+          {form.courts.map((court, i) => (
+            <div key={court.key} className="rounded-2xl border border-white/10 bg-black/20 p-3" data-testid={`quick-repeat-court-${i}`}>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={court.name}
+                  onChange={(e) => setCourt(i, { name: e.target.value })}
+                  aria-label={`Nombre de la cancha ${i + 1}`}
+                  data-testid={`quick-repeat-court-name-${i}`}
+                  required
+                  maxLength={60}
+                  className={inputClass}
+                />
+                {form.courts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeCourt(i)}
+                    aria-label={`Quitar ${court.name || `la cancha ${i + 1}`}`}
+                    data-testid={`quick-repeat-court-remove-${i}`}
+                    className="h-11 w-11 shrink-0 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xl text-rose-200 hover:bg-rose-500/20"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="mr-auto text-sm text-white/60">Cupo</span>
+                <button
+                  type="button"
+                  onClick={() => stepCapacity(i, -1)}
+                  disabled={Number(court.capacity) <= 1}
+                  aria-label="Un lugar menos"
+                  data-testid={`quick-repeat-court-minus-${i}`}
+                  className={stepClass}
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="50"
+                  value={court.capacity}
+                  onChange={(e) => setCourt(i, { capacity: e.target.value })}
+                  aria-label={`Cupo de la cancha ${i + 1}`}
+                  data-testid={`quick-repeat-court-capacity-${i}`}
+                  required
+                  className="h-11 w-16 rounded-xl border border-white/10 bg-black/20 text-center text-base text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => stepCapacity(i, 1)}
+                  disabled={Number(court.capacity) >= 50}
+                  aria-label="Un lugar más"
+                  data-testid={`quick-repeat-court-plus-${i}`}
+                  className={stepClass}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {form.courts.length < MAX_REPEAT_COURTS && (
+          <button
+            type="button"
+            onClick={addCourt}
+            data-testid="quick-repeat-add-court-btn"
+            className="mt-2 w-full rounded-xl border border-dashed border-white/20 px-4 py-2 text-sm font-semibold text-white/70 hover:bg-white/5"
+          >
+            + Agregar cancha
+          </button>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold mb-2" htmlFor="quick-repeat-location">Lugar</label>
+        <input
+          id="quick-repeat-location"
+          type="text"
+          list="quick-repeat-locations"
+          value={form.location_name}
+          onChange={(e) => setForm({ ...form, location_name: e.target.value })}
+          data-testid="quick-repeat-location-input"
+          required
+          maxLength={120}
+          autoComplete="off"
+          className={inputClass}
+        />
+        <datalist id="quick-repeat-locations">
+          {locations.map((name) => <option key={name} value={name} />)}
+        </datalist>
+      </div>
+      <div>
+        <label className="block text-sm font-semibold mb-2" htmlFor="quick-repeat-title">Título</label>
+        <input
+          id="quick-repeat-title"
+          type="text"
+          value={form.title}
+          onChange={(e) => setForm({ ...form, title: e.target.value })}
+          data-testid="quick-repeat-title-input"
+          required
+          maxLength={120}
+          className={inputClass}
+        />
+      </div>
+
+      <div className="space-y-1 text-xs text-white/50">
+        <p>
+          Se copian la descripción, la visibilidad y el acceso
+          {access?.access_mode ? ` (${ACCESS_LABELS[access.access_mode] || access.access_mode})` : ''}.
+          {access?.share_path ? ' El link es nuevo.' : ''}
+        </p>
+        {access?.password_set && (
+          <p className="text-amber-200/80" data-testid="quick-repeat-password-note">
+            Se usa la misma clave de la semana pasada. Si querés cambiarla, hacelo después en Acceso y compartir.
+          </p>
+        )}
+      </div>
+
+      {localErr && (
+        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100" role="alert">{localErr}</div>
+      )}
+
+      <button
+        type="submit"
+        disabled={busy}
+        data-testid="quick-repeat-submit-btn"
+        className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
+      >
+        {busy ? 'Creando...' : 'Crear y compartir'}
+      </button>
+    </form>
+  )
+}
+
+// Paso Compartir de "Repetir partido": el mismo mensaje de WhatsApp que "Acceso y compartir".
+function QuickRepeatShare({ created, onDone }) {
+  const [copied, setCopied] = useState(false)
+  const access = created.access || {}
+  // Solo miembros no tiene link público: va el de la app, que pide iniciar sesión.
+  const url = shareUrlFromPath(access.share_path || `/?event_id=${created.event_id}`)
+  const message = buildEventShareMessage(created, url)
+  const date = parseApiDate(created.starts_at)
+  const courts = created.courts || []
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4" data-testid="quick-repeat-share">
+      <div>
+        <div className="font-semibold">{created.title}</div>
+        <div className="mt-1 text-sm text-white/60">
+          {date ? `${slotLabel(date)} · ${pad2(date.getHours())}:${pad2(date.getMinutes())}` : ''}
+          {` · ${created.location_name}`}
+          {` · ${courts.length} ${courts.length === 1 ? 'cancha' : 'canchas'}`}
+        </div>
+      </div>
+
+      <div
+        className="whitespace-pre-line break-words rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/80"
+        data-testid="quick-repeat-share-message"
+      >
+        {message}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <a
+          href={whatsAppHref(message)}
+          target="_blank"
+          rel="noreferrer"
+          data-testid="quick-repeat-whatsapp-link"
+          className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 text-center font-semibold"
+        >
+          Enviar por WhatsApp
+        </a>
+        <button
+          type="button"
+          onClick={copy}
+          data-testid="quick-repeat-copy-btn"
+          className="w-full rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-3 font-semibold"
+        >
+          {copied ? 'Link copiado' : 'Copiar link'}
+        </button>
+      </div>
+
+      {access.password_set && (
+        <p className="text-xs text-amber-200/80">
+          La clave es la misma de la semana pasada. Compartila por separado: nunca va en el link ni en el mensaje.
+        </p>
+      )}
+      {!access.share_path && (
+        <p className="text-xs text-white/50">Es solo para miembros: el link abre la app y pide iniciar sesión.</p>
+      )}
+
+      <button
+        type="button"
+        onClick={onDone}
+        data-testid="quick-repeat-done-btn"
+        className="w-full rounded-xl px-4 py-2 text-sm font-semibold text-white/60 hover:text-white"
+      >
+        Listo
+      </button>
+    </div>
   )
 }
 

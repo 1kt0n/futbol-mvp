@@ -696,6 +696,54 @@ order by despues_de_150 desc, escrituras desc, f.starts_at desc;
 
 
 -- ============================================================
+-- REPETIR · ¿Se arma el partido con "Repetir"? (adopción de la 0d)
+-- ============================================================
+-- Pregunta: desde la 0d, el admin puede repetir un partido en la misma franja
+--   +7 días ("Repetir para el jue 29/10", POST /admin/events/{id}/duplicate).
+--   Ese CREATE_EVENT lleva metadata.source = 'quick_repeat' y
+--   metadata.duplicated_from = el evento original; crear a mano no trae source.
+--   Mide qué parte de los eventos nuevos sale de Repetir.
+-- Cómo leerlo:
+--   (a) Una fila por semana (lunes a domingo, hora argentina) según cuándo se
+--       CREÓ el evento: total, cuántos con Repetir y el %. Antes de la 0d da 0%.
+--   (b) Lo mismo abierto por franja del partido (día ISO + hora: "2 20:00" =
+--       martes 20:00, "4 19:00" = jueves 19:00). Muestra en qué franja se adopta
+--       y en cuál se sigue creando a mano.
+--   Cada Repetir escribe además un CREATE_COURT por cancha con el mismo source:
+--   para la métrica norte (QN v2) cuenta como UNA acción del organizador.
+-- Confirma si (la 0d funciona): pct_repetir ≥ 60 en las 3 semanas siguientes al
+--   deploy (fila 0d de la sección 8.4 de rediseno-ux.md).
+-- Si se refuta: mirar (b). Si una franja no adopta (p. ej. la Escuelita de los
+--   martes 19:00), preguntarle al organizador qué cambia de una semana a otra
+--   antes de pensar en "Repetir las 3" o en la serie.
+
+-- REPETIR (a) por semana
+select to_char(date_trunc('week', a.created_at at time zone 'America/Argentina/Buenos_Aires'), 'YYYY-MM-DD') as semana,
+       count(*) as eventos_creados,
+       count(*) filter (where a.metadata->>'source' = 'quick_repeat') as con_repetir,
+       round(100.0 * count(*) filter (where a.metadata->>'source' = 'quick_repeat') / count(*), 1) as pct_repetir
+from public.event_audit_log a
+where a.action = 'CREATE_EVENT'
+  and a.created_at > now() - interval '12 weeks'
+group by 1
+order by 1 desc;
+
+-- REPETIR (b) por semana y franja
+select to_char(date_trunc('week', a.created_at at time zone 'America/Argentina/Buenos_Aires'), 'YYYY-MM-DD') as semana,
+       to_char(e.starts_at at time zone 'America/Argentina/Buenos_Aires', 'ID HH24:MI') as franja,
+       count(*) as eventos_creados,
+       count(*) filter (where a.metadata->>'source' = 'quick_repeat') as con_repetir,
+       round(100.0 * count(*) filter (where a.metadata->>'source' = 'quick_repeat') / count(*), 1) as pct_repetir
+from public.event_audit_log a
+join public.events e on e.id = a.event_id
+where a.action = 'CREATE_EVENT'
+  and a.created_at > now() - interval '12 weeks'
+group by 1, 2
+order by 1 desc, eventos_creados desc, franja;
+
+
+
+-- ============================================================
 -- H8 · ¿Pocos votan por el opt-in y no por el costo de votar?
 -- ============================================================
 -- Pregunta: entre los que jugaron partidos finalizados en los últimos 3 meses,
