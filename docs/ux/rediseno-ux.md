@@ -1092,6 +1092,21 @@ Antes de la 0c, la 0d y la 3b-1:
 - **H3 por semana**, solo partidos jugados y separando la Escuelita; **H10 por posición** sin pseudo-canchas; **H5 por capacidad** (confirmados ≥ suma de cupos de las canchas reales) y cuántos eventos tenían `allow_external_registration`.
 - **Títulos que contienen fechas** y **Q0** (a)-(c).
 
+### 9.5b LIMPIEZA: ¿se corrige el roster después del partido? (corrida el 17/10, después de deployar la 0c)
+
+Consulta LIMPIEZA de `consultas-comportamiento.sql` sobre los 86 partidos finalizados de los últimos 6 meses, más un detalle por tramo y por acción.
+
+- **14 partidos (16,3%)** tuvieron alguna escritura de roster después del inicio. **13 (15,1%)** la tuvieron después de inicio + 150 min: pasa el umbral de 10%, así que **no** se prende directo con 150.
+- Fueron 42 escrituras: 0 moves, 24 altas propias (`REGISTER_USER`), 12 bajas (11 cargadas por otro), 4 `CLOSE_COURT`, 1 invitado y 1 cancha nueva. Mediana de la última escritura: 20 h después del inicio; p90: ~56 h. Mediana de finalización: ~26 h. Ningún partido se reabrió después de finalizarse.
+- **Por tramo:** 2,5–6 h → 6 escrituras en 5 partidos (casi todas a ~3 h: altas o bajas propias); 6–24 h → 3 en 3; 24–72 h → 22 en 5; más de 72 h → 11 en 1.
+- **Dos partidos explican 29 de las 42:** el martes 23/6 20 h (18 escrituras a 43–44 h) y el domingo 7/6 (11 a 26–30 días, con una cancha nueva). Son reorganizaciones fuera de lo normal, no limpieza post-partido.
+- Los 4 `CLOSE_COURT` son orden antes de finalizar a mano; con auto-finalizar dejan de hacer falta.
+- **Desde el 27/6:** 5 partidos con escrituras después de 150 min, una cada uno: 3 a ~3 h (altas o bajas), 1 alta a 38 h y 1 `CLOSE_COURT` a 38 h.
+
+**Lectura.** La regla del SQL dice: si se confirma y el p90 pasa las 24 h, es un arreglo tardío y no limpieza → prender igual con 150 y corregir con "Reactivar". Los datos agregan un matiz: hay un grupo chico de correcciones a ~3 h (gente que se anota o se baja apenas termina el partido). Con **240 min (4 h)** se cubren esas y los votos igual se abren la misma noche (un partido de las 19 h se finaliza a las 23 h, contra ~38 h de hoy). Lo que queda después de las 4 h, desde el 27/6, es 1 corrección real en ~57 partidos: se resuelve con "Reactivar".
+
+**Recomendación:** `AUTO_FINALIZE_ENABLED=true` y `AUTO_FINALIZE_AFTER_MINUTES=240` en Railway. A las 2 semanas medir: % de `FINALIZE_EVENT` con `source='auto'`, cuántos `REOPEN_EVENT` sobre finalizados (hoy 0) y el % que vota entre los que tienen opt-in (hoy 32%). Si las reaperturas pasan de 1 por semana, subir a 360. Todo esto es de antes de la 0a: con bajas propias, el patrón post-partido puede cambiar.
+
 ### 9.6 Cuidado al leer
 
 - **Todo es de antes de la 0a.** Se deployó el 17/10 y ese mismo día hubo un fix por 500 en prod (la 020). Todavía no hay evidencia de que la espera funcione ni de que los jugadores usen la baja propia, y el gate de la 0a (una semana sin 500 ni 403 en bajas) no se cumplió. Nada de "lo arregla la 0a" hasta medirlo en 1-2 semanas. Verificar `is_nullable = YES` en prod.
