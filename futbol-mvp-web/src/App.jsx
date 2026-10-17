@@ -6,6 +6,7 @@ import AuthFlowCard, { InstallPwaButton } from "./features/auth/AuthFlowCard.jsx
 import { can, canAccessAdmin } from "./permissions/can.js";
 import AttributeRadar from "./components/AttributeRadar.jsx";
 import { handleAuthFailure } from "./authSession.js";
+import ConfirmSheet from "./design/ui/ConfirmSheet.jsx";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -77,6 +78,28 @@ function fmtStart(startsAt) {
   } catch {
     return String(startsAt);
   }
+}
+
+// El backend manda "2026-10-21 21:00:00+00:00"; Safari viejo no parsea el espacio.
+function parseTs(value) {
+  const t = new Date(String(value || "").replace(" ", "T")).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+// El partido que abre la Home: el próximo (desde hace 3 h en adelante) o, si no
+// hay ninguno, el más reciente.
+function pickNextEvent(evts) {
+  const cutoff = Date.now() - 3 * 60 * 60 * 1000;
+  const withTs = evts.map((e) => ({ e, t: parseTs(e.starts_at) }));
+  const upcoming = withTs.filter((x) => x.t !== null && x.t >= cutoff).sort((a, b) => a.t - b.t);
+  if (upcoming.length > 0) return upcoming[0].e;
+  const past = withTs.filter((x) => x.t !== null).sort((a, b) => b.t - a.t);
+  return (past[0] || withTs[0])?.e || null;
+}
+
+function shortName(name = "") {
+  const n = String(name || "").trim();
+  return n.length > 20 ? `${n.slice(0, 20)}…` : n;
 }
 
 function initials(name = "") {
@@ -437,9 +460,12 @@ function AvatarSlot({ player, canRegister, courtId, isFirstEmpty, isAdmin, dragR
       <button
         {...(isFirstEmpty ? { "data-testid": `court-register-${courtId}` } : {})}
         onClick={() => { navigator.vibrate?.(30); onRegisterSelf(courtId, true); }}
-        className="aspect-square w-full rounded-full border-2 border-dashed border-white/20 hover:border-emerald-400/50 hover:bg-emerald-400/5 transition-colors"
-        title="Anotarme"
-      />
+        className="aspect-square w-full rounded-full border-2 border-dashed border-white/20 hover:border-emerald-400/50 hover:bg-emerald-400/5 transition-colors flex flex-col items-center justify-center leading-none text-white/45"
+        aria-label="Libre · Anotarme acá"
+      >
+        <span className="text-base font-semibold">+</span>
+        <span className="mt-0.5 text-[10px] font-semibold">Libre</span>
+      </button>
     );
   }
 
@@ -490,7 +516,10 @@ function BottomSheet({ open, onClose, children }) {
 }
 
 // ── Court card (spatial layout) ────────────────────────────────────────────
-function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel, onMove, onPlayerClick, isAdmin, dragRef }) {
+function CourtCard({
+  court, courts, busy, eventStatus, onRegisterSelf, onCancel, onMove, onPlayerClick,
+  isAdmin, dragRef, viewerId, viewerRegistered,
+}) {
   const pct = court.capacity > 0 ? Math.round((court.occupied / court.capacity) * 100) : 0;
   const canRegister = eventStatus === "OPEN" && court.is_open;
   const [dragOver, setDragOver] = useState(false);
@@ -554,10 +583,27 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
         onPlayerClick={onPlayerClick}
       />
 
-      {/* ── Compact player list (E2E testids + admin controls) ── */}
+      {canRegister && court.available > 0 && !viewerRegistered && (
+        <button
+          type="button"
+          data-testid={`court-register-cta-${court.court_id}`}
+          onClick={() => { navigator.vibrate?.(30); onRegisterSelf(court.court_id, true); }}
+          className="mt-3 w-full rounded-2xl border-2 border-dashed border-emerald-400/40 bg-emerald-400/5 px-4 py-2.5 text-sm font-semibold text-emerald-200 transition-colors hover:bg-emerald-400/10"
+        >
+          Libre · Anotarme acá
+        </button>
+      )}
+
+      {/* ── Compact player list (E2E testids + controles según quién mira) ── */}
       {court.players.length > 0 && (
         <div className="mt-3 space-y-1.5">
-          {court.players.map((p) => (
+          {court.players.map((p) => {
+            // isAdmin = puede gestionar esta cancha (registrations.manage o capitán).
+            const isMe = !!viewerId && p.type === "USER" && p.user_id === viewerId;
+            const isMyGuest = !!viewerId && p.type === "GUEST" && p.created_by_user_id === viewerId;
+            const canRemove = isMe || isMyGuest || isAdmin;
+            const canMoveHere = isAdmin && courts.length > 1;
+            return (
             <div
               key={p.registration_id}
               data-testid={`player-row-${p.registration_id}`}
@@ -581,36 +627,40 @@ function CourtCard({ court, courts, busy, eventStatus, onRegisterSelf, onCancel,
                   />
                 )}
               </div>
-              <select
-                disabled={busy}
-                defaultValue=""
-                data-testid={`player-move-select-${p.registration_id}`}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  const toCourtId = e.target.value;
-                  if (toCourtId) onMove(p.registration_id, toCourtId);
-                  e.target.value = "";
-                }}
-                className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[10px] text-white/60 max-w-[76px] disabled:opacity-40 focus:outline-none"
-                title="Mover"
-              >
-                <option value="">Mover…</option>
-                {courts.filter((x) => x.court_id !== court.court_id).map((x) => (
-                  <option key={x.court_id} value={x.court_id}>{x.name}</option>
-                ))}
-              </select>
-              <button
-                disabled={busy}
-                data-testid={`player-cancel-${p.registration_id}`}
-                onClick={(e) => { e.stopPropagation(); onCancel(p.registration_id); }}
-                className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-[10px] font-semibold text-white/60 hover:bg-white/10 disabled:opacity-40"
-                title="Baja"
-              >
-                Baja
-              </button>
+              {canMoveHere && (
+                <select
+                  disabled={busy}
+                  defaultValue=""
+                  data-testid={`player-move-select-${p.registration_id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    const toCourtId = e.target.value;
+                    if (toCourtId) onMove(p.registration_id, toCourtId);
+                    e.target.value = "";
+                  }}
+                  className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-white/70 max-w-[110px] disabled:opacity-40 focus:outline-none"
+                  title="Mover"
+                >
+                  <option value="">Mover…</option>
+                  {courts.filter((x) => x.court_id !== court.court_id).map((x) => (
+                    <option key={x.court_id} value={x.court_id}>{x.name}</option>
+                  ))}
+                </select>
+              )}
+              {canRemove && (
+                <button
+                  disabled={busy}
+                  data-testid={`player-cancel-${p.registration_id}`}
+                  onClick={(e) => { e.stopPropagation(); onCancel(p, { court, isMe }); }}
+                  className="shrink-0 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs font-semibold text-white/70 hover:bg-white/10 disabled:opacity-40"
+                >
+                  {isMe ? "No puedo ir" : "Quitar"}
+                </button>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -685,6 +735,9 @@ export default function App() {
   const [permissions, setPermissions] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const canManageReg = can(permissions, "registrations.manage");
+  const [appConfig, setAppConfig] = useState(null);
+  // Baja pendiente de confirmar: { reg, court, isMe, inWaitlist }
+  const [pendingCancel, setPendingCancel] = useState(null);
 
   // Multi-event support
   const [openEvents, setOpenEvents] = useState([]);
@@ -925,7 +978,7 @@ export default function App() {
       // Determine which event to load:
       // 1. Explicit override passed to function
       // 2. URL query param (?event_id=...)
-      // 3. First event from fresh list (most common case on refresh)
+      // 3. Current selection if still listed, else the next match (pickNextEvent)
       // 4. Fall back to nothing
       let targetId = null;
       if (typeof eventIdOverride === "string" && eventIdOverride) {
@@ -937,7 +990,7 @@ export default function App() {
       if (!targetId && evts.length > 0) {
         // Check if current selectedEventId is still in the list
         const currentStillExists = selectedEventId && evts.some(e => e.id === selectedEventId);
-        targetId = currentStillExists ? selectedEventId : evts[0].id;
+        targetId = currentStillExists ? selectedEventId : pickNextEvent(evts)?.id;
       }
       if (targetId) {
         await loadEventDetail(targetId);
@@ -984,6 +1037,16 @@ export default function App() {
       }
     }
     fetchCurrentUser();
+  }, [canUse]);
+
+  // Flags públicas (tope de invitados, etc.)
+  useEffect(() => {
+    if (!canUse) return;
+    let alive = true;
+    apiFetch("/config")
+      .then((c) => { if (alive) setAppConfig(c); })
+      .catch(() => { if (alive) setAppConfig(null); });
+    return () => { alive = false; };
   }, [canUse]);
 
   // Fetch notifications (informative + pending ratings)
@@ -1086,15 +1149,42 @@ export default function App() {
 
     setErr("");
     try {
-      await apiFetch(`/events/${data.event.id}/register`, {
+      const r = await apiFetch(`/events/${data.event.id}/register`, {
         method: "POST",
         body: { court_id: courtId },
       });
-      setToast({ kind: "success", title: "Anotado", text: "Tu inscripción fue registrada." });
+      const courtName = data.courts.find((c) => c.court_id === courtId)?.name;
+      setToast(
+        r?.status === "WAITLIST"
+          ? { kind: "info", title: "En espera", text: `Te anotamos en espera (puesto ${r.waitlist_position || "?"}).` }
+          : { kind: "success", title: "¡Adentro!", text: courtName ? `Estás en ${courtName}.` : "Tu lugar quedó confirmado." }
+      );
       await load();
     } catch (e) {
       await load(); // revert optimistic state
       setErr(e.message);
+    }
+  }
+
+  // Partido completo: el alta a una cancha llena y abierta queda en WAITLIST.
+  async function joinWaitlist(courtId) {
+    setErr("");
+    setBusy(true);
+    try {
+      const r = await apiFetch(`/events/${data.event.id}/register`, {
+        method: "POST",
+        body: { court_id: courtId },
+      });
+      setToast(
+        r?.status === "WAITLIST"
+          ? { kind: "info", title: "En espera", text: `Te anotamos en espera (puesto ${r.waitlist_position || "?"}).` }
+          : { kind: "success", title: "¡Adentro!", text: "Justo se liberó un lugar y quedaste confirmado." }
+      );
+      await load();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1116,18 +1206,28 @@ export default function App() {
     }
   }
 
-  async function cancelReg(registrationId) {
+  async function cancelReg(registrationId, successText = "Se dio de baja la inscripción.") {
     setErr("");
     setBusy(true);
     try {
       await apiFetch(`/registrations/${registrationId}/cancel`, { method: "POST" });
-      setToast({ kind: "success", title: "Listo", text: "Se dio de baja la inscripción." });
+      setToast({ kind: "success", title: "Listo", text: successText });
       await load();
     } catch (e) {
       setErr(e.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function confirmPendingCancel() {
+    const pc = pendingCancel;
+    if (!pc) return;
+    const text = pc.isMe
+      ? (pc.inWaitlist ? "Saliste de la lista de espera." : "Liberaste tu lugar.")
+      : `Sacaste a ${shortName(pc.reg.name)}.`;
+    await cancelReg(pc.reg.registration_id, text);
+    setPendingCancel(null);
   }
 
   async function moveReg(registrationId, toCourtId) {
@@ -1265,6 +1365,25 @@ export default function App() {
   const courts = data?.courts || [];
   const totalCap = courts.reduce((a, c) => a + (c.capacity || 0), 0);
   const totalOcc = courts.reduce((a, c) => a + (c.occupied || 0), 0);
+  const waitlist = data?.waitlist || [];
+  const viewer = data?.viewer || {};
+  // currentUser.id es el uuid; actorUserId es el token de sesión.
+  const viewerId = currentUser?.id ? String(currentUser.id) : "";
+  const canManageCourt = (courtId) =>
+    canManageReg || !!viewer.is_event_captain || (viewer.captain_court_ids || []).includes(courtId);
+  const myCourtReg = viewerId
+    ? courts.some((c) => c.players.some((p) => p.type === "USER" && p.user_id === viewerId))
+    : false;
+  const myWaitIndex = viewerId ? waitlist.findIndex((w) => w.type === "USER" && w.user_id === viewerId) : -1;
+  const viewerRegistered = myCourtReg || myWaitIndex >= 0;
+  const openCourts = courts.filter((c) => c.is_open);
+  const canJoinWaitlist =
+    event?.status === "OPEN" && !viewerRegistered && openCourts.length > 0 && openCourts.every((c) => c.available <= 0);
+  const guestLimit = appConfig?.guestLimitPerUser ?? 5;
+  const myGuestCount = viewerId
+    ? courts.reduce((n, c) => n + c.players.filter((p) => p.type === "GUEST" && p.created_by_user_id === viewerId).length, 0)
+    : 0;
+  const guestLimitReached = !canManageReg && myGuestCount >= guestLimit;
   const selectedCardData = selectedPlayer
     ? playerCardsByCourt[selectedPlayer.court_id]?.cardsByRegistration?.[selectedPlayer.registration_id] || null
     : null;
@@ -1434,7 +1553,7 @@ export default function App() {
         {pendingRatingsCount > 0 && (
           <Banner kind="warn" title="Votos pendientes">
             Tenés {pendingRatingsCount} voto{pendingRatingsCount !== 1 ? "s" : ""} pendiente{pendingRatingsCount !== 1 ? "s" : ""}.{" "}
-            <a href="/ratings/pending-ui" className="underline font-semibold">Votar ahora</a>
+            <Link to="/ratings/pending-ui" className="underline font-semibold">Votar ahora</Link>
           </Banner>
         )}
 
@@ -1536,20 +1655,88 @@ export default function App() {
                   busy={busy}
                   eventStatus={event.status}
                   onRegisterSelf={(courtId) => setConfirmCourtId(courtId)}
-                  onCancel={cancelReg}
+                  onCancel={(reg, { court, isMe }) => setPendingCancel({ reg, court, isMe, inWaitlist: false })}
                   onMove={moveReg}
                   onPlayerClick={handleOpenPlayerCard}
-                  isAdmin={canManageReg}
+                  isAdmin={canManageCourt(c.court_id)}
                   dragRef={dragRef}
+                  viewerId={viewerId}
+                  viewerRegistered={viewerRegistered}
                 />
               ))}
             </div>
+
+            {(waitlist.length > 0 || canJoinWaitlist) && (
+              <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/10" data-testid="waitlist-section">
+                <div className="text-base font-semibold">
+                  Lista de espera{waitlist.length > 0 ? ` (${waitlist.length})` : ""}
+                </div>
+
+                {canJoinWaitlist && (
+                  <div className="mt-3">
+                    <div className="text-sm text-white/70">Partido completo ({totalOcc}/{totalCap}).</div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => joinWaitlist(openCourts[0].court_id)}
+                      data-testid="waitlist-join-btn"
+                      className="mt-3 w-full rounded-2xl bg-white px-4 py-3 text-base font-semibold text-black hover:bg-white/90 disabled:opacity-40"
+                    >
+                      Anotarme en espera
+                    </button>
+                  </div>
+                )}
+
+                {myWaitIndex >= 0 && (
+                  <div className="mt-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100" data-testid="waitlist-my-position">
+                    Estás {myWaitIndex + 1}.º en la espera. Entrás solo si alguien se baja.
+                  </div>
+                )}
+
+                {waitlist.length > 0 && (
+                  <ol className="mt-3 space-y-1.5">
+                    {waitlist.map((w, i) => {
+                      const isMe = !!viewerId && w.type === "USER" && w.user_id === viewerId;
+                      return (
+                        <li
+                          key={w.registration_id}
+                          data-testid={`waitlist-row-${w.registration_id}`}
+                          className="flex items-center gap-2 rounded-xl border border-white/5 bg-black/10 px-2.5 py-1.5"
+                        >
+                          <span className="w-7 shrink-0 text-xs text-white/40">{i + 1}.º</span>
+                          <span className="flex-1 truncate text-sm text-white/80">
+                            {w.name}{isMe ? " (vos)" : ""}
+                          </span>
+                          {(isMe || canManageReg) && (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              data-testid={`waitlist-cancel-${w.registration_id}`}
+                              onClick={() => setPendingCancel({ reg: w, court: null, isMe, inWaitlist: true })}
+                              className="shrink-0 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs font-semibold text-white/70 hover:bg-white/10 disabled:opacity-40"
+                            >
+                              {isMe ? "Salir de la espera" : "Quitar"}
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </div>
+            )}
 
             {event.status === "OPEN" && (
               <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-xl shadow-black/10">
                 <div>
                   <div className="text-base font-semibold">Anotar invitado</div>
-                  <div className="mt-1 text-sm text-white/60">Máximo 5 invitados por actor. Sin sobrecupo.</div>
+                  <div className="mt-1 text-sm text-white/60" data-testid="guest-limit-hint">
+                    {canManageReg
+                      ? "Sin sobrecupo."
+                      : guestLimitReached
+                        ? `Llegaste al máximo de ${guestLimit} invitados para este partido.`
+                        : `Podés sumar hasta ${guestLimit} invitados. Te quedan ${guestLimit - myGuestCount}.`}
+                  </div>
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -1561,7 +1748,7 @@ export default function App() {
                       placeholder="Ej: Franco"
                       data-testid="guest-name-input"
                       className={cn(
-                        "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
+                        "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-base text-white",
                         "placeholder:text-white/30",
                         "focus:outline-none focus:ring-2 focus:ring-white/20"
                       )}
@@ -1575,7 +1762,7 @@ export default function App() {
                       onChange={(e) => setSelectedCourtId(e.target.value)}
                       data-testid="guest-court-select"
                       className={cn(
-                        "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white",
+                        "mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-base text-white",
                         "focus:outline-none focus:ring-2 focus:ring-white/20"
                       )}
                     >
@@ -1589,7 +1776,7 @@ export default function App() {
 
                   <div className="md:col-span-1 md:flex md:items-end">
                     <button
-                      disabled={busy || guestName.trim().length < 2}
+                      disabled={busy || guestName.trim().length < 2 || guestLimitReached}
                       onClick={registerGuest}
                       data-testid="guest-submit-btn"
                       className={cn(
@@ -1620,6 +1807,53 @@ export default function App() {
       selectedPlayer={selectedPlayer}
       cardData={selectedCardData}
     />
+
+    {/* Confirmar baja (propia, de un invitado o de otro jugador) */}
+    {(() => {
+      const pc = pendingCancel;
+      if (!pc) return null;
+      const name = shortName(pc.reg.name);
+      const next = waitlist.find((w) => w.registration_id !== pc.reg.registration_id);
+      const takesIt = !pc.inWaitlist && next && pc.court?.is_open ? shortName(next.name) : "";
+      let title, body, confirmLabel, cancelLabel;
+      if (pc.isMe && pc.inWaitlist) {
+        title = "¿Salís de la lista de espera?";
+        body = "Si después querés volver, entrás al final.";
+        confirmLabel = "Sí, salir";
+        cancelLabel = "Me quedo";
+      } else if (pc.isMe) {
+        title = "¿Liberás tu lugar?";
+        body = takesIt
+          ? `Lo toma ${takesIt}, que está primero en la espera. Si después querés volver, entrás al final.`
+          : "Tu lugar queda libre para otro.";
+        confirmLabel = "Sí, liberar mi lugar";
+        cancelLabel = "Me quedo";
+      } else if (pc.inWaitlist) {
+        title = `¿Sacás a ${name} de la lista de espera?`;
+        body = "";
+        confirmLabel = "Sí, sacar";
+        cancelLabel = "Cancelar";
+      } else {
+        title = `¿Sacás a ${name} del partido?`;
+        body = takesIt ? `Su lugar lo toma ${takesIt}, que está primero en la espera.` : "Su lugar queda libre.";
+        confirmLabel = "Sí, sacar";
+        cancelLabel = "Cancelar";
+      }
+      return (
+        <ConfirmSheet
+          open
+          title={title}
+          confirmLabel={confirmLabel}
+          cancelLabel={cancelLabel}
+          tone={pc.isMe ? "default" : "danger"}
+          busy={busy}
+          onConfirm={confirmPendingCancel}
+          onCancel={() => setPendingCancel(null)}
+        >
+          {body}
+        </ConfirmSheet>
+      );
+    })()}
 
     {/* Confirm registration modal */}
     {(() => {

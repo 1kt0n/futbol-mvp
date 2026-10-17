@@ -24,7 +24,7 @@ from app.utils.event_access_token import issue_event_grant, verify_event_grant
 from app.utils.security import verify_event_password, gen_management_token, hash_management_token
 from app.utils.contact_crypto import encrypt_contact, decrypt_contact, contact_fingerprint
 from app.utils.ratelimit import rate_limit, client_ip
-from app.routers.events import check_and_auto_close_court, promote_first_waitlist
+from app.routers.events import audit_court_full_if_filled, check_and_auto_close_court, promote_first_waitlist
 
 router = APIRouter()
 
@@ -349,6 +349,10 @@ def register_external(
             "target_registration_id": reg["id"],
             "metadata": json.dumps({"status": status}),
         })
+
+        if status == "CONFIRMED":
+            audit_court_full_if_filled(conn, event_id, body.court_id, occupied + 1, court["capacity"],
+                                       None, source="external")
 
         waitlist_position = None
         if status == "WAITLIST":

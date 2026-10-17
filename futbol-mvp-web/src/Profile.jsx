@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AttributeRadar from "./components/AttributeRadar.jsx";
-import { handleAuthFailure } from "./authSession.js";
+import { clearSession, handleAuthFailure } from "./authSession.js";
+import ConfirmSheet from "./design/ui/ConfirmSheet.jsx";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -133,6 +134,7 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const [user, setUser] = useState(null);
   const [roles, setRoles] = useState([]);
@@ -585,7 +587,27 @@ export default function Profile() {
           </div>
         )}
 
+        <button
+          type="button"
+          onClick={() => setConfirmLogout(true)}
+          data-testid="profile-logout-btn"
+          className="mt-6 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-base font-semibold text-white/80 hover:bg-white/10"
+        >
+          Cerrar sesión
+        </button>
       </div>
+
+      <ConfirmSheet
+        open={confirmLogout}
+        title="¿Cerrás sesión en este teléfono?"
+        confirmLabel="Cerrar sesión"
+        cancelLabel="Cancelar"
+        onConfirm={() => {
+          clearSession();
+          window.location.assign("/");
+        }}
+        onCancel={() => setConfirmLogout(false)}
+      />
     </div>
   );
 }

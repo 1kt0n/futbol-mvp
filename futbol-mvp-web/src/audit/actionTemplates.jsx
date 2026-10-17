@@ -164,6 +164,15 @@ const TEMPLATES = {
       </>
     ),
   },
+  COURT_FULL: {
+    icon: "🟢", tone: "system",
+    render: (log) => (
+      <>
+        Se llenó la cancha{" "}
+        <span className={ital()}>{log.context.court_name || "—"}</span>
+      </>
+    ),
+  },
 
   // ============ INSCRIPCION ============
   REGISTER_USER: {

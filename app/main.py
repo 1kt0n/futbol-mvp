@@ -17,6 +17,8 @@ from app.settings import (
     EVENT_PASSWORDS_ENABLED,
     EXTERNAL_REGISTRATION_ENABLED,
     ACCOUNT_APPROVAL_ENABLED,
+    AUTO_CLOSE_ON_FULL,
+    GUEST_LIMIT_PER_USER,
 )
 from app.utils.auth_token import verify_token
 from app.utils.ratelimit import client_ip
@@ -125,6 +127,8 @@ def app_config():
         "eventPasswordsEnabled": EVENT_PASSWORDS_ENABLED,
         "externalRegistrationEnabled": EXTERNAL_REGISTRATION_ENABLED,
         "accountApprovalEnabled": ACCOUNT_APPROVAL_ENABLED,
+        "autoCloseOnFull": AUTO_CLOSE_ON_FULL,
+        "guestLimitPerUser": GUEST_LIMIT_PER_USER,
     }
 
 

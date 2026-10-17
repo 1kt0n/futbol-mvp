@@ -22,6 +22,7 @@ from app.schemas import (
 )
 from app.utils.datetime_parser import parse_client_datetime
 from app.utils.permissions import require_permission
+from app.routers.events import fill_from_waitlist
 from app.utils.security import (
     gen_share_code,
     gen_salt,
@@ -841,10 +842,20 @@ def update_court(
         """), {
             "event_id": event_id,
             "actor_user_id": actor_user_id,
-            "metadata": json.dumps(changes)
+            "metadata": json.dumps({**changes, "court_id": court_id})
         })
 
-    return {"court_id": court_id, "message": "Cancha actualizada exitosamente.", "changes": changes}
+        # Más cupo o cancha reabierta: entra gente de la lista de espera.
+        promoted = []
+        if body.capacity is not None or body.is_open is True:
+            promoted = fill_from_waitlist(conn, event_id, court_id, actor_user_id, source="auto_from_court_update")
+
+    return {
+        "court_id": court_id,
+        "message": "Cancha actualizada exitosamente.",
+        "changes": changes,
+        "promoted_registration_ids": [str(x) for x in promoted],
+    }
 
 
 @router.delete("/events/{event_id}/courts/{court_id}")
@@ -1112,10 +1123,14 @@ def open_court(
             "metadata": f'{{"court_id": "{court_id}"}}'
         })
 
+        # Si quedó lugar, entra gente de la lista de espera.
+        promoted = fill_from_waitlist(conn, event_id, court_id, actor_user_id, source="auto_from_open_court")
+
     return {
         "event_id": event_id,
         "court_id": court_id,
         "is_open": True,
+        "promoted_registration_ids": [str(x) for x in promoted],
         "message": "Cancha abierta exitosamente."
     }
 

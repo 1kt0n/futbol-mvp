@@ -37,7 +37,7 @@ export default function AdminCreateMenu({ open, onClose, onCreateAnnouncement })
 
           <button
             onClick={() => {
-              navigate("/admin?focus=calendar");
+              navigate("/admin?focus=eventos&create=1");
               onClose?.();
             }}
             className="flex items-start gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-left hover:bg-emerald-500/20"

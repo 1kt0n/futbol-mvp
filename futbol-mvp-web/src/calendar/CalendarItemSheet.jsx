@@ -44,7 +44,7 @@ export default function CalendarItemSheet({ item, onClose, onAfterAction }) {
 
   async function handleUnregister() {
     if (!registrationId) return;
-    if (!window.confirm("¿Cancelar tu lugar?")) return;
+    if (!window.confirm("¿Liberás tu lugar? Si después querés volver, entrás al final.")) return;
     try {
       await apiFetch(`/registrations/${registrationId}/cancel`, { method: "POST" });
       onAfterAction?.();

@@ -74,9 +74,9 @@ function StarRating({ value, onChange, disabled }) {
           <div key={star} className="relative cursor-pointer select-none">
             <div
               className="absolute inset-y-0 left-0 z-10 w-1/2"
-              onMouseEnter={() => !disabled && setHover(star - 0.5)}
+              onMouseEnter={() => !disabled && setHover(Math.max(1, star - 0.5))}
               onMouseLeave={() => setHover(null)}
-              onClick={() => !disabled && onChange(star - 0.5)}
+              onClick={() => !disabled && onChange(Math.max(1, star - 0.5))}
             />
             <div
               className="absolute inset-y-0 right-0 z-10 w-1/2"

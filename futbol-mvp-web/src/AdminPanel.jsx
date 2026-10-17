@@ -113,10 +113,21 @@ export default function AdminPanel() {
 
         setPermissions(perms)
 
-        // Tab inicial: respetar ?focus=calendar si puede; si no, la primera visible.
-        const focus = new URLSearchParams(window.location.search).get('focus')
+        // Tab inicial: respetar ?focus=calendar|eventos si puede; si no, la primera visible.
+        // ?create=1 (el "+" del Calendario) abre además el alta de evento.
+        const params = new URLSearchParams(window.location.search)
+        const focus = params.get('focus')
         if (focus === 'calendar' && can(perms, 'calendar.view')) {
           setTab('calendario')
+          return
+        }
+        if (focus === 'eventos' && can(perms, 'events.view')) {
+          setTab('eventos')
+          if (params.get('create') === '1' && can(perms, 'events.create')) {
+            setShowCreateEvent(true)
+            // Que recargar la página no vuelva a abrir el formulario.
+            window.history.replaceState(window.history.state, '', window.location.pathname)
+          }
           return
         }
         const firstVisible = ADMIN_TABS.find((t) => can(perms, t.perm))
@@ -129,15 +140,19 @@ export default function AdminPanel() {
     checkAccess()
   }, [])
 
-  // Load lista de eventos (admin)
-  async function loadEvents() {
+  // Load lista de eventos (admin). preferEventId (p. ej. el recién creado) gana
+  // sobre ?event_id y sobre la selección actual.
+  async function loadEvents({ preferEventId } = {}) {
     setBusy(true)
     try {
       const data = await apiFetch('/admin/events')
       setEventsList(data.events || [])
       const urlEventId = new URLSearchParams(window.location.search).get('event_id') || null
       // Si no hay evento seleccionado, seleccionar el primero
-      if (urlEventId) {
+      if (preferEventId) {
+        setSelectedEventId(preferEventId)
+        await loadEventDetail(preferEventId)
+      } else if (urlEventId) {
         setSelectedEventId(urlEventId)
         await loadEventDetail(urlEventId)
       } else if (!selectedEventId && data.events?.length > 0) {
@@ -199,13 +214,14 @@ export default function AdminPanel() {
         starts_at: localDateTimeToIso(formData.starts_at),
         close_at: localDateTimeToIso(formData.close_at),
       }
-      await apiFetch('/admin/events', {
+      const created = await apiFetch('/admin/events', {
         method: 'POST',
         body: payload
       })
       setToast('Evento creado exitosamente')
       setShowCreateEvent(false)
-      await loadEvents()
+      // El evento nuevo queda seleccionado: "+ Crear Cancha" va a él y no al anterior.
+      await loadEvents({ preferEventId: created?.event_id })
     } catch (err) {
       setErr(err.message)
     } finally {

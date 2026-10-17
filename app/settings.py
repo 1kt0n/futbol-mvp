@@ -43,6 +43,22 @@ EVENT_PASSWORDS_ENABLED = _flag("EVENT_PASSWORDS_ENABLED")
 # Reservados para fases futuras (se definen ya, pero no se usan en 0+1):
 EXTERNAL_REGISTRATION_ENABLED = _flag("EXTERNAL_REGISTRATION_ENABLED")  # Iteración 2
 ACCOUNT_APPROVAL_ENABLED = _flag("ACCOUNT_APPROVAL_ENABLED")  # Iteración 3
+# Rediseño UX 0a: con false (default) una cancha llena queda abierta y el alta
+# siguiente va a la lista de espera. true = comportamiento viejo (cierra la
+# cancha y, si todas están llenas, el evento); sirve de rollback.
+AUTO_CLOSE_ON_FULL = _flag("AUTO_CLOSE_ON_FULL")
+
+
+def _int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        value = default
+    return max(value, minimum)
+
+
+# Invitados por jugador y por partido. Quien tiene registrations.manage no tiene tope.
+GUEST_LIMIT_PER_USER = _int("GUEST_LIMIT_PER_USER", 5)
 
 # CORS: configurable via env var (comma-separated) o defaults para desarrollo
 _cors_env = os.getenv("CORS_ORIGINS", "")

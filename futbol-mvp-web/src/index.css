@@ -52,18 +52,40 @@ textarea {
   font-family: inherit;
 }
 
-@supports (padding: max(0px)) {
-  body {
-    padding-bottom: env(safe-area-inset-bottom);
+/* iOS hace zoom al enfocar un campo de menos de 16px. En pantallas táctiles los
+   campos chicos suben a 16px; la segunda regla le gana por especificidad a
+   .text-xs/.text-sm/.text-[Npx] y no achica los campos más grandes. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+  :is(input, select, textarea):is(.text-xs, .text-sm, [class*="text-[1"]) {
+    font-size: 16px;
   }
 }
 
+/* Con viewport-fit=cover, env(safe-area-inset-*) deja de valer 0 en iOS. */
+@supports (padding: max(0px)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Solo opacidad. Un transform en el wrapper (aunque sea durante la animación, o
+   congelado en una pestaña en segundo plano) hace que todo position:fixed adentro
+   se ubique respecto del wrapper y no del viewport: modales fuera de pantalla,
+   FAB que no flota, campana encimada. Regla: los wrappers de ruta nunca animan
+   transform. backwards (no both): al terminar no queda nada aplicado. */
 @keyframes page-enter {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 .page-enter {
-  animation: page-enter 0.22s ease-out both;
+  animation: page-enter 0.22s ease-out backwards;
 }
 
 /* ── Shimmer skeleton ─────────────────────────────────── */
