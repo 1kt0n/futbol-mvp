@@ -1249,3 +1249,106 @@ select date_trunc('week', cuando at time zone 'America/Argentina/Buenos_Aires'):
 from actividad
 group by 1
 order by 1 desc;
+
+
+
+-- ============================================================
+-- SEGUIMIENTO · ¿Funciona lo que se deployó desde el 17/10? (una sola fila)
+-- ============================================================
+-- Para qué: medir de una vez las iteraciones en producción (0a, 0c, 0d y la
+--   barra). Correrla a las 2 semanas (31/10) y después una vez por mes.
+--   Cambiá la fecha de "desde" si querés otra ventana.
+-- Qué mira y qué esperamos:
+--   - bajas_propias_pct: % de bajas de socios hechas por el propio jugador
+--     (0a). Antes del 17/10 era ~29% y casi todas de admins que juegan. Meta: >50%.
+--   - promociones: PROMOTE_WAITLIST (la espera promueve sola). Antes: 7 en toda
+--     la historia. Meta: >0 por semana cuando hay partidos llenos.
+--   - auto_cierres: AUTO_CLOSE_COURT/EVENT. Con AUTO_CLOSE_ON_FULL apagado: 0.
+--   - finalize_auto_pct y mediana_h_finalizacion: auto-finalizar (0c, 240 min).
+--     Meta: >=90% automáticas y mediana < 5 h (antes 37,9 h).
+--   - reabiertos_tras_finalizar: correcciones que necesitaron "Reactivar".
+--     Si pasa de 1 por semana, subir AUTO_FINALIZE_AFTER_MINUTES a 360.
+--   - votaron_pct_optin: % de participaciones con opt-in que votaron (antes 32%).
+--   - repetir_pct: % de CREATE_EVENT hechos con "Repetir" (0d). Meta: >=60%.
+--   - sort_repetido / pseudo_canchas: canchas nuevas con orden repetido (debe
+--     ser 0) o con nombre de espera/equipo (debería tender a 0).
+--   - qn_mediana: escrituras del organizador por partido jugado (QN v2: sin
+--     invitados, sin acciones automáticas y sin sus propias altas/bajas).
+--     Base provisoria: 8. Meta tras la iter 2: < 5.
+with params as (select timestamptz '2026-10-17 00:00-03' as desde),
+bajas as (
+  select count(*) as total,
+         count(*) filter (where a.actor_user_id = r.user_id) as propias
+  from public.event_audit_log a
+  join public.event_registrations r on r.id = a.target_registration_id
+  where a.action = 'CANCEL_REGISTRATION' and r.registration_type = 'USER'
+    and a.created_at >= (select desde from params)
+),
+fin as (
+  select e.id, e.starts_at, e.finalized_at,
+         exists (select 1 from public.event_audit_log a
+                 where a.event_id = e.id and a.action = 'FINALIZE_EVENT'
+                   and a.metadata->>'source' = 'auto') as auto
+  from public.events e
+  where e.status = 'FINALIZED' and e.finalized_at >= (select desde from params)
+),
+votos as (
+  select count(*) as participaciones_optin,
+         count(*) filter (where exists (select 1 from public.player_ratings pr
+                                        where pr.event_id = r.event_id and pr.voter_user_id = r.user_id)) as votaron
+  from public.event_registrations r
+  join public.users u on u.id = r.user_id and u.ranking_opt_in
+  where r.event_id in (select id from fin)
+    and r.status = 'CONFIRMED' and r.registration_type = 'USER'
+),
+org as (
+  select distinct ur.user_id
+  from public.user_roles ur join public.roles ro on ro.id = ur.role_id
+  where ro.code in ('admin', 'super_admin', 'captain', 'gestion_eventos')
+),
+qn as (
+  select e.id, count(a.id) as n
+  from public.events e
+  left join public.event_audit_log a
+    on a.event_id = e.id
+   and a.actor_user_id in (select user_id from org)
+   and a.action not in ('REGISTER_GUEST', 'AUTO_CLOSE_COURT', 'AUTO_CLOSE_EVENT',
+                        'COURT_FULL', 'PROMOTE_WAITLIST')
+   and not (a.action in ('REGISTER_USER', 'CANCEL_REGISTRATION')
+            and a.target_registration_id in (select id from public.event_registrations
+                                             where user_id = a.actor_user_id))
+  where e.starts_at >= (select desde from params) and e.starts_at < now()
+  group by e.id
+)
+select json_build_object(
+  'desde', (select desde from params),
+  'bajas_total', (select total from bajas),
+  'bajas_propias_pct', (select round(100.0 * propias / nullif(total, 0), 1) from bajas),
+  'promociones', (select count(*) from public.event_audit_log
+                  where action = 'PROMOTE_WAITLIST' and created_at >= (select desde from params)),
+  'auto_cierres', (select count(*) from public.event_audit_log
+                   where action in ('AUTO_CLOSE_COURT', 'AUTO_CLOSE_EVENT') and created_at >= (select desde from params)),
+  'canchas_llenas', (select count(*) from public.event_audit_log
+                     where action = 'COURT_FULL' and created_at >= (select desde from params)),
+  'finalizados', (select count(*) from fin),
+  'finalize_auto_pct', (select round(100.0 * count(*) filter (where auto) / nullif(count(*), 0), 1) from fin),
+  'mediana_h_finalizacion', (select round((percentile_cont(0.5) within group (
+                               order by extract(epoch from finalized_at - starts_at) / 3600))::numeric, 1) from fin),
+  'reabiertos_tras_finalizar', (select count(*) from public.event_audit_log
+                                where action = 'REOPEN_EVENT' and metadata->>'previous_status' = 'FINALIZED'
+                                  and created_at >= (select desde from params)),
+  'votaron_pct_optin', (select round(100.0 * votaron / nullif(participaciones_optin, 0), 1) from votos),
+  'repetir_pct', (select round(100.0 * count(*) filter (where metadata->>'source' = 'quick_repeat') / nullif(count(*), 0), 1)
+                  from public.event_audit_log
+                  where action = 'CREATE_EVENT' and created_at >= (select desde from params)),
+  'sort_repetido', (select count(*) from (
+                      select event_id from public.event_courts
+                      where created_at >= (select desde from params)
+                      group by 1 having count(distinct sort_order) < count(*)) x),
+  'pseudo_canchas', (select count(*) from public.event_courts
+                     where created_at >= (select desde from params)
+                       and lower(name) ~ '(espera|suplente|reserva|banco|equipo|blanco|negro|pechera)'),
+  'qn_partidos', (select count(*) from qn),
+  'qn_mediana', (select percentile_cont(0.5) within group (order by n) from qn)
+);
+

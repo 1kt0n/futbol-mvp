@@ -922,6 +922,8 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 ### 8.4 Roadmap
 
 > **Reordenado el 17/10/2026** con los datos de producción (sección 9). Las filas con \* están condicionadas: entran solo si se cumple su gate.
+>
+> **Estado al 17/10/2026:** en producción 0a, 0c (auto-finalizar a 240 min) y 0d; la **barra inferior de la 1b se adelantó** a pedido del organizador (sin esperar medición), así que la 1a se monta adentro del shell que ya existe. Detalle y verificación en [`estado.md`](estado.md).
 
 **Métrica norte:**
 
@@ -1151,17 +1153,9 @@ Cuidados al leer los resultados:
 
 ## 11. Pendientes y próximos pasos
 
-| # | Paso | Quién | Resultado esperado |
-|---|---|---|---|
-| 1 | Correr `docs/ux/consultas-comportamiento.sql` en la consola Postgres de Railway (solo lectura) | Organizador | Resultados de Q0, H1-H12 y Q-N pegados en la conversación |
-| 2 | Actualizar la tabla de hipótesis (sección 10) con confirmada / refutada y el número que lo decidió | Nosotros | Columna nueva "Resultado" en la tabla |
-| 3 | Reordenar el roadmap (sección 8.4) según los datos: H11 → Suspender a la iter 2; H6 → orden 3a/3b; H1 → serie sí o no; H7 → auto-finalize en la 2 o la 4 | Nosotros | Roadmap y prototipo alineados |
-| 4 | Resolver Q0 (índice único en `event_registrations`) | Nosotros, con el resultado de Q0 | Decisión: índice parcial nuevo o reemplazo en fase contract |
-| 5 | Escribir el plan de la **iteración 0a** (hotfix de bajas, espera, CSS de raíz y Home al próximo partido) con el mismo formato que `docs/event-access-iteracion-0-1-plan.md` | Nosotros | Plan aprobado antes de tocar código |
-| 6 | Arrancar la iteración 0a | Nosotros | Métricas de la fila 0a de la sección 8.4 |
+El estado actualizado (qué está en producción, cómo se verificó, qué medir el 31/10 y qué sigue) vive en **[`estado.md`](estado.md)**. Resumen al 17/10/2026:
 
-Pendientes abiertos:
-
+- En producción: 0a, migración 020, 0c (auto-finalizar a 240 min), 1b (barra inferior, adelantada a pedido del organizador) y 0d (Repetir por franja).
+- Próximo: 0b → 1a → 2 → 3b-1. Condicionadas: 3a, 5, 3b-2 y 4.
 - La tabla de toques (sección 5.1) y el prototipo clickeable tienen que seguir coincidiendo número por número: si los datos cambian un flujo, se actualizan los dos.
 - El copy de la sección 7 está pensado para un grupo que habla en masculino genérico; cada momento trae una variante neutra para cuando haga falta.
-- Extra detectado en la verificación, fuera del alcance de este rediseño pero barato de arreglar en 0a: la media estrella de votos manda 0,5 y el backend la rechaza (`RatingsPending.jsx:79` vs `app/schemas.py:173`).
