@@ -805,15 +805,15 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 
 | Iter | Endpoints / lógica | Migración | Flags |
 |---|---|---|---|
-| **Baseline** | Sin cambios de código. Se corren Q0 y H1-H12 sobre el histórico | **`020_audit_indexes.sql`**, con `CREATE INDEX CONCURRENTLY IF NOT EXISTS` (fuera de transacción): `event_audit_log(event_id, created_at)`, `(action, created_at)`, `(target_registration_id)`; `events(status, starts_at)` | — |
+| **Baseline** | Sin cambios de código. Se corren Q0 y H1-H12 sobre el histórico | **`021_audit_indexes.sql`**, con `CREATE INDEX CONCURRENTLY IF NOT EXISTS` (fuera de transacción): `event_audit_log(event_id, created_at)`, `(action, created_at)`, `(target_registration_id)`; `events(status, starts_at)` | — |
 | **0a** | Ver el detalle abajo | Ninguna (salvo el índice parcial opcional) | `AUTO_CLOSE_ON_FULL` (default **false**). B1 es un bug fix: sin flag |
 | **0b** | Ninguno (frontend) | — | — |
 | **1** | Ver el detalle abajo | — | `NAV_SHELL_ENABLED` (en `/config`), `MATCH_SCREEN_ENABLED` (por rol: admins primero), `ONE_TAP_REGISTER_ENABLED` |
-| **2** | Ver el detalle abajo | **`021_ux_partido.sql`** (ver abajo) | `QUICK_MATCH_ENABLED`, `AUTO_FINALIZE_ENABLED`, `AUTO_FINALIZE_AFTER_MINUTES=150`, `TARGETED_NOTIFICATIONS_ENABLED` |
+| **2** | Ver el detalle abajo | **`022_ux_partido.sql`** (ver abajo) | `QUICK_MATCH_ENABLED`, `AUTO_FINALIZE_ENABLED`, `AUTO_FINALIZE_AFTER_MINUTES=150`, `TARGETED_NOTIFICATIONS_ENABLED` |
 | **3a** | `PUT /admin/events/{id}/lineup` (ver abajo) | — | `TEAM_BUILDER_ENABLED` |
-| **3b** | Ver el detalle abajo | **`022_equipos_resultado.sql`** (ver abajo) | `TEAM_SPLIT_ENABLED` |
-| **4** | Ver el detalle abajo | — (usa 021 y 022) | `EVENT_CANCEL_ENABLED`, `RESULTS_ENABLED` |
-| **5\*** | Ver el detalle abajo | **`023_event_series.sql`** (ver abajo) | `EVENT_SERIES_ENABLED` |
+| **3b** | Ver el detalle abajo | **`023_equipos_resultado.sql`** (ver abajo) | `TEAM_SPLIT_ENABLED` |
+| **4** | Ver el detalle abajo | — (usa 022 y 023) | `EVENT_CANCEL_ENABLED`, `RESULTS_ENABLED` |
+| **5\*** | Ver el detalle abajo | **`024_event_series.sql`** (ver abajo) | `EVENT_SERIES_ENABLED` |
 
 **Iteración 0a**
 
@@ -853,13 +853,13 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 - `GET /me/recent-guests?limit=6` (últimos 90 días).
 - **`finalize_due_events(conn)`:**
   - `pg_try_advisory_xact_lock` + `UPDATE … SET status='FINALIZED', finalized_at=now() WHERE status IN ('OPEN','CLOSED') AND starts_at < now() - interval RETURNING id`.
-  - Audita `FINALIZE_EVENT` con `{source:'auto'}` y actor NULL.
+  - Audita `FINALIZE_EVENT` con `{source:'auto'}` y actor NULL. Requiere `020_audit_actor_nullable.sql`: sin ella, prod tiene `actor_user_id` NOT NULL.
   - Se llama de forma lazy en `/events/open`, `/events/active`, `/ratings/pending` y `/notifications`.
   - Opcional: `POST /internal/tick` con secreto, para un cron de Railway.
 - `POST /ratings` registra `SUBMIT_RATINGS {count, court_id, source:'batch'}`.
 - `GET /notifications` filtra: `(audience_event_id IS NULL AND audience_user_id IS NULL) OR audience_user_id=actor OR EXISTS(inscripción no cancelada del actor en audience_event_id)`. `kind` sigue siendo `'INFO'`.
 
-**Migración `021_ux_partido.sql`** (todo nullable, se corre una sola vez):
+**Migración `022_ux_partido.sql`** (todo nullable, se corre una sola vez):
 
 - `events`: `duplicated_from_event_id`, `cancelled_at`, `cancelled_reason`.
 - `notifications`: `audience_event_id`, `audience_user_id`, con índices parciales.
@@ -883,7 +883,7 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 - `PUT lineup` suma `team_side`, `is_goalkeeper` y `publish`. Con `publish`, aviso dirigido "Equipos listos".
 - `PATCH /me {prefers_goalkeeper}`.
 
-**Migración `022_equipos_resultado.sql`:**
+**Migración `023_equipos_resultado.sql`:**
 
 - `event_registrations`: `team_side` (CHECK A/B, NULL), `is_goalkeeper` (default false).
 - `events`: `teams_published_at`.
@@ -905,7 +905,7 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 - `ensure_due()` (bajo advisory lock) materializa reutilizando el servicio de duplicate, con `ON CONFLICT DO NOTHING`. Avisa al organizador "Se publicó, ¿avisás al grupo?".
 - Fijos v2 (miembros REGULAR + `DECLINED`) **solo si H3 lo confirma**.
 
-**Migración `023_event_series.sql`:**
+**Migración `024_event_series.sql`:**
 
 - Tabla `event_series`: title, weekday, start_time, tz, location, `court_template jsonb`, plantilla de acceso, `publish_days_before=3`, `publish_time`, `finalize_after_minutes`, `is_active`.
 - `events`: `series_id`, `occurrence_date`, con **UNIQUE(series_id, occurrence_date)**.
@@ -926,19 +926,19 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 
 | Iter (estimado, 1 dev) | Qué entra | Riesgos → mitigación | Métrica de éxito (audit log) | Gate para la siguiente |
 |---|---|---|---|---|
-| **Baseline** (2-3 días) | 020 con índices; Q0 + H1-H12 sobre 3-6 meses de histórico (no hace falta esperar semanas) | Consultas pesadas → los índices de 020 | Línea de base guardada por semana | Q0 resuelto (índice único) |
+| **Baseline** (2-3 días) | 021 con índices; Q0 + H1-H12 sobre 3-6 meses de histórico (no hace falta esperar semanas) | Consultas pesadas → los índices de 021 | Línea de base guardada por semana | Q0 resuelto (índice único) |
 | **0a · Hotfix** (3-4 días) | **Frontend:** `fill-mode backwards`, `viewport-fit`, inputs de 16px; ocultar Baja/Mover sin permiso; label "Libre"; Home al **próximo** partido (orden ASC); autoselección del evento creado; FAB → crear en Eventos; `<Link>` a votos; logout en el avatar; confirmación al quitar a un jugador. **Backend:** B1, `AUTO_CLOSE_ON_FULL=false` + data-fix, re-anotarse por UPDATE, límite de invitados unificado, borrar mi invitado | Un jugador que saca a otro → el check es estricto por `user_id` / `created_by` y hay tests | `CANCEL_REGISTRATION` con actor = target pasa de ~0 a >50% de las bajas; `PROMOTE_WAITLIST` >0; `AUTO_CLOSE_COURT`=0 y aparece `COURT_FULL` | Una semana sin 500 ni 403 en bajas |
 | **0b · Overlays** (1-1.5 sem) | Primitivas; migración de **todos** los modales (AdminPanel, toasts, sheets y FAB del Calendario, PlayerCard, los 3 sin max-h); tokens de z; `cn` unificado; Playwright WebKit iPhone 14 + test de boundingBox + axe; guarda en CI | Regresiones visuales en Torneos y Admin → screenshots e2e en las dos engines | Tests de overlay en verde en WebKit y Chromium; el organizador confirma que los menús no se cortan | Cero overlays fuera de la primitiva |
 | **1 · Shell + Partido** (2 sem) | AppShell, tab bar por rol, `/p/:id` (jugador + chips Compartir y Anotar), "Me anoto" de 1 toque, espera visible, Avisos inbox, Perfil con logout, Gestión hub con URL y Pendientes, `?sheet=`, redirects, `X-UI-Source` | Convivencia con la Home vieja → rollback por `NAV_SHELL_ENABLED`; rollout admins → todos. Altas accidentales → Deshacer | ≥60% de `REGISTER_USER` con `source='one_tap'`; **altas accidentales** (baja propia <2 min después de anotarse) <3%; baja el lead time de `CREATE_EVENT` al primer `REGISTER_USER`; baja el tiempo de resolución de pendientes; ≥90% de escrituras con `ui='shell'` | Dos semanas estables; se borra la Home vieja (contract) |
-| **2 · Ciclo semanal** (1.5-2 sem) | 021; Repetir + Compartir automático; `/crear`; compartir para socios; anotar a un socio; invitados recientes; **auto-finalize**; votar en lote + `SUBMIT_RATINGS` + opt-in inline; Terminados en Gestión; filtro de avisos dirigidos | Se copia una clave vieja → la nota "misma clave" con [Cambiar]. Finalize prematuro → 150 min + "Volver a abrir" | ≥70% de partidos con `source='quick_repeat'`; duración del setup <60 s; `DELETE_COURT` <10 min después de `CREATE_COURT` → 0; ≥90% de finalizaciones automáticas; mediana `finalized_at − starts_at` <3 h; sube el % que vota; baja el tiempo de finalize al primer voto | H6 decide el orden 3a/3b |
+| **2 · Ciclo semanal** (1.5-2 sem) | 022; Repetir + Compartir automático; `/crear`; compartir para socios; anotar a un socio; invitados recientes; **auto-finalize**; votar en lote + `SUBMIT_RATINGS` + opt-in inline; Terminados en Gestión; filtro de avisos dirigidos | Se copia una clave vieja → la nota "misma clave" con [Cambiar]. Finalize prematuro → 150 min + "Volver a abrir" | ≥70% de partidos con `source='quick_repeat'`; duración del setup <60 s; `DELETE_COURT` <10 min después de `CREATE_COURT` → 0; ≥90% de finalizaciones automáticas; mediana `finalized_at − starts_at` <3 h; sube el % que vota; baja el tiempo de finalize al primer voto | H6 decide el orden 3a/3b |
 | **3a · Armar (canchas)** (1 sem) | Sheet Armar equipos, tap-tap, `PUT lineup` atómico, capitanes funcionando | Conflictos de edición → 409 + recarga | Ráfagas de ≥3 `MOVE_REGISTRATION` / `OPEN_COURT` / `CLOSE_COURT` del mismo actor en 10 min → 1 `SAVE_LINEUP` (−80%); bajan los moves por partido | — |
-| **3b · Claro/Oscuro** (1.5 sem) | 022, balanceador + tests, arquero, juntar/separar, publicar + aviso | Desconfianza del score → fallback a nivel, candados, ajuste manual | ≥60% de partidos con `teams_published_at`; cambios manuales después de `suggest` ≤3 por cancha (proxy de confianza) | — |
+| **3b · Claro/Oscuro** (1.5 sem) | 023, balanceador + tests, arquero, juntar/separar, publicar + aviso | Desconfianza del score → fallback a nivel, candados, ajuste manual | ≥60% de partidos con `teams_published_at`; cambios manuales después de `suggest` ≤3 por cancha (proxy de confianza) | — |
 | **4 · Avisos y cierre** (1.5 sem) | Suspender, reactivar, editar con aviso, aviso de promoción, resultado | Aviso a la gente equivocada → preview "Llega a N" | Avisos globales usados como "se suspende" → 0; `CANCEL_EVENT` por mes visible; % de canchas con resultado | — |
-| **5\* · Partido fijo** (2 sem) | 023; serie que solo publica; skip de feriados; tick opcional | Materialización sin tráfico → cron `/internal/tick`; zona horaria → `tz` explícita | % de partidos con `series_id`; escrituras del organizador ≤2 por partido; time-to-fill (`COURT_FULL` − publicación) estable o menor | Solo si H1 se confirma y ≥70% usan Repetir; fijos v2 solo si H3 se confirma |
+| **5\* · Partido fijo** (2 sem) | 024; serie que solo publica; skip de feriados; tick opcional | Materialización sin tráfico → cron `/internal/tick`; zona horaria → `tz` explícita | % de partidos con `series_id`; escrituras del organizador ≤2 por partido; time-to-fill (`COURT_FULL` − publicación) estable o menor | Solo si H1 se confirma y ≥70% usan Repetir; fijos v2 solo si H3 se confirma |
 
 Los datos reordenan el roadmap:
 
-- **Si H11 muestra una o más suspensiones por mes, "Suspender" se adelanta a la iter 2.** Las dependencias lo permiten porque usa la migración 021.
+- **Si H11 muestra una o más suspensiones por mes, "Suspender" se adelanta a la iter 2.** Las dependencias lo permiten porque usa la migración 022.
 - Si H6 muestra pocos movimientos, 3b va antes que 3a.
 
 ### 8.5 Qué NO hacemos
