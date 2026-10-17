@@ -9,6 +9,7 @@ from app.schemas import CreateNotificationRequest
 from app.utils.permissions import require_permission
 from app.utils.ratelimit import rate_limit
 from app.routers.ratings import get_pending_ratings
+from app.utils.auto_finalize import auto_finalize_if_due
 
 router = APIRouter()
 admin_router = APIRouter()
@@ -29,6 +30,7 @@ def get_notifications(
     - Informativas (persistidas) no descartadas y no vencidas.
     - Dinamica de votos pendientes.
     """
+    auto_finalize_if_due()
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT

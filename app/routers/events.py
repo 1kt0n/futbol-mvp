@@ -11,6 +11,7 @@ from app.schemas import RegisterRequest, GuestRequest, MoveRequest, PlayerCardsR
 from app.utils.permissions import get_effective_permissions
 from app.utils.scoring import score_payload, attribute_profile, MIN_DISTINCT_VOTERS, RECENCY_DECAY_PER_DAY
 from app.utils.ratelimit import rate_limit, client_ip
+from app.utils.auto_finalize import auto_finalize_if_due
 
 router = APIRouter()
 
@@ -263,6 +264,7 @@ def list_open_events(actor_user_id: str = Depends(get_actor_user_id)):
     Devuelve la lista de todos los eventos OPEN o CLOSED (sin FINALIZED), en
     orden cronológico. Solo metadata básica, sin detalle de canchas/jugadores.
     """
+    auto_finalize_if_due()
     with engine.connect() as conn:
         rows = conn.execute(text("""
             select id, title, starts_at, location_name, status, close_at
@@ -298,6 +300,7 @@ def get_active_event(
     o, si no hay ninguno, el más reciente.
     No incluye eventos FINALIZED.
     """
+    auto_finalize_if_due()
     with engine.connect() as conn:
         if event_id:
             event = conn.execute(text("""
@@ -326,7 +329,7 @@ def get_active_event(
             select id, name, capacity, is_open, sort_order
             from public.event_courts
             where event_id = :event_id
-            order by sort_order asc
+            order by sort_order asc, created_at asc, id asc
         """), {"event_id": event_id}).mappings().all()
 
         confirmed = conn.execute(text("""

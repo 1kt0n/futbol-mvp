@@ -60,6 +60,13 @@ def _int(name: str, default: int, minimum: int = 1) -> int:
 # Invitados por jugador y por partido. Quien tiene registrations.manage no tiene tope.
 GUEST_LIMIT_PER_USER = _int("GUEST_LIMIT_PER_USER", 5)
 
+# Rediseño UX 0c: finalizar solo los partidos ya jugados (app/utils/auto_finalize.py).
+# Apagado hasta medir la limpieza post-partido (consulta LIMPIEZA en
+# docs/ux/consultas-comportamiento.sql). El mínimo de 60 evita que un typo
+# finalice un partido en juego.
+AUTO_FINALIZE_ENABLED = _flag("AUTO_FINALIZE_ENABLED")
+AUTO_FINALIZE_AFTER_MINUTES = _int("AUTO_FINALIZE_AFTER_MINUTES", 150, minimum=60)
+
 # CORS: configurable via env var (comma-separated) o defaults para desarrollo
 _cors_env = os.getenv("CORS_ORIGINS", "")
 if _cors_env.strip():

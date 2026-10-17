@@ -750,8 +750,17 @@ def create_court(
         """), {
             "event_id": event_id,
             "actor_user_id": actor_user_id,
-            "metadata": f'{{"court_name": "{body.name}", "capacity": {body.capacity}}}'
+            "metadata": json.dumps({
+                "court_id": str(court["id"]),
+                "court_name": body.name,
+                "capacity": body.capacity,
+            })
         })
+
+        # Si nace abierta, entra gente de la lista de espera (como al abrir una cancha o subir el cupo).
+        promoted = []
+        if court["is_open"]:
+            promoted = fill_from_waitlist(conn, event_id, court["id"], actor_user_id, source="auto_from_create_court")
 
         return {
             "court_id": str(court["id"]),
@@ -759,6 +768,7 @@ def create_court(
             "capacity": court["capacity"],
             "is_open": court["is_open"],
             "sort_order": court["sort_order"],
+            "promoted_registration_ids": [str(x) for x in promoted],
             "message": f"Cancha '{court['name']}' creada exitosamente."
         }
 
@@ -1213,7 +1223,7 @@ def get_event_detail(
             SELECT id, name, capacity, is_open, sort_order
             FROM public.event_courts
             WHERE event_id = :event_id
-            ORDER BY sort_order ASC
+            ORDER BY sort_order ASC, created_at ASC, id ASC
         """), {"event_id": event_id}).mappings().all()
 
         confirmed = conn.execute(text("""

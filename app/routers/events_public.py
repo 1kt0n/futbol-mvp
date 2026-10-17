@@ -64,8 +64,8 @@ def _courts_availability(conn, event_id) -> list[dict]:
         FROM public.event_courts ec
         LEFT JOIN public.event_registrations er ON er.court_id = ec.id
         WHERE ec.event_id = :event_id
-        GROUP BY ec.id, ec.name, ec.capacity, ec.is_open, ec.sort_order
-        ORDER BY ec.sort_order ASC
+        GROUP BY ec.id, ec.name, ec.capacity, ec.is_open, ec.sort_order, ec.created_at
+        ORDER BY ec.sort_order ASC, ec.created_at ASC, ec.id ASC
     """), {"event_id": event_id}).mappings().all()
     out = []
     for c in rows:

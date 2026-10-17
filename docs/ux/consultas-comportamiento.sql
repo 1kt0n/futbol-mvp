@@ -559,6 +559,143 @@ order by 1;
 
 
 -- ============================================================
+-- LIMPIEZA · ¿Se corrige el roster entre el partido y la finalización?
+-- ============================================================
+-- Pregunta: cuántas escrituras de roster (moves, bajas, altas, canchas nuevas o
+--   editadas) hay entre el inicio del partido y su FINALIZE_EVENT. Con la 0c
+--   (AUTO_FINALIZE_ENABLED) el partido se finaliza solo a starts_at + 150 min y,
+--   una vez finalizado, no se puede mover ni dar de baja a nadie: lo que hoy se
+--   corrige después de ese punto pasaría a necesitar "Reactivar". Decide si se
+--   prende el flag y con cuántos minutos.
+-- Cómo leerlo:
+--   (a) Resumen sobre los finalizados de los últimos 6 meses ya jugados:
+--       - pct_con_limpieza: partidos con alguna escritura después del inicio.
+--       - pct_despues_de_150: con alguna escritura después de inicio + 150 min.
+--         Es la cifra que decide.
+--       - moves, bajas y canchas nuevas en la ventana.
+--       - mediana y p90 de la última escritura, contada desde el inicio.
+--       - reabiertos_tras_finalizar y con_escrituras_tras_finalizar: correcciones
+--         que ya hoy necesitan reabrir un partido finalizado.
+--   (b) Detalle por partido con limpieza, lo más tardío arriba.
+--   La ventana termina en el primer FINALIZE_EVENT después del inicio (si no
+--   hay, en finalized_at, que en los eventos viejos se rellenó con updated_at).
+--   No cuentan las acciones automáticas (PROMOTE_WAITLIST, COURT_FULL, AUTO_*)
+--   ni CLOSE_EVENT / REOPEN_EVENT / FINALIZE_EVENT, que son el cierre en sí.
+--   Si AUTO_FINALIZE_AFTER_MINUTES no es 150, cambiá el '150 minutes'.
+-- Confirma si (hay limpieza que el auto-finalize cortaría): pct_despues_de_150 ≥ 10.
+-- Si se refuta (< 10): prender AUTO_FINALIZE_ENABLED=true con los 150 min por defecto.
+--   Si se confirma: AUTO_FINALIZE_AFTER_MINUTES ≈ p90_ultima_escritura (mínimo
+--   150). Si ese p90 pasa las 24 h, es un arreglo tardío y no limpieza: prender
+--   igual con 150 y corregir con "Reactivar" (el reloj vuelve a correr desde la
+--   reapertura).
+
+-- LIMPIEZA (a) resumen
+with fin as (
+  select e.id as event_id, e.starts_at,
+         coalesce(min(a.created_at) filter (where a.action = 'FINALIZE_EVENT'
+                                              and a.created_at > e.starts_at),
+                  e.finalized_at) as fin_at
+  from public.events e
+  left join public.event_audit_log a on a.event_id = e.id
+  where e.status = 'FINALIZED'
+    and e.starts_at > now() - interval '6 months'
+    and e.starts_at < now()
+  -- AND e.created_at >= '2026-06-27'
+  group by e.id, e.starts_at, e.finalized_at
+),
+w as (
+  select f.event_id, a.action, a.created_at, a.created_at < f.fin_at as antes_de_finalizar
+  from fin f
+  join public.event_audit_log a on a.event_id = f.event_id
+  where a.created_at > f.starts_at
+    and a.action in ('MOVE_REGISTRATION', 'CANCEL_REGISTRATION', 'CANCEL_EXTERNAL',
+                     'REGISTER_USER', 'REGISTER_GUEST', 'REGISTER_EXTERNAL',
+                     'CREATE_COURT', 'UPDATE_COURT', 'DELETE_COURT', 'OPEN_COURT',
+                     'CLOSE_COURT', 'UPDATE_EVENT')
+),
+por_partido as (
+  select f.event_id,
+         count(w.action) filter (where w.antes_de_finalizar) as escrituras,
+         count(w.action) filter (where w.antes_de_finalizar
+                                   and w.action = 'MOVE_REGISTRATION') as moves,
+         count(w.action) filter (where w.antes_de_finalizar
+                                   and w.action in ('CANCEL_REGISTRATION', 'CANCEL_EXTERNAL')) as bajas,
+         count(w.action) filter (where w.antes_de_finalizar
+                                   and w.action = 'CREATE_COURT') as canchas_nuevas,
+         count(w.action) filter (where w.antes_de_finalizar
+                                   and w.created_at > f.starts_at + interval '150 minutes') as despues_de_150,
+         count(w.action) filter (where not w.antes_de_finalizar) as tras_finalizar,
+         max(w.created_at) filter (where w.antes_de_finalizar) - f.starts_at as ultima_escritura
+  from fin f
+  left join w on w.event_id = f.event_id
+  where f.fin_at > f.starts_at
+  group by f.event_id, f.starts_at
+),
+reaperturas as (
+  select count(distinct a.event_id) as n
+  from fin f
+  join public.event_audit_log a on a.event_id = f.event_id
+  where a.action = 'REOPEN_EVENT'
+    and a.metadata->>'previous_status' = 'FINALIZED'
+)
+select count(*) as partidos_finalizados,
+       count(*) filter (where escrituras > 0) as con_limpieza,
+       round(100.0 * count(*) filter (where escrituras > 0) / nullif(count(*), 0), 1) as pct_con_limpieza,
+       count(*) filter (where despues_de_150 > 0) as con_limpieza_despues_de_150,
+       round(100.0 * count(*) filter (where despues_de_150 > 0) / nullif(count(*), 0), 1) as pct_despues_de_150,
+       sum(escrituras) as escrituras,
+       sum(moves) as moves,
+       sum(bajas) as bajas,
+       sum(canchas_nuevas) as canchas_nuevas,
+       percentile_cont(0.5) within group (order by ultima_escritura) as mediana_ultima_escritura,
+       percentile_cont(0.9) within group (order by ultima_escritura) as p90_ultima_escritura,
+       (select n from reaperturas) as reabiertos_tras_finalizar,
+       count(*) filter (where tras_finalizar > 0) as con_escrituras_tras_finalizar
+from por_partido;
+
+-- LIMPIEZA (b) detalle por partido
+with fin as (
+  select e.id as event_id, e.starts_at,
+         coalesce(min(a.created_at) filter (where a.action = 'FINALIZE_EVENT'
+                                              and a.created_at > e.starts_at),
+                  e.finalized_at) as fin_at
+  from public.events e
+  left join public.event_audit_log a on a.event_id = e.id
+  where e.status = 'FINALIZED'
+    and e.starts_at > now() - interval '6 months'
+    and e.starts_at < now()
+  -- AND e.created_at >= '2026-06-27'
+  group by e.id, e.starts_at, e.finalized_at
+),
+w as (
+  select f.event_id, a.action, a.created_at, a.created_at < f.fin_at as antes_de_finalizar
+  from fin f
+  join public.event_audit_log a on a.event_id = f.event_id
+  where a.created_at > f.starts_at
+    and a.action in ('MOVE_REGISTRATION', 'CANCEL_REGISTRATION', 'CANCEL_EXTERNAL',
+                     'REGISTER_USER', 'REGISTER_GUEST', 'REGISTER_EXTERNAL',
+                     'CREATE_COURT', 'UPDATE_COURT', 'DELETE_COURT', 'OPEN_COURT',
+                     'CLOSE_COURT', 'UPDATE_EVENT')
+)
+select f.event_id,
+       to_char(f.starts_at at time zone 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD HH24:MI') as cuando,
+       f.fin_at - f.starts_at as finalizado_tras,
+       count(w.action) filter (where w.antes_de_finalizar) as escrituras,
+       count(w.action) filter (where w.antes_de_finalizar
+                                 and w.created_at > f.starts_at + interval '150 minutes') as despues_de_150,
+       count(w.action) filter (where not w.antes_de_finalizar) as tras_finalizar,
+       max(w.created_at) filter (where w.antes_de_finalizar) - f.starts_at as ultima_escritura,
+       string_agg(distinct w.action, ', ') as acciones
+from fin f
+left join w on w.event_id = f.event_id
+where f.fin_at > f.starts_at
+group by f.event_id, f.starts_at, f.fin_at
+having count(w.action) > 0
+order by despues_de_150 desc, escrituras desc, f.starts_at desc;
+
+
+
+-- ============================================================
 -- H8 · ¿Pocos votan por el opt-in y no por el costo de votar?
 -- ============================================================
 -- Pregunta: entre los que jugaron partidos finalizados en los últimos 3 meses,

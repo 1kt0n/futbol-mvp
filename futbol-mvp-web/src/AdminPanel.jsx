@@ -678,6 +678,7 @@ export default function AdminPanel() {
           <CreateCourtForm
             onSubmit={(data) => handleCreateCourt(selectedEventId, data)}
             busy={busy}
+            defaultSortOrder={nextCourtSortOrder(activeEvent?.courts)}
             testIdPrefix="create-court"
             submitLabel="Crear Cancha"
           />
@@ -1968,11 +1969,16 @@ function EventForm({
   )
 }
 
-function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Crear Cancha', testIdPrefix = 'court-form' }) {
+// La cancha nueva va al final: max(sort_order) + 1, así no se repite el orden.
+function nextCourtSortOrder(courts) {
+  return Math.max(0, ...(courts || []).map(c => Number(c.sort_order) || 0)) + 1
+}
+
+function CreateCourtForm({ onSubmit, busy, initialData = null, defaultSortOrder = 1, submitLabel = 'Crear Cancha', testIdPrefix = 'court-form' }) {
   const [formData, setFormData] = useState({
     name: '',
     capacity: 10,
-    sort_order: 1,
+    sort_order: defaultSortOrder,
     is_open: true
   })
 
@@ -1981,7 +1987,7 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Cr
       setFormData({
         name: '',
         capacity: 10,
-        sort_order: 1,
+        sort_order: defaultSortOrder,
         is_open: true
       })
       return
@@ -1993,7 +1999,7 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, submitLabel = 'Cr
       sort_order: initialData.sort_order ?? 1,
       is_open: initialData.is_open ?? true
     })
-  }, [initialData])
+  }, [initialData, defaultSortOrder])
 
   function handleSubmit(e) {
     e.preventDefault()

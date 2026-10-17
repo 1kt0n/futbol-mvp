@@ -19,6 +19,8 @@ from app.settings import (
     ACCOUNT_APPROVAL_ENABLED,
     AUTO_CLOSE_ON_FULL,
     GUEST_LIMIT_PER_USER,
+    AUTO_FINALIZE_ENABLED,
+    AUTO_FINALIZE_AFTER_MINUTES,
 )
 from app.utils.auth_token import verify_token
 from app.utils.ratelimit import client_ip
@@ -129,6 +131,8 @@ def app_config():
         "accountApprovalEnabled": ACCOUNT_APPROVAL_ENABLED,
         "autoCloseOnFull": AUTO_CLOSE_ON_FULL,
         "guestLimitPerUser": GUEST_LIMIT_PER_USER,
+        "autoFinalizeEnabled": AUTO_FINALIZE_ENABLED,
+        "autoFinalizeAfterMinutes": AUTO_FINALIZE_AFTER_MINUTES,
     }
 
 

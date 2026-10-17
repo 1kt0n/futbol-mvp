@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from app.schemas import SaveRatingsRequest
 from app.settings import engine
+from app.utils.auto_finalize import auto_finalize_if_due
 from app.utils.scoring import score_payload, RECENCY_DECAY_PER_DAY, ALL_ATTRIBUTES
 
 router = APIRouter()
@@ -94,6 +95,7 @@ def get_pending_ratings(actor_user_id: str = Depends(get_actor_user_id)):
     Incluye solo eventos FINALIZED recientes (ultimos 7 dias)
     donde el usuario estuvo CONFIRMED.
     """
+    auto_finalize_if_due()
     with engine.connect() as conn:
         actor_opt_in = _get_user_ranking_state(conn, actor_user_id)
         if not actor_opt_in:
