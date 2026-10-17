@@ -30,6 +30,7 @@ export const PANEL_PERMISSIONS = [
   "calendar.view",
   "roles.manage",
   "accounts.review",
+  "users.unlock",
 ];
 
 /** ¿Puede entrar al panel admin? */
