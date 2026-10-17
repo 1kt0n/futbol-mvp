@@ -11,7 +11,9 @@
 -- Cómo correrlo (consola Postgres de Railway o psql), DESPUÉS del deploy:
 --   a) Sección 1: solo lectura. Muestra qué se reabriría y a quién se promovería.
 --   b) Sección 2: aplica el arreglo en una transacción. Todo queda en
---      event_audit_log con metadata.source = 'data_fix' y actor NULL.
+--      event_audit_log con metadata.source = 'data_fix' y system = true. En
+--      producción actor_user_id es NOT NULL: el actor es quien creó el partido
+--      o, si el evento no lo tiene, el primer super_admin/admin.
 -- Es idempotente: una segunda corrida no cambia nada.
 
 
@@ -86,10 +88,20 @@ DECLARE
   v_event record;
   v_wait record;
   v_target record;
+  v_fallback uuid;
+  v_actor uuid;
   n_courts int := 0;
   n_events int := 0;
   n_promoted int := 0;
 BEGIN
+  -- Actor de respaldo para eventos sin created_by_user_id.
+  SELECT ur.user_id INTO v_fallback
+  FROM public.user_roles ur
+  JOIN public.roles r ON r.id = ur.role_id
+  WHERE LOWER(r.code) IN ('super_admin', 'admin')
+  ORDER BY (LOWER(r.code) = 'super_admin') DESC, ur.created_at
+  LIMIT 1;
+
   -- 1) Canchas cerradas por el sistema (y no tocadas después por una persona)
   FOR v_court IN
     WITH last_court_action AS (
@@ -100,7 +112,7 @@ BEGIN
         AND l.metadata ? 'court_id'
       ORDER BY l.metadata->>'court_id', l.created_at DESC
     )
-    SELECT c.id, c.event_id
+    SELECT c.id, c.event_id, e.created_by_user_id
     FROM public.event_courts c
     JOIN public.events e ON e.id = c.event_id
     JOIN last_court_action lca ON lca.court_id = c.id::text
@@ -115,10 +127,14 @@ BEGIN
       )
     FOR UPDATE OF c
   LOOP
+    v_actor := COALESCE(v_court.created_by_user_id, v_fallback);
+    IF v_actor IS NULL THEN
+      RAISE EXCEPTION 'reopen_auto_closed: el evento % no tiene creador y no hay ningún admin para registrar el audit', v_court.event_id;
+    END IF;
     UPDATE public.event_courts SET is_open = true, updated_at = now() WHERE id = v_court.id;
     INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
-    VALUES (v_court.event_id, NULL, 'OPEN_COURT',
-            jsonb_build_object('court_id', v_court.id::text, 'source', 'data_fix'));
+    VALUES (v_court.event_id, v_actor, 'OPEN_COURT',
+            jsonb_build_object('court_id', v_court.id::text, 'source', 'data_fix', 'system', true));
     n_courts := n_courts + 1;
   END LOOP;
 
@@ -130,7 +146,7 @@ BEGIN
       WHERE l.action IN ('AUTO_CLOSE_EVENT', 'CLOSE_EVENT', 'REOPEN_EVENT')
       ORDER BY l.event_id, l.created_at DESC
     )
-    SELECT e.id
+    SELECT e.id, e.created_by_user_id
     FROM public.events e
     JOIN last_event_action lea ON lea.event_id = e.id
     WHERE e.status = 'CLOSED'
@@ -138,10 +154,14 @@ BEGIN
       AND lea.action = 'AUTO_CLOSE_EVENT'
     FOR UPDATE OF e
   LOOP
+    v_actor := COALESCE(v_event.created_by_user_id, v_fallback);
+    IF v_actor IS NULL THEN
+      RAISE EXCEPTION 'reopen_auto_closed: el evento % no tiene creador y no hay ningún admin para registrar el audit', v_event.id;
+    END IF;
     UPDATE public.events SET status = 'OPEN', updated_at = now() WHERE id = v_event.id;
     INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
-    VALUES (v_event.id, NULL, 'REOPEN_EVENT',
-            jsonb_build_object('previous_status', 'CLOSED', 'source', 'data_fix'));
+    VALUES (v_event.id, v_actor, 'REOPEN_EVENT',
+            jsonb_build_object('previous_status', 'CLOSED', 'source', 'data_fix', 'system', true));
     n_events := n_events + 1;
   END LOOP;
 
@@ -149,10 +169,11 @@ BEGIN
   --    con lugar (sort_order), en los partidos futuros abiertos. Misma regla que
   --    promote_first_waitlist en app/routers/events.py.
   FOR v_event IN
-    SELECT e.id FROM public.events e
+    SELECT e.id, e.created_by_user_id FROM public.events e
     WHERE e.status = 'OPEN' AND e.starts_at > now()
     ORDER BY e.starts_at
   LOOP
+    v_actor := COALESCE(v_event.created_by_user_id, v_fallback);
     LOOP
       SELECT r.id INTO v_wait
       FROM public.event_registrations r
@@ -172,12 +193,15 @@ BEGIN
       LIMIT 1;
       EXIT WHEN NOT FOUND;
 
+      IF v_actor IS NULL THEN
+        RAISE EXCEPTION 'reopen_auto_closed: el evento % no tiene creador y no hay ningún admin para registrar el audit', v_event.id;
+      END IF;
       UPDATE public.event_registrations
       SET status = 'CONFIRMED', court_id = v_target.id, updated_at = now()
       WHERE id = v_wait.id;
       INSERT INTO public.event_audit_log (event_id, actor_user_id, action, target_registration_id, metadata)
-      VALUES (v_event.id, NULL, 'PROMOTE_WAITLIST', v_wait.id,
-              jsonb_build_object('source', 'data_fix'));
+      VALUES (v_event.id, v_actor, 'PROMOTE_WAITLIST', v_wait.id,
+              jsonb_build_object('source', 'data_fix', 'system', true));
       n_promoted := n_promoted + 1;
     END LOOP;
   END LOOP;
