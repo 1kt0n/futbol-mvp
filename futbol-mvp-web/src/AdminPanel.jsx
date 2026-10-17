@@ -69,14 +69,15 @@ function slotLabel(date) {
   return `${WEEKDAYS_SHORT[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`
 }
 
-// Modal genérico reutilizable
-function Modal({ isOpen, onClose, title, children }) {
+// Modal genérico reutilizable. dismissOnBackdrop=false para formularios: tocar el fondo
+// no los cierra (se perdía lo cargado); se cierran con la cruz.
+function Modal({ isOpen, onClose, title, children, dismissOnBackdrop = true }) {
   if (!isOpen) return null
 
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      onClick={onClose}
+      onClick={dismissOnBackdrop ? onClose : undefined}
     >
       <div
         className="bg-zinc-900 rounded-3xl border border-white/10 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
@@ -729,6 +730,7 @@ export default function AdminPanel() {
         <Modal
           isOpen={!!repeat}
           onClose={() => setRepeat(null)}
+          dismissOnBackdrop={!!repeat?.created}
           title={repeat?.created ? 'Compartí el partido' : 'Repetir partido'}
         >
           {repeat?.created ? (
@@ -2101,7 +2103,7 @@ function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
   const [form, setForm] = useState(() => {
     const date = nextSlotDate(event.starts_at)
     const courts = (source.courts || []).length > 0
-      ? source.courts.map((c, i) => ({ key: i, name: c.name, capacity: c.capacity }))
+      ? source.courts.slice(0, MAX_REPEAT_COURTS).map((c, i) => ({ key: i, name: c.name, capacity: c.capacity }))
       : [{ key: 0, name: 'Cancha 1', capacity: 10 }]
     return {
       date: date ? `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` : '',
@@ -2127,12 +2129,20 @@ function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
     setCourt(index, { capacity: Math.min(50, Math.max(1, current + delta)) })
   }
 
+  // "Cancha N" con un número que no esté usado (las canchas suelen ser físicas: 5, 11, 13).
+  function nextCourtName(courts) {
+    const used = new Set(courts.map((c) => c.name.trim().toLowerCase()))
+    let n = courts.length + 1
+    while (used.has(`cancha ${n}`)) n += 1
+    return `Cancha ${n}`
+  }
+
   function addCourt() {
     setForm((f) => ({
       ...f,
       courts: [...f.courts, {
         key: f.nextKey,
-        name: `Cancha ${f.courts.length + 1}`,
+        name: nextCourtName(f.courts),
         capacity: Number(f.courts[f.courts.length - 1]?.capacity) || 10,
       }],
       nextKey: f.nextKey + 1,
@@ -2172,7 +2182,15 @@ function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
   const stepClass = 'h-11 w-11 shrink-0 rounded-xl border border-white/10 bg-white/5 text-xl font-semibold hover:bg-white/10 disabled:opacity-30'
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" data-testid="quick-repeat-form">
+    <form
+      onSubmit={handleSubmit}
+      // Enter (o "Ir" en el teclado del celular) en un campo no crea el partido: solo el botón.
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.preventDefault()
+      }}
+      className="space-y-4"
+      data-testid="quick-repeat-form"
+    >
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="block text-sm font-semibold mb-2" htmlFor="quick-repeat-date">Fecha</label>
@@ -2352,6 +2370,7 @@ function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
 // Paso Compartir de "Repetir partido": el mismo mensaje de WhatsApp que "Acceso y compartir".
 function QuickRepeatShare({ created, onDone }) {
   const [copied, setCopied] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
   const access = created.access || {}
   // Solo miembros no tiene link público: va el de la app, que pide iniciar sesión.
   const url = shareUrlFromPath(access.share_path || `/?event_id=${created.event_id}`)
@@ -2363,8 +2382,10 @@ function QuickRepeatShare({ created, onDone }) {
     try {
       await navigator.clipboard.writeText(url)
       setCopied(true)
+      setCopyFailed(false)
     } catch {
       setCopied(false)
+      setCopyFailed(true)
     }
   }
 
@@ -2404,6 +2425,11 @@ function QuickRepeatShare({ created, onDone }) {
         >
           {copied ? 'Link copiado' : 'Copiar link'}
         </button>
+        {copyFailed && (
+          <p role="status" className="text-xs text-amber-200/80">
+            No se pudo copiar. Mantené apretado el link del mensaje para copiarlo.
+          </p>
+        )}
       </div>
 
       {access.password_set && (

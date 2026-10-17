@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Depends
 from app.utils.deps import get_actor_user_id
@@ -23,7 +23,7 @@ from app.schemas import (
     UpdateEventAccessRequest,
 )
 from app.utils.datetime_parser import parse_client_datetime
-from app.utils.permissions import require_permission
+from app.utils.permissions import require_permission, get_effective_permissions
 from app.routers.events import fill_from_waitlist
 from app.utils.security import (
     gen_share_code,
@@ -66,25 +66,30 @@ def _clean_description(value: str | None) -> str | None:
 
 
 def _broadcast_global_event_to_bell(conn, event_title: str) -> None:
-    """Notificacion best-effort cuando un evento se marca como GLOBAL."""
+    """Notificacion best-effort cuando un evento se marca como GLOBAL.
+
+    Va en un SAVEPOINT: si el insert falla, solo se descarta el aviso. Sin esto, la
+    transacción que lo llama quedaba abortada y se perdía el evento aunque se respondiera 200.
+    """
     try:
-        conn.execute(text("""
-            INSERT INTO public.notifications (
-                kind, title, message, action_url,
-                starts_at, expires_at, is_active, created_at, updated_at
-            )
-            VALUES (
-                'INFO',
-                'Nuevo en el calendario',
-                :message,
-                '/calendar',
-                now(),
-                now() + interval '48 hours',
-                true,
-                now(),
-                now()
-            )
-        """), {"message": event_title})
+        with conn.begin_nested():
+            conn.execute(text("""
+                INSERT INTO public.notifications (
+                    kind, title, message, action_url,
+                    starts_at, expires_at, is_active, created_at, updated_at
+                )
+                VALUES (
+                    'INFO',
+                    'Nuevo en el calendario',
+                    :message,
+                    '/calendar',
+                    now(),
+                    now() + interval '48 hours',
+                    true,
+                    now(),
+                    now()
+                )
+            """), {"message": event_title})
     except Exception:
         pass
 
@@ -188,11 +193,18 @@ def duplicate_event(
         # Lo mismo que hace falta para crear el evento y sus canchas a mano.
         require_permission(conn, actor_user_id, 'events.create')
         require_permission(conn, actor_user_id, 'courts.manage')
+        # Copiar el acceso (link, clave, externos) pide lo mismo que configurarlo a mano
+        # en PATCH /access: events.manage y el flag prendido. Si no, nace "solo miembros".
+        perms = get_effective_permissions(conn, actor_user_id)
+        can_copy_access = EVENT_ACCESS_ENABLED and ("*" in perms or "events.manage" in perms)
 
     try:
         starts_at_value = parse_client_datetime(body.starts_at, "starts_at")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    now = datetime.now(timezone.utc)
+    if starts_at_value is not None and starts_at_value <= now:
+        raise HTTPException(status_code=400, detail="La fecha del partido ya pasó. Elegí una fecha futura.")
 
     with engine.begin() as conn:
         src = conn.execute(text(f"""
@@ -215,8 +227,36 @@ def duplicate_event(
                 ORDER BY sort_order ASC, created_at ASC, id ASC
             """), {"event_id": event_id}).mappings()]
 
-        # Link nuevo solo si el modo usa link (un evento "solo miembros" nace sin share_code).
-        has_link = src["access_mode"] in ("LINK_ACCESS", "LINK_PASSWORD")
+        # Por defecto, la misma franja la próxima semana que todavía no pasó.
+        if starts_at_value is None:
+            starts_at_value = src["starts_at"] + timedelta(days=7)
+            while starts_at_value <= now:
+                starts_at_value += timedelta(days=7)
+
+        # Repetir dos veces la misma franja (doble toque, reintento tras un corte) crearía
+        # otro partido con otro link: si ya hay uno activo a esa hora en ese lugar, se avisa.
+        location_name = body.location_name or src["location_name"]
+        clash = conn.execute(text("""
+            SELECT title FROM public.events
+            WHERE starts_at = :starts_at
+              AND lower(trim(location_name)) = lower(trim(:location_name))
+              AND status IN ('OPEN', 'CLOSED')
+            LIMIT 1
+        """), {"starts_at": starts_at_value, "location_name": location_name}).mappings().first()
+        if clash:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya hay un partido para ese día y hora en {location_name}: '{clash['title']}'.",
+            )
+
+        # Acceso: se copia solo si el actor podría configurarlo a mano y los flags lo permiten.
+        # Nunca se degrada de LINK_PASSWORD a LINK_ACCESS: quedaría abierto sin clave.
+        access_mode = src["access_mode"] if can_copy_access else "MEMBERS_ONLY"
+        if access_mode == "LINK_PASSWORD" and not EVENT_PASSWORDS_ENABLED:
+            access_mode = "MEMBERS_ONLY"
+        has_link = access_mode in ("LINK_ACCESS", "LINK_PASSWORD")
+        keep_password = access_mode == "LINK_PASSWORD"
+        allow_external = bool(src["allow_external_registration"] and EXTERNAL_REGISTRATION_ENABLED and has_link)
 
         event = conn.execute(text(f"""
             INSERT INTO public.events (
@@ -235,15 +275,15 @@ def duplicate_event(
         """), {
             "title": body.title or src["title"],
             "description": src["description"],
-            "starts_at": starts_at_value or src["starts_at"] + timedelta(days=7),
-            "location_name": body.location_name or src["location_name"],
+            "starts_at": starts_at_value,
+            "location_name": location_name,
             "visibility": src["visibility"],
-            "access_mode": src["access_mode"],
-            "allow_external": src["allow_external_registration"],
+            "access_mode": access_mode,
+            "allow_external": allow_external,
             "share_code": gen_share_code() if has_link else None,
-            "password_hash": src["password_hash"],
-            "password_salt": src["password_salt"],
-            "roster": src["public_roster_visibility"],
+            "password_hash": src["password_hash"] if keep_password else None,
+            "password_salt": src["password_salt"] if keep_password else None,
+            "roster": src["public_roster_visibility"] if has_link else "NONE",
             "created_by_user_id": actor_user_id,
         }).mappings().first()
 

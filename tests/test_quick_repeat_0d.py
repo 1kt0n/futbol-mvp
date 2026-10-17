@@ -29,7 +29,7 @@ from sqlalchemy import text  # noqa: E402
 from starlette.testclient import TestClient  # noqa: E402
 
 import app.main as main  # noqa: E402
-from app.routers import events_public  # noqa: E402
+from app.routers import admin_events, events_public  # noqa: E402
 from app.settings import engine  # noqa: E402
 from app.utils.auth_token import issue_token  # noqa: E402
 from app.utils.security import gen_salt, gen_share_code, hash_event_password  # noqa: E402
@@ -78,6 +78,7 @@ class World:
         self.tag = uuid.uuid4().hex[:8]
         self.users: dict[str, str] = {}
         self.role_code = f"solo_crear_{self.tag}"
+        self.role_courts = f"crear_canchas_{self.tag}"
         self.client = TestClient(main.app)
 
     def user(self, key: str, role: str | None = None) -> str:
@@ -104,6 +105,15 @@ class World:
                 select r.id, p.id from public.roles r, public.permissions p
                 where r.code = :code and p.code in ('events.view', 'events.create')
             """), {"code": self.role_code})
+            # Puede crear eventos y canchas, pero no configurar el acceso (sin events.manage).
+            conn.execute(text("""
+                insert into public.roles (code, name) values (:code, 'Crear eventos y canchas (test 0d)')
+            """), {"code": self.role_courts})
+            conn.execute(text("""
+                insert into public.role_permissions (role_id, permission_id)
+                select r.id, p.id from public.roles r, public.permissions p
+                where r.code = :code and p.code in ('events.view', 'events.create', 'courts.manage')
+            """), {"code": self.role_courts})
 
     def source(self, *, access: str = "MEMBERS_ONLY", visibility: str = "PRIVATE",
                courts=(("Cancha 1", 10, 1, "0 minutes", True),), starts_in: str = "-2 days",
@@ -181,7 +191,8 @@ class World:
             uids = list(self.users.values())
             conn.execute(text("delete from public.user_roles where user_id = ANY(CAST(:u AS uuid[]))"), {"u": uids})
             conn.execute(text("delete from public.users where id = ANY(CAST(:u AS uuid[]))"), {"u": uids})
-            conn.execute(text("delete from public.roles where code = :c"), {"c": self.role_code})
+            conn.execute(text("delete from public.roles where code = ANY(CAST(:c AS text[]))"),
+                         {"c": [self.role_code, self.role_courts]})
 
 
 def _world() -> World:
@@ -190,6 +201,7 @@ def _world() -> World:
     w.user("org", role="admin")
     w.user("ana")
     w.user("creadora", role=w.role_code)
+    w.user("armadora", role=w.role_courts)
     return w
 
 
@@ -281,7 +293,7 @@ def db_test_default_starts_at_and_copied_courts_in_order(w: World):
 def db_test_explicit_courts_date_and_overrides(w: World):
     src = w.source(courts=(("Cancha 1", 10, 1, "0 minutes", True), ("Cancha 2", 10, 2, "0 minutes", True)))
     body = {
-        "starts_at": "2026-10-29T19:00",  # sin zona: hora argentina
+        "starts_at": "2030-10-31T19:00",  # sin zona: hora argentina (fecha lejana: tiene que ser futura)
         "title": f"Jueves 19 hs {w.tag}",
         "location_name": "Poli Cramer",
         "courts": [{"name": "Cancha 5", "capacity": 14}, {"name": "Cancha 11", "capacity": 10},
@@ -290,7 +302,7 @@ def db_test_explicit_courts_date_and_overrides(w: World):
     r = w.duplicate("org", src, body)
     assert r.status_code == 200, r.text
     row = w.event_row(r.json()["event_id"])
-    assert row["starts_at"] == datetime(2026, 10, 29, 22, 0, tzinfo=timezone.utc)
+    assert row["starts_at"] == datetime(2030, 10, 31, 22, 0, tzinfo=timezone.utc)
     assert row["title"] == body["title"] and row["location_name"] == "Poli Cramer"
     assert row["description"] == "Traer pechera clara y oscura"
     assert w.courts(r.json()["event_id"]) == [
@@ -357,7 +369,8 @@ def db_test_court_name_with_quotes(w: World):
 
     # Título con comillas: el CREATE_EVENT también se arma con json.dumps.
     title = f'Martes "20 hs" \'{w.tag}\''
-    r = w.duplicate("org", src, {"title": title})
+    later = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    r = w.duplicate("org", src, {"title": title, "starts_at": later})
     assert r.status_code == 200, r.text
     assert w.event_row(r.json()["event_id"])["title"] == title
 
@@ -375,6 +388,64 @@ def db_test_all_or_nothing(w: World):
     assert status >= 500, status
     assert len(w.tagged_events()) == before
     assert w.q("select 1 from public.events where title = :t", t=body["title"]) == []
+
+
+def db_test_access_needs_events_manage(w: World):
+    # Con events.create + courts.manage pero sin events.manage: se repite, pero sin link ni clave.
+    src = w.source(access="LINK_PASSWORD")
+    r = w.duplicate("armadora", src)
+    assert r.status_code == 200, r.text
+    row = w.event_row(r.json()["event_id"])
+    assert row["access_mode"] == "MEMBERS_ONLY" and row["share_code"] is None
+    assert row["password_hash"] is None and row["password_salt"] is None
+    assert row["allow_external_registration"] is False
+    assert r.json()["access"]["share_path"] is None
+
+
+def db_test_access_flags_off(w: World):
+    # Con el flag de acceso apagado no se copia el link; con el de claves apagado, una
+    # fuente con clave nace "solo miembros" (nunca "con link" sin clave).
+    src = w.source(access="LINK_PASSWORD")
+    admin_events.EVENT_ACCESS_ENABLED = False
+    try:
+        r = w.duplicate("org", src)
+    finally:
+        admin_events.EVENT_ACCESS_ENABLED = True
+    assert r.status_code == 200, r.text
+    assert w.event_row(r.json()["event_id"])["access_mode"] == "MEMBERS_ONLY"
+    assert r.json()["access"]["share_path"] is None
+
+    src = w.source(access="LINK_PASSWORD")
+    admin_events.EVENT_PASSWORDS_ENABLED = False
+    try:
+        r = w.duplicate("org", src)
+    finally:
+        admin_events.EVENT_PASSWORDS_ENABLED = True
+    assert r.status_code == 200, r.text
+    row = w.event_row(r.json()["event_id"])
+    assert row["access_mode"] == "MEMBERS_ONLY" and row["password_hash"] is None
+
+
+def db_test_same_slot_twice_is_409(w: World):
+    src = w.source()
+    first = w.duplicate("org", src)
+    assert first.status_code == 200, first.text
+    before = len(w.tagged_events())
+    again = w.duplicate("org", src)
+    assert again.status_code == 409 and "Ya hay un partido" in again.json()["detail"], again.text
+    assert len(w.tagged_events()) == before
+
+
+def db_test_default_skips_past_weeks_and_rejects_past(w: World):
+    # Un original de hace 20 días: la próxima franja futura es +21 días, no +7.
+    src = w.source(starts_in="-20 days")
+    r = w.duplicate("org", src)
+    assert r.status_code == 200, r.text
+    assert w.event_row(r.json()["event_id"])["starts_at"] == w.event_row(src)["starts_at"] + timedelta(days=21)
+    # Una fecha explícita en el pasado se rechaza.
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    r = w.duplicate("org", src, {"starts_at": past})
+    assert r.status_code == 400 and "ya pasó" in r.json()["detail"], r.text
 
 
 def _assert_audit_actor_nullable():
@@ -401,6 +472,10 @@ def _run_all():
         print(f"  (salteados {len(db_tests)} tests con DB: falta UX_0D_DB_TEST=1 y DATABASE_URL local)")
     else:
         _assert_audit_actor_nullable()
+        # Copiar el acceso depende de los flags (como PATCH /access): prendidos para los tests.
+        admin_events.EVENT_ACCESS_ENABLED = True
+        admin_events.EVENT_PASSWORDS_ENABLED = True
+        admin_events.EXTERNAL_REGISTRATION_ENABLED = True
         w = _world()
         try:
             with w.client:
