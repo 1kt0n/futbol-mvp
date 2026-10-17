@@ -107,6 +107,22 @@ class CreateCourtRequest(BaseModel):
     is_open: bool = Field(default=True)
 
 
+class QuickRepeatCourt(BaseModel):
+    name: str = Field(..., min_length=2, max_length=60)
+    capacity: int = Field(..., gt=0, le=50)
+
+
+class DuplicateEventRequest(BaseModel):
+    """
+    Repetir un evento (iter 0d). Todo es opcional: sin `starts_at` va a la misma franja
+    +7 días, sin `title`/`location_name` se copian, y sin `courts` se copian las del original.
+    """
+    starts_at: str | None = Field(None, description="ISO 8601 timestamp")
+    title: str | None = Field(None, min_length=3, max_length=120)
+    location_name: str | None = Field(None, min_length=2, max_length=120)
+    courts: list[QuickRepeatCourt] | None = Field(None, min_length=1, max_length=12)
+
+
 class UpdateCourtRequest(BaseModel):
     name: str | None = Field(None, min_length=2, max_length=60)
     capacity: int | None = Field(None, gt=0, le=50)

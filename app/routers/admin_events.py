@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Depends
 from app.utils.deps import get_actor_user_id
@@ -13,6 +14,7 @@ from app.settings import (
 )
 from app.schemas import (
     CreateEventRequest,
+    DuplicateEventRequest,
     UpdateEventRequest,
     CreateCourtRequest,
     UpdateCourtRequest,
@@ -167,6 +169,152 @@ def create_event(body: CreateEventRequest, actor_user_id: str = Depends(get_acto
             "visibility": event["visibility"],
             "close_at": str(event["close_at"]) if event["close_at"] else None,
             "message": f"Evento '{event['title']}' creado exitosamente con estado OPEN."
+        }
+
+
+@router.post("/events/{event_id}/duplicate")
+def duplicate_event(
+    event_id: str,
+    body: DuplicateEventRequest,
+    actor_user_id: str = Depends(get_actor_user_id),
+):
+    """
+    Repetir un evento (iter 0d). En una sola transacción crea uno nuevo en `starts_at`
+    (por defecto, la misma franja +7 días) con el mismo título, lugar, descripción,
+    visibilidad y acceso (modo, clave, externos y roster), un share_code nuevo y las
+    canchas abiertas con sort_order 1..n. Audita con source='quick_repeat'.
+    """
+    with engine.connect() as conn:
+        # Lo mismo que hace falta para crear el evento y sus canchas a mano.
+        require_permission(conn, actor_user_id, 'events.create')
+        require_permission(conn, actor_user_id, 'courts.manage')
+
+    try:
+        starts_at_value = parse_client_datetime(body.starts_at, "starts_at")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    with engine.begin() as conn:
+        src = conn.execute(text(f"""
+            SELECT id, title, description, starts_at, location_name, visibility,
+                   {_ACCESS_COLS}, password_salt
+            FROM public.events
+            WHERE id = :event_id
+        """), {"event_id": event_id}).mappings().first()
+
+        if not src:
+            raise HTTPException(status_code=404, detail="Evento no encontrado.")
+
+        if body.courts is not None:
+            courts = [(c.name, c.capacity) for c in body.courts]
+        else:
+            courts = [(c["name"], c["capacity"]) for c in conn.execute(text("""
+                SELECT name, capacity
+                FROM public.event_courts
+                WHERE event_id = :event_id
+                ORDER BY sort_order ASC, created_at ASC, id ASC
+            """), {"event_id": event_id}).mappings()]
+
+        # Link nuevo solo si el modo usa link (un evento "solo miembros" nace sin share_code).
+        has_link = src["access_mode"] in ("LINK_ACCESS", "LINK_PASSWORD")
+
+        event = conn.execute(text(f"""
+            INSERT INTO public.events (
+                title, description, starts_at, location_name, close_at, status, visibility,
+                access_mode, allow_external_registration, share_code,
+                password_hash, password_salt, public_roster_visibility,
+                created_by_user_id, created_at, updated_at
+            )
+            VALUES (
+                :title, :description, :starts_at, :location_name, NULL, 'OPEN', :visibility,
+                :access_mode, :allow_external, :share_code,
+                :password_hash, :password_salt, :roster,
+                :created_by_user_id, now(), now()
+            )
+            RETURNING id, title, description, starts_at, location_name, status, visibility, {_ACCESS_COLS}
+        """), {
+            "title": body.title or src["title"],
+            "description": src["description"],
+            "starts_at": starts_at_value or src["starts_at"] + timedelta(days=7),
+            "location_name": body.location_name or src["location_name"],
+            "visibility": src["visibility"],
+            "access_mode": src["access_mode"],
+            "allow_external": src["allow_external_registration"],
+            "share_code": gen_share_code() if has_link else None,
+            "password_hash": src["password_hash"],
+            "password_salt": src["password_salt"],
+            "roster": src["public_roster_visibility"],
+            "created_by_user_id": actor_user_id,
+        }).mappings().first()
+
+        repeat_meta = {"source": "quick_repeat", "duplicated_from": str(src["id"])}
+
+        conn.execute(text("""
+            INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+            VALUES (:event_id, :actor_user_id, 'CREATE_EVENT', CAST(:metadata AS jsonb))
+        """), {
+            "event_id": event["id"],
+            "actor_user_id": actor_user_id,
+            "metadata": json.dumps({
+                "visibility": event["visibility"],
+                **repeat_meta,
+                "access_mode": event["access_mode"],
+                "courts": len(courts),
+            }),
+        })
+
+        courts_payload = []
+        for sort_order, (name, capacity) in enumerate(courts, start=1):
+            court = conn.execute(text("""
+                INSERT INTO public.event_courts (
+                    event_id, name, capacity, is_open, sort_order, created_at, updated_at
+                )
+                VALUES (:event_id, :name, :capacity, true, :sort_order, now(), now())
+                RETURNING id, name, capacity, is_open, sort_order
+            """), {
+                "event_id": event["id"],
+                "name": name,
+                "capacity": capacity,
+                "sort_order": sort_order,
+            }).mappings().first()
+
+            conn.execute(text("""
+                INSERT INTO public.event_audit_log (event_id, actor_user_id, action, metadata)
+                VALUES (:event_id, :actor_user_id, 'CREATE_COURT', CAST(:metadata AS jsonb))
+            """), {
+                "event_id": event["id"],
+                "actor_user_id": actor_user_id,
+                "metadata": json.dumps({
+                    "court_id": str(court["id"]),
+                    "court_name": name,
+                    "capacity": capacity,
+                    **repeat_meta,
+                }),
+            })
+
+            courts_payload.append({
+                "court_id": str(court["id"]),
+                "name": court["name"],
+                "capacity": court["capacity"],
+                "is_open": court["is_open"],
+                "sort_order": court["sort_order"],
+            })
+
+        if event["visibility"] == "GLOBAL":
+            _broadcast_global_event_to_bell(conn, event["title"])
+
+        return {
+            "event_id": str(event["id"]),
+            "duplicated_from": str(src["id"]),
+            "title": event["title"],
+            "description": event["description"],
+            "starts_at": str(event["starts_at"]),
+            "location_name": event["location_name"],
+            "status": event["status"],
+            "visibility": event["visibility"],
+            "access": _access_payload(event),
+            "courts": courts_payload,
+            "message": f"Evento '{event['title']}' repetido exitosamente con estado OPEN.",
         }
 
 

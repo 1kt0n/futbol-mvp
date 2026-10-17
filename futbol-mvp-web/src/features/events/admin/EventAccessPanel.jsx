@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { apiFetch, cn } from '../../../App.jsx'
+import { buildEventShareMessage, shareUrlFromPath, whatsAppHref } from './shareMessage.js'
 
 const MODES = [
   { key: 'MEMBERS_ONLY', label: 'Solo miembros', hint: 'Solo la comunidad lo ve y se anota.' },
@@ -43,10 +44,7 @@ export default function EventAccessPanel({ event, access, onChanged, setToast, s
     setLocalErr('')
   }, [access?.access_mode, access?.public_roster_visibility, access?.allow_external_registration, event?.id])
 
-  const shareUrl = useMemo(() => {
-    if (!access?.share_path) return ''
-    try { return `${window.location.origin}${access.share_path}` } catch { return access.share_path }
-  }, [access?.share_path])
+  const shareUrl = useMemo(() => shareUrlFromPath(access?.share_path), [access?.share_path])
 
   if (!cfg || !cfg.eventAccessEnabled) return null
 
@@ -108,13 +106,7 @@ export default function EventAccessPanel({ event, access, onChanged, setToast, s
     }
   }
 
-  const waMsg = [
-    `⚽ ${event.title}`,
-    event.starts_at ? `🗓️ ${new Date(event.starts_at).toLocaleString()}` : '',
-    event.location_name ? `📍 ${event.location_name}` : '',
-    shareUrl ? `Anotate: ${shareUrl}` : '',
-  ].filter(Boolean).join('\n')
-  const waHref = `https://wa.me/?text=${encodeURIComponent(waMsg)}`
+  const waHref = whatsAppHref(buildEventShareMessage(event, shareUrl))
 
   return (
     <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4" data-testid="event-access-panel">
