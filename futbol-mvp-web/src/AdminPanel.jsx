@@ -73,6 +73,12 @@ export default function AdminPanel() {
   const [tab, setTab] = useState('eventos')
   const [err, setErr] = useState('')
   const [toast, setToast] = useState(null)
+  // El toast se cierra solo: queda encima de la barra inferior y no debe taparla.
+  useEffect(() => {
+    if (!toast) return undefined
+    const t = setTimeout(() => setToast(null), 3500)
+    return () => clearTimeout(t)
+  }, [toast])
   const [busy, setBusy] = useState(false)
   const [permissions, setPermissions] = useState(null) // null = cargando, [] = sin permisos
   const has = (code) => can(permissions || [], code)
@@ -568,7 +574,7 @@ export default function AdminPanel() {
 
         {/* Toast */}
         {toast && (
-          <div className="fixed bottom-4 left-4 right-4 z-50 rounded-2xl bg-emerald-500 px-6 py-3 text-center text-white shadow-xl animate-fade-in sm:left-auto sm:right-6 sm:text-left">
+          <div role="status" className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 right-4 z-50 rounded-2xl bg-emerald-500 px-6 py-3 text-center text-white shadow-xl sm:left-auto sm:right-6 sm:text-left">
             {toast}
           </div>
         )}

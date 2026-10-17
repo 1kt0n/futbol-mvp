@@ -6,6 +6,18 @@
 
 let handling = false;
 
+// Evento que avisa que la sesión cambió (login o logout) en esta pestaña.
+// El shell lo escucha para mostrar u ocultar la barra de navegación.
+export const ACTOR_CHANGED_EVENT = "actor-changed";
+
+export function notifyActorChanged() {
+  try {
+    window.dispatchEvent(new Event(ACTOR_CHANGED_EVENT));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function clearSession() {
   try {
     localStorage.removeItem("actorUserId");
@@ -14,6 +26,7 @@ export function clearSession() {
   } catch {
     /* ignore */
   }
+  notifyActorChanged();
 }
 
 export function handleAuthFailure() {

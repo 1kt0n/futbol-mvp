@@ -12,6 +12,8 @@ import TournamentPublicPage from './features/tournaments/public/TournamentPublic
 import TournamentTvPage from './features/tournaments/public/TournamentTvPage.jsx'
 import PublicEventPage from './features/events/public/PublicEventPage.jsx'
 import ExternalParticipationPage from './features/events/public/ExternalParticipationPage.jsx'
+import AvisosPage from './features/avisos/AvisosPage.jsx'
+import AppShell from './shell/AppShell.jsx'
 
 function LegacyPublicRedirect() {
   const { id } = useParams()
@@ -31,11 +33,15 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/admin" element={<AdminPanel />} />
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/calendar" element={<Calendar />} />
-        <Route path="/ratings/pending-ui" element={<RatingsPending />} />
+        {/* Pantallas con sesión: comparten la barra inferior */}
+        <Route element={<AppShell />}>
+          <Route path="/" element={<App />} />
+          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/calendar" element={<Calendar />} />
+          <Route path="/avisos" element={<AvisosPage />} />
+          <Route path="/ratings/pending-ui" element={<RatingsPending />} />
+        </Route>
         <Route path="/e/:shareCode" element={<PublicEventPage />} />
         <Route path="/g/:token" element={<ExternalParticipationPage />} />
         <Route path="/tournaments/:id" element={<TournamentPublicPage />} />

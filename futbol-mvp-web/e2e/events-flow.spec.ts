@@ -142,7 +142,7 @@ async function openCourtByName(page: Page, courtName: string) {
   const card = page.locator('[data-testid^="admin-court-card-"]', { hasText: courtName }).first();
   const openBtn = card.locator('[data-testid^="admin-court-open-"]').first();
   await openBtn.scrollIntoViewIfNeeded();
-  await openBtn.click({ force: true });
+  await openBtn.dispatchEvent("click");
 }
 
 async function selectAppEventByTitle(page: Page, eventTitle: string, eventId?: string) {
@@ -192,7 +192,7 @@ async function registerGuestInCourt(page: Page, guestName: string, courtName: st
   await page.getByTestId("guest-court-select").selectOption({ label: courtName });
   const submit = page.getByTestId("guest-submit-btn");
   await expect(submit).toBeEnabled({ timeout: 20_000 });
-  await submit.click({ force: true });
+  await submit.dispatchEvent("click");
   await expect(page.getByText("Invitado confirmado")).toBeVisible({ timeout: 20_000 });
 }
 
@@ -226,7 +226,7 @@ async function cancelFirstPlayer(page: Page, courtName: string) {
   await expect(cancelBtn).toBeVisible({ timeout: 30_000 });
   await expect(cancelBtn).toBeEnabled({ timeout: 30_000 });
   await cancelBtn.scrollIntoViewIfNeeded();
-  await cancelBtn.click({ force: true });
+  await cancelBtn.dispatchEvent("click");
   await Promise.race([
     page.getByText("Listo").first().waitFor({ state: "visible", timeout: 6000 }).catch(() => null),
     waitForAppIdle(page),

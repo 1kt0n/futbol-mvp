@@ -3,9 +3,9 @@ import { Link } from "react-router-dom";
 import AuthLayout from "./features/auth/AuthLayout.jsx";
 import BrandHero from "./features/auth/BrandHero.jsx";
 import AuthFlowCard, { InstallPwaButton } from "./features/auth/AuthFlowCard.jsx";
-import { can, canAccessAdmin } from "./permissions/can.js";
+import { can } from "./permissions/can.js";
 import AttributeRadar from "./components/AttributeRadar.jsx";
-import { handleAuthFailure } from "./authSession.js";
+import { handleAuthFailure, notifyActorChanged } from "./authSession.js";
 import ConfirmSheet from "./design/ui/ConfirmSheet.jsx";
 
 const API_BASE = (
@@ -46,12 +46,14 @@ function getActorId() {
 function setActorId(v) {
   localStorage.setItem("actorUserId", v);
   localStorage.setItem("actor_id", v); // compat
+  notifyActorChanged();
 }
 
 function clearActorId() {
   localStorage.removeItem("actorUserId");
   localStorage.removeItem("actor_id");
   localStorage.removeItem("actor_me");
+  notifyActorChanged();
 }
 
 function isUuid(v) {
@@ -745,10 +747,6 @@ export default function App() {
 
   // Pending ratings
   const [pendingRatingsCount, setPendingRatingsCount] = useState(0);
-  const [notifications, setNotifications] = useState([]);
-  const [notificationsUnread, setNotificationsUnread] = useState(0);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notificationBusyId, setNotificationBusyId] = useState(null);
   const [playerCardsByCourt, setPlayerCardsByCourt] = useState({});
   const [playerCardOpen, setPlayerCardOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
@@ -1049,50 +1047,30 @@ export default function App() {
     return () => { alive = false; };
   }, [canUse]);
 
-  // Fetch notifications (informative + pending ratings)
+  // Votos pendientes (para el banner). Los avisos viven en la pantalla Avisos.
   useEffect(() => {
-    async function fetchNotifications() {
+    async function fetchPendingRatings() {
       if (!canUse) {
-        setNotifications([]);
-        setNotificationsUnread(0);
         setPendingRatingsCount(0);
         return;
       }
       try {
         const res = await apiFetch("/notifications");
-        setNotifications(res.items || []);
-        setNotificationsUnread(res.unread_count || 0);
         setPendingRatingsCount(res.pending_ratings_count || 0);
       } catch {
-        setNotifications([]);
-        setNotificationsUnread(0);
         setPendingRatingsCount(0);
       }
     }
-    fetchNotifications();
+    fetchPendingRatings();
   }, [canUse]);
 
   async function refreshNotifications() {
     if (!canUse) return;
     try {
       const res = await apiFetch("/notifications");
-      setNotifications(res.items || []);
-      setNotificationsUnread(res.unread_count || 0);
       setPendingRatingsCount(res.pending_ratings_count || 0);
     } catch {
       // no-op
-    }
-  }
-
-  async function dismissNotification(notificationId) {
-    setNotificationBusyId(notificationId);
-    try {
-      await apiFetch(`/notifications/${notificationId}/dismiss`, { method: "POST" });
-      await refreshNotifications();
-    } catch (e) {
-      setErr(e.message || "No se pudo descartar la notificacion.");
-    } finally {
-      setNotificationBusyId(null);
     }
   }
 
@@ -1415,114 +1393,7 @@ export default function App() {
               value={`${totalOcc}/${totalCap}`}
               tone={totalOcc >= totalCap && totalCap > 0 ? "warn" : "neutral"}
             />
-            <Link
-              to="/calendar"
-              data-testid="open-calendar"
-              className={cn(
-                "rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-200",
-                "hover:bg-emerald-500/25"
-              )}
-              title="Mi Calendario"
-            >
-              <span className="mr-1">📅</span>Mi Calendario
-            </Link>
-            {canAccessAdmin(permissions) && (
-              <Link
-                to="/admin"
-                data-testid="open-admin-panel"
-                className={cn(
-                  "rounded-xl border border-amber-400/30 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-300",
-                  "hover:bg-amber-500/30"
-                )}
-              >
-                Panel Admin
-              </Link>
-            )}
             <InstallPwaButton />
-                        <div className="relative">
-              <button
-                onClick={() => setNotificationsOpen((v) => !v)}
-                title="Notificaciones"
-                className="relative rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white hover:bg-white/10"
-              >
-                <span className="text-lg">{"\u{1F514}"}</span>
-                {notificationsUnread > 0 && (
-                  <span className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-                    {notificationsUnread}
-                  </span>
-                )}
-              </button>
-
-              {notificationsOpen && (
-                <div className="fixed left-3 right-3 top-24 z-50 max-h-[80dvh] overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/30 backdrop-blur sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 sm:max-h-none">
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="text-sm font-semibold text-white">Notificaciones</div>
-                    <button
-                      onClick={() => setNotificationsOpen(false)}
-                      className="rounded-lg px-2 py-1 text-xs text-white/60 hover:bg-white/10 hover:text-white"
-                    >
-                      Cerrar
-                    </button>
-                  </div>
-
-                  {notifications.length === 0 ? (
-                    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-white/60">
-                      No hay notificaciones.
-                    </div>
-                  ) : (
-                    <div className="max-h-[64dvh] space-y-2 overflow-y-auto pr-1 sm:max-h-80">
-                      {notifications.map((n) => (
-                        <div key={n.id} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                          <div className="text-sm font-semibold text-white">{n.title}</div>
-                          <div className="mt-1 whitespace-pre-line text-xs text-white/70">{n.message}</div>
-                          <div className="mt-2 flex items-center gap-2">
-                            {n.action_url && (
-                              <a
-                                href={n.action_url}
-                                className="rounded-lg border border-amber-400/30 bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/30"
-                              >
-                                Abrir
-                              </a>
-                            )}
-                            {n.dismissible && (
-                              <button
-                                onClick={() => dismissNotification(n.id)}
-                                disabled={notificationBusyId === n.id}
-                                className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10 disabled:opacity-40"
-                              >
-                                {notificationBusyId === n.id ? "..." : "Descartar"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            {currentUser && (
-              <Link
-                to="/profile"
-                title="Mi Perfil"
-                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-1 hover:bg-white/10"
-              >
-                {currentUser.avatar_url ? (
-                  <img
-                    src={currentUser.avatar_url}
-                    alt="Avatar"
-                    className="h-8 w-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="grid h-8 w-8 place-items-center rounded-full bg-white/10 text-xs font-bold text-white">
-                    {initials(currentUser.full_name)}
-                  </div>
-                )}
-                <span className="hidden text-sm font-medium text-white/80 sm:inline">
-                  {currentUser.nickname || currentUser.full_name?.split(" ")[0] || "Perfil"}
-                </span>
-              </Link>
-            )}
             <button
               onClick={load}
               disabled={busy}

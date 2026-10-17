@@ -65,12 +65,6 @@ export default function Calendar() {
         {/* Header */}
         <div className="mb-4 flex items-center justify-between gap-3">
           <h1 className="text-2xl font-bold text-white">Mi Calendario</h1>
-          <button
-            onClick={() => navigate("/")}
-            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white/80 hover:bg-white/10"
-          >
-            Volver
-          </button>
         </div>
 
         {/* Tabs */}
@@ -133,7 +127,7 @@ export default function Calendar() {
         <button
           onClick={() => setAdminMenuOpen(true)}
           aria-label="Agregar al calendario"
-          className="fixed bottom-6 right-6 grid h-14 w-14 place-items-center rounded-full bg-emerald-500 text-2xl font-bold text-white shadow-2xl shadow-emerald-500/40 hover:bg-emerald-400"
+          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-5 z-30 grid h-14 w-14 place-items-center rounded-full bg-emerald-500 text-2xl font-bold text-white shadow-2xl shadow-emerald-500/40 hover:bg-emerald-400"
         >
           +
         </button>
