@@ -803,6 +803,8 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 
 ### 8.2 Cambios por iteración
 
+> **Nota (17/10/2026):** el roadmap se reordenó con los datos de producción (8.4 y sección 9). El detalle técnico de abajo sigue valiendo; cambia en qué iteración entra cada cosa: `finalize_due_events` y sus flags pasan a la **0c**, junto con el desempate `(sort_order, created_at, id)` y `fill_from_waitlist` en `create_court`; el endpoint `duplicate` pasa a la **0d** (sin la columna de la 022); `GET /me/recent-guests` sale; el aviso de promoción pasa de la 4 a la 2; la 1 se parte en 1a/1b y la 3b en 3b-1 (023 sin columnas de resultado) y 3b-2\* (balanceador). La 3a, la 4 y la 5 quedan condicionadas.
+
 | Iter | Endpoints / lógica | Migración | Flags |
 |---|---|---|---|
 | **Baseline** | Sin cambios de código. Se corren Q0 y H1-H12 sobre el histórico | **`021_audit_indexes.sql`**, con `CREATE INDEX CONCURRENTLY IF NOT EXISTS` (fuera de transacción): `event_audit_log(event_id, created_at)`, `(action, created_at)`, `(target_registration_id)`; `events(status, starts_at)` | — |
@@ -919,27 +921,43 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 
 ### 8.4 Roadmap
 
+> **Reordenado el 17/10/2026** con los datos de producción (sección 9). Las filas con \* están condicionadas: entran solo si se cumple su gate.
+
 **Métrica norte:**
 
-1. **Escrituras del organizador por partido**: menos de 5 en la iter 2 y como máximo 2 con serie (consulta Q-N).
-2. **Bajas self-service**: 100%.
+1. **Escrituras del organizador por partido**, medidas con **QN v2** (por acción del organizador, solo partidos jugados, con las exclusiones del SQL; ver 9.3): menos de 5 tras la iter 2 (o −50% sobre la base v2) y como máximo 2 con serie. Base provisoria: mediana 8.
+2. **Bajas self-service**: 100%, calculado sobre jugadores **sin** rol admin (hasta la 0a, para ellos la baja propia daba 403).
 
 | Iter (estimado, 1 dev) | Qué entra | Riesgos → mitigación | Métrica de éxito (audit log) | Gate para la siguiente |
 |---|---|---|---|---|
-| **Baseline** (2-3 días) | 021 con índices; Q0 + H1-H12 sobre 3-6 meses de histórico (no hace falta esperar semanas) | Consultas pesadas → los índices de 021 | Línea de base guardada por semana | Q0 resuelto (índice único) |
-| **0a · Hotfix** (3-4 días) | **Frontend:** `fill-mode backwards`, `viewport-fit`, inputs de 16px; ocultar Baja/Mover sin permiso; label "Libre"; Home al **próximo** partido (orden ASC); autoselección del evento creado; FAB → crear en Eventos; `<Link>` a votos; logout en el avatar; confirmación al quitar a un jugador. **Backend:** B1, `AUTO_CLOSE_ON_FULL=false` + data-fix, re-anotarse por UPDATE, límite de invitados unificado, borrar mi invitado | Un jugador que saca a otro → el check es estricto por `user_id` / `created_by` y hay tests | `CANCEL_REGISTRATION` con actor = target pasa de ~0 a >50% de las bajas; `PROMOTE_WAITLIST` >0; `AUTO_CLOSE_COURT`=0 y aparece `COURT_FULL` | Una semana sin 500 ni 403 en bajas |
-| **0b · Overlays** (1-1.5 sem) | Primitivas; migración de **todos** los modales (AdminPanel, toasts, sheets y FAB del Calendario, PlayerCard, los 3 sin max-h); tokens de z; `cn` unificado; Playwright WebKit iPhone 14 + test de boundingBox + axe; guarda en CI | Regresiones visuales en Torneos y Admin → screenshots e2e en las dos engines | Tests de overlay en verde en WebKit y Chromium; el organizador confirma que los menús no se cortan | Cero overlays fuera de la primitiva |
-| **1 · Shell + Partido** (2 sem) | AppShell, tab bar por rol, `/p/:id` (jugador + chips Compartir y Anotar), "Me anoto" de 1 toque, espera visible, Avisos inbox, Perfil con logout, Gestión hub con URL y Pendientes, `?sheet=`, redirects, `X-UI-Source` | Convivencia con la Home vieja → rollback por `NAV_SHELL_ENABLED`; rollout admins → todos. Altas accidentales → Deshacer | ≥60% de `REGISTER_USER` con `source='one_tap'`; **altas accidentales** (baja propia <2 min después de anotarse) <3%; baja el lead time de `CREATE_EVENT` al primer `REGISTER_USER`; baja el tiempo de resolución de pendientes; ≥90% de escrituras con `ui='shell'` | Dos semanas estables; se borra la Home vieja (contract) |
-| **2 · Ciclo semanal** (1.5-2 sem) | 022; Repetir + Compartir automático; `/crear`; compartir para socios; anotar a un socio; invitados recientes; **auto-finalize**; votar en lote + `SUBMIT_RATINGS` + opt-in inline; Terminados en Gestión; filtro de avisos dirigidos | Se copia una clave vieja → la nota "misma clave" con [Cambiar]. Finalize prematuro → 150 min + "Volver a abrir" | ≥70% de partidos con `source='quick_repeat'`; duración del setup <60 s; `DELETE_COURT` <10 min después de `CREATE_COURT` → 0; ≥90% de finalizaciones automáticas; mediana `finalized_at − starts_at` <3 h; sube el % que vota; baja el tiempo de finalize al primer voto | H6 decide el orden 3a/3b |
-| **3a · Armar (canchas)** (1 sem) | Sheet Armar equipos, tap-tap, `PUT lineup` atómico, capitanes funcionando | Conflictos de edición → 409 + recarga | Ráfagas de ≥3 `MOVE_REGISTRATION` / `OPEN_COURT` / `CLOSE_COURT` del mismo actor en 10 min → 1 `SAVE_LINEUP` (−80%); bajan los moves por partido | — |
-| **3b · Claro/Oscuro** (1.5 sem) | 023, balanceador + tests, arquero, juntar/separar, publicar + aviso | Desconfianza del score → fallback a nivel, candados, ajuste manual | ≥60% de partidos con `teams_published_at`; cambios manuales después de `suggest` ≤3 por cancha (proxy de confianza) | — |
-| **4 · Avisos y cierre** (1.5 sem) | Suspender, reactivar, editar con aviso, aviso de promoción, resultado | Aviso a la gente equivocada → preview "Llega a N" | Avisos globales usados como "se suspende" → 0; `CANCEL_EVENT` por mes visible; % de canchas con resultado | — |
-| **5\* · Partido fijo** (2 sem) | 024; serie que solo publica; skip de feriados; tick opcional | Materialización sin tráfico → cron `/internal/tick`; zona horaria → `tz` explícita | % de partidos con `series_id`; escrituras del organizador ≤2 por partido; time-to-fill (`COURT_FULL` − publicación) estable o menor | Solo si H1 se confirma y ≥70% usan Repetir; fijos v2 solo si H3 se confirma |
+| **Baseline** ✓ (corrida el 17/10) | Consultas de solo lectura en Supabase (sección 9). Faltan Q0, H6(b) y las de 9.5 | Definición de QN distinta a la del archivo → congelar QN v2 | Línea de base provisoria (QN, mediana 8) | QN v2 congelada antes de medir la 0a |
+| **0a · Hotfix** ✓ **en producción 17/10** (queda medio día de verificación) | **Frontend:** `fill-mode backwards`, `viewport-fit`, inputs de 16px; ocultar Baja/Mover sin permiso; label "Libre"; Home al **próximo** partido (orden ASC); autoselección del evento creado; FAB → crear en Eventos; `<Link>` a votos; logout en el avatar; confirmación al quitar a un jugador. **Backend:** B1, `AUTO_CLOSE_ON_FULL=false` + data-fix, re-anotarse por UPDATE, límite de invitados unificado, borrar mi invitado. **Falta:** correr QN v2, H4 y H5 sobre las primeras 1-2 semanas y confirmar que la 020 y `scripts/reopen_auto_closed.sql` corrieron en prod | Un jugador que saca a otro → el check es estricto por `user_id` / `created_by` y hay tests. 500 por `actor_user_id` NOT NULL → 020 (`f06113b`) | `CANCEL_REGISTRATION` con actor = target pasa de ~0 a >50% de las bajas; `PROMOTE_WAITLIST` >0 por semana (7 en toda la historia); `AUTO_CLOSE_COURT`=0 y aparece `COURT_FULL`; 0 canchas nuevas tipo "espera" o "suplente" | Una semana sin 500 ni 403 en bajas |
+| **0c · Finalizar solo + canchas en orden** (3-4 días, backend) | (1) `finalize_due_events` con `pg_try_advisory_xact_lock`, lazy en `/events/open`, `/events/active`, `/ratings/pending` y `/notifications`; `AUTO_FINALIZE_ENABLED` y `AUTO_FINALIZE_AFTER_MINUTES=150`; `FINALIZE_EVENT` con `source='auto'` y actor NULL; "Volver a abrir" sigue en el admin. (2) Desempate `(sort_order, created_at, id)` en `events.py:329`, `admin_events.py:1216` y toda consulta que liste canchas; el formulario propone `max(sort_order)+1`. (3) `create_court` llama a `fill_from_waitlist` si la cancha nace abierta, y arma su metadata con `json.dumps`. No toca la UI de votos | Finalize en medio de una limpieza post-partido → el flag queda apagado hasta contar escrituras entre `starts_at` y `FINALIZE`; si hay limpieza, corregir el roster tiene que seguir siendo posible. Finalize prematuro → `starts_at < now() − 150 min` (hubo 1 finalizado antes de jugarse). Actor NULL → verificar la 020 en prod | ≥90% de finalizaciones con `source='auto'`; mediana `finalized_at − starts_at` de 37,9 h a <3 h; `FINALIZE_EVENT` + `CLOSE_EVENT` del organizador de 1,60 a <0,3 por partido; % que vota entre los que tienen opt-in (hoy 32%), 4 semanas antes contra 4 después; 0 eventos nuevos con `sort_order` repetido; `PROMOTE_WAITLIST` después de un `CREATE_COURT` cuando hay espera | — |
+| **0d · Repetir rápido en el admin actual** (3-4 días) | `POST /admin/events/{id}/duplicate {starts_at?, courts?[]}` en una transacción: copia título, lugar, descripción, visibilidad, `access_mode` con hash/salt y `allow_external_registration`; `share_code` nuevo con `gen_share_code()`; canchas con `is_open=true` y `sort_order` de 1 a n. Audita `CREATE_EVENT` / `CREATE_COURT` con `source='quick_repeat'` y `duplicated_from` en metadata (sin migración). En el AdminPanel, "Repetir para el <día +7>" por evento, anclado a la franja, con mini-form (fecha, canchas y cupo con stepper, lugar, título y nombres editables) y al final el mensaje de WhatsApp de `EventAccessPanel`. "Repetir las 3" todavía no | Se copia una clave vieja → la nota "misma clave" con [Cambiar]. Se copia el partido de otra franja → Repetir parte del de hace 7 días de esa franja. Canchas o cupo distintos → stepper obligatorio | ≥60% de los eventos nuevos con `source='quick_repeat'` en 3 semanas; eventos con correcciones en 2 h de 14% a <5%; sin canchas a las 2 h de 9% a <2%; 1-2 lugares normalizados por franja; armado en QN v2 (por acción) de ~2,9 a ~1 | Consulta de agrupamiento de `CREATE_EVENT` antes de "Repetir las 3" |
+| **0b · Overlays** (1-1.5 sem) | Primitivas; migración de **todos** los modales, incluido el mini-form de la 0d (AdminPanel, toasts, sheets y FAB del Calendario, PlayerCard, los 3 sin max-h); tokens de z; `cn` unificado; Playwright WebKit iPhone 14 + test de boundingBox + axe; guarda en CI | Regresiones visuales en Torneos y Admin → screenshots e2e en las dos engines | Tests de overlay en verde en WebKit y Chromium; el organizador confirma que los menús no se cortan | Cero overlays fuera de la primitiva |
+| **1a · Pantalla del partido `/p/:id`** (1-1.5 sem) | `/p/:id` con barra propia (es lo que abre el link de WhatsApp) y hero "Quedan N". "Me anoto" de 1 toque: `court_id` opcional, primera cancha con lugar según `(sort_order, created_at, id)`, y si está todo lleno, a la espera. Toast con Deshacer. Espera visible con el puesto. "No puedo ir" y, a menos de 24 h, "Liberar y avisar al grupo", con quién entra desde la espera dentro del mensaje. Chip Compartir con los lugares por cancha y "Faltan N". `X-UI-Source` + `write_audit()`. Flags `MATCH_SCREEN_ENABLED` y `ONE_TAP_REGISTER_ENABLED` | Altas accidentales → Deshacer. Mandar a alguien a una pseudo-cancha → se excluyen de la primera libre. Llenar la 1 deja corta la 2 → "Libre" visible por cancha. Rollout admins → todos | ≥60% de `REGISTER_USER` con `source='one_tap'`; **altas accidentales** (baja propia <2 min después de anotarse) <3%; bajas self-service ≥60%; sube el % de partidos que se llenan (antes, al menos 42% por `AUTO_CLOSE_EVENT`; ahora se mide con `COURT_FULL`); baja el lead time de `CREATE_EVENT` al primer `REGISTER_USER` | — |
+| **1b · Shell y Gestión** (1 sem) | AppShell, tab bar por rol (Partido · Calendario · Avisos · Gestión · Perfil), Avisos inbox, Perfil con logout, Gestión hub con URL y Pendientes (`GET /admin/pending-counts`), `?sheet=`, redirects. Flag `NAV_SHELL_ENABLED` | Convivencia con la Home vieja → rollback por `NAV_SHELL_ENABLED`; rollout admins → todos | ≥90% de escrituras con `ui='shell'`; baja el tiempo de resolución de pendientes | Dos semanas estables; se borra la Home vieja (contract) |
+| **2 · Ciclo semanal, versión corta** (1-1.5 sem) | 022; Repetir desde `/p/:id` y desde Gestión por franja ("Repetir el martes 20:00 para el 27/10"), con "Repetir las 3" solo si el agrupamiento lo justifica; `/crear` con lugar sugerido; compartir para socios; anotar a un socio; votar en lote + "No lo vi" + `SUBMIT_RATINGS` + card de opt-in inline; Terminados en Gestión; avisos dirigidos + **aviso de promoción**. Sale: invitados recientes. Ya hechos: auto-finalize (0c) y el endpoint de Repetir (0d) | Se copia una clave vieja → la nota "misma clave" con [Cambiar]. Aviso a la gente equivocada → preview "Llega a N" | QN v2 con mediana <5 (o −50% sobre la base v2); ≥70% de partidos con `source='quick_repeat'`; % que vota entre los que tienen opt-in de 32% a ≥45%; votos por semana de ~8 a ≥12 | H6(b) y QN v2 posterior a la 0a deciden si entra la 3a; la 3b-1 va primero |
+| **3b-1 · Claro/Oscuro manual** (1 sem) | 023 mínima (`team_side`, `is_goalkeeper`, `teams_published_at`, `prefers_goalkeeper`). Sheet "Armar equipos" dentro de la cancha: tap-tap entre Claro y Oscuro, arquero y "Publicar equipos" con aviso dirigido "Equipos listos". Sin balanceador ni resultado | No hay demanda → antes de arrancar, correr H6(b), cruzar los 12 partidos con moves con los que tienen canchas-equipo y preguntarle al organizador cómo arma los equipos hoy | 0 canchas nuevas con nombre de equipo; ≥30% de partidos con `teams_published_at` en 4 semanas | ≥30% publican equipos → entra la 3b-2 |
+| **3a\* · Mover entre canchas atómico** (1 sem) | `PUT /admin/events/{id}/lineup` atómico con `expected[]` y capacidad validada al final; tap-tap entre canchas; capitanes funcionando sobre `event_court_captains` | Conflictos de edición → 409 + recarga | Cada ráfaga de ≥3 moves o aperturas → 1 `SAVE_LINEUP`; `MOVE_REGISTRATION` + `UPDATE_COURT` + `CLOSE_COURT` −50%; QN v2 con mediana ≤3 | Entra solo si, con la 0a andando, esas tres acciones siguen en ≥1,5 por partido en QN v2, o si H6(b) muestra ráfagas en ≥15% de los partidos |
+| **5\* · Serie que solo publica** (2 sem) | 024; `event_series` por franja reutilizando el duplicate de la 0d; skip de feriados; tick opcional. Sin fijos ni `DECLINED`. Arranca por los martes | Materialización sin tráfico → cron `/internal/tick`; zona horaria → `tz` explícita | % de partidos con `series_id`; QN v2 ≤2 por partido; time-to-fill (`COURT_FULL` − publicación) estable o menor | Solo si ≥70% de los partidos salen de Repetir durante 4 semanas y, en esa franja, ≥70% de las repeticiones no tocan canchas ni cupo. Fijos v2: no (H3 refutada) |
+| **3b-2\* · Balanceador** (1 sem) | `lineup/suggest` con `app/utils/balancer.py`: snake draft + hill-climbing, un arquero por bando, juntar/separar, candados; sin score, usa `player_level` | Desconfianza del score → fallback a nivel, candados, ajuste manual. Solo 46 de 105 jugadores reciben votos → más de la mitad por `player_level` | Cambios manuales después de "Equilibrar" ≤3 por cancha; sube el % de partidos con equipos publicados | Solo si la 3b-1 pasa su gate |
+| **4\* · Suspender, editar con aviso y resultado** (backlog, 1.5 sem) | Suspender, reactivar, editar con aviso, resultado. El aviso de promoción ya se fue a la 2 | Aviso a la gente equivocada → preview "Llega a N" | Avisos globales usados como "se suspende" → 0; `CANCEL_EVENT` por mes visible; % de canchas con resultado | Solo si un proxy mejor (≥50% de bajas en las 24 h previas) muestra ≥1 suspensión por mes, o si el organizador dice que suspende seguido |
 
-Los datos reordenan el roadmap:
+**Por qué cambia el orden** (una línea por movimiento):
 
-- **Si H11 muestra una o más suspensiones por mes, "Suspender" se adelanta a la iter 2.** Las dependencias lo permiten porque usa la migración 022.
-- Si H6 muestra pocos movimientos, 3b va antes que 3a.
+- **0a, en producción el 17/10.** H4 (35% de bajas a <24 h) y H12 ("b" en el top 3) confirman que iba primero; ahora falta medirla.
+- **Auto-finalize sale de la 2 y arma la 0c.** H7: mediana de 37,9 h; es solo backend y, separado del voto en lote, se puede medir solo. Es una decisión nueva, no la regla original.
+- **El orden de canchas y `create_court` entran en la 0c.** Son bugs de hoy: `sort_order` repetido en 46 de 49 eventos con varias canchas, y sumar una cancha no promueve a la espera.
+- **El endpoint de Repetir sale de la 2 y arma la 0d.** 3 franjas = 85% de los partidos y "a" es el flujo más pesado (3,71 por partido); el endpoint se reusa tal cual en la 2 y en la serie.
+- **La 0d va antes que la 0b.** La 0a ya arregló la causa raíz de los overlays (`fill-mode`); si la 0b ya arrancó, se termina primero.
+- **La 1 se parte en 1a (`/p/:id`) y 1b (shell).** El valor medible (H4, H5) está en `/p/:id`; la shell la envuelve después.
+- **"Liberar y avisar al grupo" va en la 1a y el aviso de promoción pasa de la 4 a la 2.** H4: la regla adelanta las dos cosas, no solo una.
+- **Invitados recientes sale de la 2.** H9: solo el 9% se repite.
+- **3b antes que 3a, y la 3b se parte.** H6: 43 de 55 partidos sin moves; Claro/Oscuro manual es la forma barata de medir demanda antes del balanceador.
+- **La 3a pasa a condicionada.** H6(b) no se corrió y parte de su problema (subir el cupo y reabrir para un swap) ya lo alivió la 0a.
+- **La 4 pasa a backlog.** H11 no concluyente (0 de 64) y `UPDATE_EVENT` tiene 10 usos en total; Suspender no sube a la 2.
+- **La 5 sigue condicionada y arranca por los martes.** H1 se cumple solo por día + hora; el jueves va de 1 a 5 canchas.
 
 ### 8.5 Qué NO hacemos
 
@@ -959,25 +977,154 @@ Los datos reordenan el roadmap:
 
 ---
 
-## 9. Hipótesis a validar con datos de producción
+## 9. Resultados con datos de producción (17/10/2026)
 
-Las consultas (todas de solo lectura, con zona horaria `America/Argentina/Buenos_Aires`) están en **`docs/ux/consultas-comportamiento.sql`**, con el mismo id de cada fila (Q0, H1-H12, Q-N y el control de altas accidentales). Las corre el organizador en la consola Postgres de Railway y nos pega los resultados.
+> Consultas de **solo lectura** (todas `SELECT`, ninguna escribe) corridas el 17/10/2026 en el SQL Editor de Supabase, sobre la base de producción. Son versiones compactas de `docs/ux/consultas-comportamiento.sql`; las que se ejecutaron, con su resultado y sus límites, están en `docs/ux/consultas-ejecutadas-2026-10-17.sql`.
+> Es la foto **"antes" de la 0a**, que se deployó el mismo 17/10. Ningún número de esta sección mide la 0a.
 
-| H | Hipótesis | Confirma si… | Si se refuta, cambia… |
+### 9.1 Método
+
+- **Filtro desde el 27/6** (`created_at >= '2026-06-27'`) en todo lo que depende de quién hizo la acción (H4, H5/H6 y QN): antes de esa fecha el actor del audit era falsificable.
+- **Franja** = día + hora, en hora argentina. **Lugar normalizado** = `lower(trim(lugar))`.
+- **Organizador** (QN): quien tiene **hoy** rol admin, super_admin, captain o gestion_eventos. Son los roles actuales, no los que tenía en la fecha del partido.
+- Contexto: mediana de 47,5 usuarios activos por semana desde el 29/6 (41–58; en feb–jun, 41,5).
+
+| Consulta | Ventana | Universo |
+|---|---|---|
+| Inventario y roles | Todo el histórico | Audit log, roles y usuarios |
+| H1 y parches | Últimos 6 meses | 91 partidos |
+| H2 | Todo el histórico; 2 h desde `CREATE_EVENT` | 138 eventos |
+| H3 | Últimas 12 semanas, por franja | 15, 12 y 10 partidos |
+| H4 | Desde el 27/6 | Bajas de jugadores (`USER`) e invitados |
+| H5 / H6 | Desde el 27/6 | 55 partidos jugados |
+| QN | Desde el 27/6 | 60 partidos |
+| H7 | Últimos 4 meses | 59 finalizados |
+| H8 / H9 | Finalizados de los últimos 3 meses | 761 participaciones de 105 jugadores / 116 invitados |
+| H10 | Eventos con más de una cancha | 49 eventos; 75 jugadores con ≥4 partidos |
+| H11 | Todas las notificaciones | 64 |
+
+### 9.2 Veredictos
+
+Cuando el análisis y la revisión escéptica no coincidieron, nos quedamos con la lectura más conservadora (ver 9.6).
+
+| Hipótesis | Veredicto | Evidencia | Qué cambia en el diseño |
 |---|---|---|---|
-| Q0 | Puede haber un índice único no parcial en `(event_id,user_id)` | Aparece en `pg_indexes` | Define si va el índice parcial o el reemplazo (0a) |
-| H1 | El partido semanal se repite igual (día, hora, lugar, canchas) | ≥70% de los eventos caen en ≤2 combinaciones | Si no, `/crear` pasa a ser el camino principal y la serie no se construye |
-| H2 | Armar cuesta escrituras y genera errores (cancha en el evento equivocado) | Mediana >5 escrituras o >3 min de setup; `CREATE_COURT` sobre eventos ya jugados >0 | Si el setup ya es corto, Repetir baja de prioridad frente a la iter 3 |
-| H3 | Hay un núcleo de fijos | ≥50% de la capacidad son personas que se anotan en <60 min en ≥75% de las semanas | Habilita fijos auto-confirmados (serie v2). Si no, la serie solo publica |
-| H4 | Las bajas existen y hoy pasan por el admin; muchas son tardías | Bajas con actor ≠ target >0; >30% a menos de 24 h | Si hay muchas tardías, "Liberar y avisar al grupo" y el aviso de promoción se adelantan |
-| H5 | Las canchas se llenan rápido y hay demanda insatisfecha | Tiempo de `CREATE_EVENT` a `AUTO_CLOSE_EVENT` <48 h; aparecen `OPEN_COURT` / `REOPEN_EVENT` manuales | Si nunca se llena, se prioriza compartir (lugares por cancha) sobre la espera |
-| H6 | Armar equipos hoy son ráfagas de moves | Mediana ≥3 moves por partido, o secuencias OPEN_COURT > MOVE > CLOSE_COURT | Si hay pocos moves, los equipos se arman afuera de la app: 3b va antes que 3a |
-| H7 | Los partidos se finalizan tarde o nunca, y se pierden votos | Mediana `finalized_at − starts_at` >24 h o eventos colgados >0 | Si ya se finalizan rápido, auto-finalize baja a la iter 4 |
-| H8 | Pocos votan por el opt-in, no por el costo | % con opt-in <50% entre participantes | Si el opt-in es alto pero votan poco, el foco es el lote + "No lo vi"; si es bajo, la card inline va arriba |
-| H9 | Los invitados se repiten y el límite real es menor a 5 | ≥30% de los nombres de invitados se repiten en ≥2 semanas; p95 de invitados por persona ≤5 | Define si hay chips recientes y el valor de `GUEST_LIMIT` |
-| H10 | La gente elige cancha a propósito | ≥40% de los jugadores con ≥4 partidos repiten la misma cancha ≥80% de las veces | Se asigna "tu cancha de siempre" en vez de la primera libre, y "elegir cancha" queda más visible |
-| H11 | Suspender es frecuente | ≥1 aviso de suspensión por mes | Suspender pasa a la iter 2 |
-| H12 / Q-N | Dónde gasta escrituras el organizador | El top 3 de acciones por partido coincide con a/c/d | Reordena el roadmap |
+| **H1** Se repite igual | **Confirmada en parte** (solo día + hora) | El umbral (≥70% en ≤2 combinaciones de día+hora+lugar+canchas) **no se cumple**: las 2 franjas más grandes suman 52 de 91 (57%), y eso contando solo día+hora. Sí hay **3 franjas fijas**: Mar 19:00 (27 partidos en 24 semanas), Jue 19:00 (25 en 25) y Mar 20:00 (25 en 24) = 77 de 91 (85%), con 3 o 4 partidos por semana. Lugar y canchas varían: 5, 9 y 8 lugares normalizados por franja; el jueves va de 1 a 5 canchas y de 10 a 50 lugares | Repetir se ancla a la **franja**, no al "último partido": "Repetir el martes 20:00 para el 27/10" copia el de hace 7 días de esa franja. En el mini-form, el stepper de canchas y cupo es obligatorio, y lugar, título y nombres de cancha son editables (lugar sugerido de los ya usados). "Repetir las 3" queda como acción secundaria hasta saber si se crean juntas. La serie (iter 5) sigue condicionada; si llega, arranca por los martes |
+| **H2** Armar cuesta y genera errores | **Confirmada en parte** (por los errores; el costo se refuta) | En las 2 h desde `CREATE_EVENT`: mediana de 2 escrituras (p75 4, máx 7) y 0,6 min (p75 1,2); 1,57 canchas por evento. Errores: 3 canchas creadas en eventos ya jugados, 19 eventos (14%) con correcciones, 13 (9%) sin canchas a las 2 h | La regla decía "si el setup es corto, Repetir baja frente a la iter 3". **No la seguimos, y lo decimos:** el audit no ve el formulario ni los toques (son 20-25, sección 2.1) y la iter 3 tiene menos evidencia (H6). Repetir se justifica por las franjas y el tipeo, no por H2: su endpoint se adelanta a la 0d. El éxito se mide por adopción de `quick_repeat` y QN v2 por acción, no por filas del audit |
+| **H3** Núcleo de fijos | **Refutada** | Fijos según el SQL (se anotan en <60 min en ≥75% de sus partidos): 0 en Mar 19, 1 en Jue 19 y 0 en Mar 20. Aun sin exigir rapidez, los que van a ≥75% son 0, 5 y 5, contra cupos de 10 a 18 (martes) y de 10 a 50 (jueves). Sí hay un pool de habituales que rota: 22 socios van a ≥50% de los jueves (10 en Mar 20, 1 en Mar 19) | No se auto-confirman fijos, no hay `DECLINED` y la serie v2 queda afuera. El pool que rota refuerza el link por WhatsApp y el "Me anoto" de 1 toque, no la auto-inscripción |
+| **H4** Bajas tardías por el admin | **Confirmada** (lo tardío; lo "por el admin" es efecto del 403) | Desde el 27/6, 133 bajas de jugadores: 95 hechas por otro (71%) y 38 propias. A menos de 24 h: 46 (35%). Hasta el 17/10 la baja propia daba 403 salvo a admins, así que las 38 propias son casi todas de organizadores que juegan. Ninguna baja hecha por otro fue después del inicio. Invitados: 26 bajas | La 0a era la prioridad correcta. La regla adelanta **dos** cosas: "Liberar y avisar al grupo" (<24 h) a la 1a, con el nombre de quien entra desde la espera dentro del mensaje de WhatsApp; y el **aviso de promoción** dirigido, de la iter 4 a la 2 (viaja con la 022) |
+| **H5** Se llena rápido, hay demanda | **Confirmada en parte** (por poco y con una medida ruidosa) | Mediana `CREATE_EVENT → AUTO_CLOSE_EVENT` de 45,9 h (p25 25,3 h), pero sobre los 23 de 55 partidos que se auto-cerraron (42%). 73 reaperturas manuales en 20 partidos. 9 partidos con una "cancha" de espera armada a mano | Espera real (0a) + "Faltan N" con los lugares por cancha (chip Compartir, 1a). Arreglo chico en la 0c: `create_court` no promueve a la espera (`admin_events.py:706-764`), a diferencia de `update_court` (`:851`) y `open_court` (`:1127`) |
+| **H6** Equipos = ráfagas de moves | **No concluyente** ((a) se refuta; (b) no se corrió) | 43 de 55 partidos sin moves (mediana 0). Donde hay, 12 partidos (22%), con mediana de 4,5 y máximo de 21; `MOVE_REGISTRATION` es la 4.ª acción del organizador (1,35 por partido). Las ráfagas `OPEN_COURT > MOVE > CLOSE_COURT` (H6 b) no se midieron. 5 partidos usaron canchas como equipos | Se aplica la regla (pocos moves → 3b antes que 3a), pero la evidencia es flaca para las dos. La 3b se parte: **3b-1** Claro/Oscuro manual y **3b-2** balanceador, condicionado. La 3a queda condicionada a H6(b) y al QN v2 posterior a la 0a |
+| **H7** Se finaliza tarde y se pierden votos | **Confirmada en parte** (tarde sí; perder votos no está medido) | 59 finalizados: mediana de 37,9 h después del inicio (p75 49,3; p90 65,2); 0 colgados; 1 finalizado antes de jugarse. La ventana de 7 días arranca en `finalized_at`, así que los votos no se pierden: arrancan ~1,5 días tarde | Auto-finalizar (solo backend) pasa a una **0c**, separado del voto en lote (iter 2) para medir cada efecto por separado. Es una decisión nueva, no la regla del doc (que solo decía "si ya es rápido, baja a la 4"). Antes de prender el flag: contar escrituras entre `starts_at` y `FINALIZE` (limpieza post-partido) y verificar la 020 en prod. Exigir `starts_at < now() − 150 min` |
+| **H8** No votan por el opt-in | **No concluyente** (depende de la unidad) | Por participación, 61% con opt-in (468 de 761): refuta. Por jugador, 45% (47 de 105): confirmaría. Se votó en el 32% de las participaciones con opt-in (152 de 468). Votos: ~8 por semana, 16% de los activos (23% en feb–jun) | Foco en el voto en lote + "No lo vi" (iter 2) y en el momento del voto (0c). La card de opt-in inline se queda en la iter 2 y no baja de prioridad: el opt-in sigue frenando a 58 de 105 jugadores. Solo 46 de 105 recibieron votos (42 con ≥3 votantes): el balanceador dependería de `player_level` para más de la mitad |
+| **H9** Invitados repetidos, límite <5 | **Refutada** | 116 invitados distintos (por anfitrión); 11 (9%) aparecen en ≥2 partidos, máximo 3. Por anfitrión y partido: p50 1, p95 3, máximo 6 | Los chips de invitados recientes y `GET /me/recent-guests` salen de la iter 2: no se construyen por ahora. El límite de 5 queda (la 0a dejó `GUEST_LIMIT_PER_USER=5` y `registrations.manage` sin tope) |
+| **H10** Eligen cancha a propósito | **No evaluable** (se midió por nombre) | Por nombre de cancha: de 75 jugadores con ≥4 partidos, 0 repiten cancha ≥80% (3 llegan a ≥60%; mediana 0,29). Pero son canchas físicas del predio ("cancha 5" 30, "cancha 13" 19, "cancha 11" 13), y por posición no se puede medir: en 46 de 49 eventos con varias canchas todas tienen el mismo `sort_order` | Se mantiene "primera cancha libre", con desempate por orden de creación (`sort_order, created_at, id`) y **no** por nombre ("cancha 13" queda antes que "cancha 5"). Las pseudo-canchas (espera, equipos) se excluyen o marcan, y el "Libre" por cancha sigue visible. El desempate es un bug de hoy: va en la 0c |
+| **H11** Suspender es frecuente | **No concluyente** | 0 avisos de suspensión entre 64 notificaciones en total. El canal casi no se usa y las suspensiones se avisan por WhatsApp | Suspender no sube a la iter 2. La iter 4 pasa a backlog condicionado (editar también es raro: `UPDATE_EVENT`, 10 en toda la historia). Hay que preguntarle al organizador cuántas veces suspendió |
+| **H12** Dónde gasta el organizador | **Refutada** (con un proxy: H12 no se corrió tal cual) | Con el QN por acción y las exclusiones del SQL (sin `REGISTER_GUEST` ni `AUTO_*`), el top 3 por partido es `CREATE_COURT` 1,93 (a), `CANCEL_REGISTRATION` 1,58 (b) y `MOVE_REGISTRATION` 1,35 (c). Por flujo: a 3,71 · b 2,60 · c 2,57 · d 0,95 | La rama "si domina b" pide bajas self-service y espera antes que todo: es la 0a, ya en prod. Después, el flujo más pesado es "a" (crear/compartir): Repetir va temprano (0d) |
+| **Q0** Índice único | **Sin datos** | No se corrió | No bloquea: la 0a re-anota con un UPDATE y funciona con o sin índice. El índice parcial sigue pendiente de Q0 (a)-(c) |
+
+### 9.3 Línea de base QN: escrituras del organizador por partido
+
+Desde el 27/6, **60 partidos**. Actores con rol admin, super_admin, captain o gestion_eventos; no cuenta cuando se anotan o se bajan ellos mismos.
+
+| Mediana | p75 | p90 | Máximo |
+|---|---|---|---|
+| **8** | 16,25 | 26 | 56 |
+
+| Acción | Total | Por partido | Flujo (H12) |
+|---|---|---|---|
+| `CREATE_COURT` | 116 | 1,93 | a |
+| `CANCEL_REGISTRATION` | 95 | 1,58 | b |
+| `REGISTER_GUEST` | 87 | 1,45 | El SQL la excluye |
+| `MOVE_REGISTRATION` | 81 | 1,35 | c |
+| `FINALIZE_EVENT` | 57 | 0,95 | d |
+| `CREATE_EVENT` | 57 | 0,95 | a |
+| `OPEN_COURT` | 55 | 0,92 | c |
+| `UPDATE_COURT` | 50 | 0,83 | a |
+| `CLOSE_EVENT` | 39 | 0,65 | b |
+| `REOPEN_EVENT` | 22 | 0,37 | b |
+| `AUTO_CLOSE_COURT` | 22 | 0,37 | El SQL la excluye (automática) |
+| `CLOSE_COURT` | 18 | 0,30 | c |
+
+Agrupado por tarea (sobre ~11,7 de promedio, la suma de las 12 acciones):
+
+| Tarea | Por partido | Peso |
+|---|---|---|
+| Armado (evento + canchas) | 2,88 | ~25% |
+| Bajas de terceros + reaperturas manuales (`CANCEL_REGISTRATION` + `OPEN_COURT` + `REOPEN_EVENT`) | 2,87 | ~25% |
+| Mover y ajustar cupos (`MOVE_REGISTRATION` + `UPDATE_COURT` + `CLOSE_COURT`) | 2,48 | ~21% |
+| Cerrar y finalizar | 1,60 | ~14% |
+| Invitados cargados por organizadores | 1,45 | ~12% |
+
+Este agrupamiento no es el de H12: H12 pone `OPEN_COURT` en "c" y `CLOSE_EVENT` en "b". `AUTO_CLOSE_COURT` (0,37) no entra en ninguno.
+
+**Es una base provisoria: no es la QN del archivo.**
+
+1. Incluye `REGISTER_GUEST` y `AUTO_CLOSE_COURT`, que el SQL excluye (invitados propios del admin y efecto automático). Sin ellas quedan ~590 escrituras, ~9,8 de promedio por partido; la mediana sin ellas no se calculó.
+2. "Organizador" se define por rol y no por permiso, con los roles de hoy. Solo admin y super_admin ya son 27 personas, y muchas juegan.
+3. Deja afuera los partidos con 0 escrituras y mete partidos todavía no jugados (60 contra 55 jugados).
+4. Los pesos están calculados sobre el promedio (~11,7), que tiran para arriba los partidos de 26 a 56, y no sobre el partido mediano (8).
+
+**QN v2 (congelarla antes de medir la 0a):** exclusiones del SQL (sin `REGISTER_GUEST`, `AUTO_*`, `COURT_FULL` ni `PROMOTE_WAITLIST`), solo partidos jugados desde el 27/6, y contada por **acción** del organizador, no por fila del audit. Esto último es crítico: Repetir escribe `CREATE_EVENT` + un `CREATE_COURT` por cancha (`source='quick_repeat'`) y contado por filas daría ~2,6, casi lo mismo que hoy (2,88); la 3a escribe un `MOVE_REGISTRATION` por cambio + `SAVE_LINEUP`. Se reporta la mediana y la composición del partido mediano, abierta por franja y por "creador principal vs. otros admins".
+
+**La meta no baja:** se mantiene **<5 tras la iter 2** (o −50% sobre la base v2) y **≤2 con serie**. Un ≤3 tras la iter 2 no sale de la cuenta: lo que la iter 2 no toca (mover y ajustar ~2,5 + invitados 1,45) ya suma ~4 de promedio.
+
+### 9.4 Otros hallazgos
+
+- **Canchas usadas para otra cosa** (6 meses, 91 partidos). Como **equipos** ("equipo blanco", "equipo negro", "equipo azul camiseta tt", "equipo rojo"…): 12 canchas en 5 partidos. Como **lista de espera** manual ("sala de espera", "suplentes", "suplentes | lista de espera", "cancha suplente - sujeta a disp"): 9 canchas en 9 partidos. Son entre 9 y 14 de 91 partidos (~10-15%), según se superpongan, y es un piso porque la búsqueda es por palabras. Métricas: 0 canchas nuevas tipo "espera"/"suplente" después de la 0a y la 0c; 0 con nombre de equipo después de la 3b-1.
+- **`sort_order` repetido.** En 46 de 49 eventos con varias canchas, todas tienen el mismo `sort_order`: el formulario arranca siempre en 1 (`AdminPanel.jsx:1975` y `:1984`) y las consultas ordenan solo por `sort_order` (`events.py:329`, `admin_events.py:1216`). El orden del carrusel no está definido entre recargas, y un "Me anoto" de 1 toque asignaría al azar. Bug de hoy: va en la 0c.
+- **3 franjas fijas.** Mar 19:00, Jue 19:00 y Mar 20:00 concentran 77 de 91 partidos (85%); hay 16 semanas con 3 partidos y 9 con 4. Lead time mediano entre crear y jugar: 113,8 h (~4,7 días). Mar 19 tiene títulos tipo "Escuelita martes" / "La escuelita de APE" y nadie va a ≥75%: puede ser otro uso (una clase), así que Repetir, la serie y "Faltan N" no tienen que asumir un grupo fijo ahí.
+- **Una persona crea el 65% de los partidos** (90 de 138; los siguientes crearon 12, 10, 7, 7, 6, 4, 1 y 1). En total, 9 personas crearon eventos.
+- **27 admins.** 16 con rol admin y 11 super_admin, contra 105 jugadores en 3 meses y 9 creadores de eventos. Inflan el QN y ven controles de gestión que no usan: conviene que el organizador revise los roles, y en QN v2 separar al creador principal.
+- **`create_court`** no promueve a la espera (ver H5) y arma la metadata del audit con un f-string (`admin_events.py:753`): un nombre de cancha con comillas rompe el `CAST` a jsonb y da 500. Los dos arreglos van en la 0c.
+- **Externos.** `REGISTER_EXTERNAL` (`events_public.py:346`, actor NULL) no figura en el inventario: con `actor_user_id` NOT NULL en prod, las altas de externos daban 500 hasta la 020 (`f06113b`). Hipótesis: parte de los `REGISTER_GUEST` de organizadores (1,45 por partido) eran personas sin cuenta. Medir `REGISTER_EXTERNAL` >0 después de la 020.
+- **La espera casi no existía:** `PROMOTE_WAITLIST` tiene 7 filas en toda la historia, contra 185 `OPEN_COURT` manuales.
+
+### 9.5 Consultas que faltan (solo lectura)
+
+Antes de la 0c, la 0d y la 3b-1:
+
+- **H6(b):** ráfagas de armado (`OPEN_COURT > MOVE > CLOSE_COURT` del mismo actor).
+- **Agrupamiento de `CREATE_EVENT`:** pares del mismo actor con <30 min de diferencia, por franja y desde el 27/6 (quién crea, qué día y a qué hora). Decide "Repetir las 3".
+- **Limpieza post-partido:** escrituras entre `starts_at` y `FINALIZE_EVENT` (moves, bajas, canchas nuevas). Decide si auto-finalizar a +150 min necesita permitir correcciones después.
+- **% de votos por tramo de demora** de la finalización (<6 h, 6-24 h, 24-48 h, >48 h): base de la 0c.
+- **`UPDATE_COURT` por campo** (nombre o cupo) y por momento (armado o días después).
+- **H3 por semana**, solo partidos jugados y separando la Escuelita; **H10 por posición** sin pseudo-canchas; **H5 por capacidad** (confirmados ≥ suma de cupos de las canchas reales) y cuántos eventos tenían `allow_external_registration`.
+- **Títulos que contienen fechas** y **Q0** (a)-(c).
+
+### 9.6 Cuidado al leer
+
+- **Todo es de antes de la 0a.** Se deployó el 17/10 y ese mismo día hubo un fix por 500 en prod (la 020). Todavía no hay evidencia de que la espera funcione ni de que los jugadores usen la baja propia, y el gate de la 0a (una semana sin 500 ni 403 en bajas) no se cumplió. Nada de "lo arregla la 0a" hasta medirlo en 1-2 semanas. Verificar `is_nullable = YES` en prod.
+- **H4:** el 71% de bajas hechas por otro es estructural (el 403). La anticipación mide cuándo el admin **cargó** la baja, no cuándo avisó el jugador, y parte de las bajas >24 h pueden ser correcciones (gente anotada en el partido equivocado porque la Home abría el más lejano, C11). Los que faltan sin avisar no aparecen. El % self-service de la base hay que calcularlo solo sobre jugadores sin rol admin.
+- **H5:** `AUTO_CLOSE_EVENT` no es "se llenó". También contaba canchas cerradas a mano, solo corría después de un alta (no de un move, una promoción o un cambio de cupo) y una pseudo-cancha abierta lo impedía: el 42% es un piso ruidoso y el 58% "nunca se llenó" está inflado. Las 73 reaperturas son en buena parte mecánicas (la baja no reabría ni promovía) o del workaround de mover: miden la fricción del auto-cierre más que la demanda. Desde la 0a no hay `AUTO_CLOSE_EVENT`: el llenado se mide con `COURT_FULL` o por capacidad.
+- **H7:** "Finalizar" solo aparece con el evento CLOSED, y una vez finalizado no se puede mover a nadie. Como los votos son por cancha, el atraso puede ser a propósito (corregir quién jugó dónde antes de archivar). No está medido que el atraso baje la tasa de voto.
+- **H1:** los 5-9 lugares por franja ya están normalizados y mezclan otros predios ("poli cramer" y variantes, "terrazas futbol", "cancha 4"): no es "Pedraza mal escrito". "el poli" puede ser Pedraza o Cramer. Los 17-24 títulos distintos por franja pueden ser a propósito (emojis, "Escuelita") o llevar la fecha. Además, el resto de franjas listado suma 10, así que el desglose cubre 87 de 91 partidos.
+- **H2:** los 0,6 min son el lapso entre la primera y la última escritura, no el tiempo de armado: el formulario, los toques y el tipeo no quedan en el audit. Las 3 canchas en eventos ya jugados pueden ser cargas retroactivas legítimas.
+- **Pseudo-canchas** (equipos, suplentes) contaminan H1 (cantidad de canchas y cupo), H5, H6, H8 y H10: en las próximas corridas se marcan o se excluyen.
+- **H8:** `ranking_opt_in` es el valor de hoy, y el denominador del 32% incluye a gente sin nadie a quien votar en su cancha. No hay que atribuirle todo el no-voto al costo de votar.
+- **Dónde elegimos la lectura más conservadora** (el análisis decía otra cosa): H6, H8, H10 y H11 quedan como no concluyentes o no evaluables en vez de refutadas; H7 queda confirmada en parte; H5 se marca como débil; los parches son ~10-15% y no 15%; la meta del QN se mantiene en <5 tras la iter 2 en vez de bajarla a ≤3; la 0c no prende el flag hasta medir la limpieza post-partido; y la iter 4 queda en backlog, pero se le pregunta al organizador antes de descartarla.
+
+---
+
+## 10. Hipótesis a validar con datos de producción
+
+Las consultas (todas de solo lectura, con zona horaria `America/Argentina/Buenos_Aires`) están en **`docs/ux/consultas-comportamiento.sql`**, con el mismo id de cada fila (Q0, H1-H12, Q-N y el control de altas accidentales). Las corre el organizador en la consola Postgres de Railway y nos pega los resultados. **Se corrieron el 17/10/2026 en Supabase:** el detalle está en la sección 9 y el resumen, en la columna "Estado (17/10)".
+
+| H | Hipótesis | Confirma si… | Si se refuta, cambia… | Estado (17/10) |
+|---|---|---|---|---|
+| Q0 | Puede haber un índice único no parcial en `(event_id,user_id)` | Aparece en `pg_indexes` | Define si va el índice parcial o el reemplazo (0a) | **Sin datos:** no se corrió |
+| H1 | El partido semanal se repite igual (día, hora, lugar, canchas) | ≥70% de los eventos caen en ≤2 combinaciones | Si no, `/crear` pasa a ser el camino principal y la serie no se construye | **Confirmada en parte:** 3 franjas = 85% por día + hora, pero ≤2 combinaciones = 57%, y lugar y canchas varían |
+| H2 | Armar cuesta escrituras y genera errores (cancha en el evento equivocado) | Mediana >5 escrituras o >3 min de setup; `CREATE_COURT` sobre eventos ya jugados >0 | Si el setup ya es corto, Repetir baja de prioridad frente a la iter 3 | **Confirmada en parte:** errores sí (3 canchas en eventos jugados); costo no (mediana 2 escrituras, 0,6 min) |
+| H3 | Hay un núcleo de fijos | ≥50% de la capacidad son personas que se anotan en <60 min en ≥75% de las semanas | Habilita fijos auto-confirmados (serie v2). Si no, la serie solo publica | **Refutada:** fijos según el SQL, 0, 1 y 0 por franja |
+| H4 | Las bajas existen y hoy pasan por el admin; muchas son tardías | Bajas con actor ≠ target >0; >30% a menos de 24 h | Si hay muchas tardías, "Liberar y avisar al grupo" y el aviso de promoción se adelantan | **Confirmada:** 35% a <24 h; el 71% hecho por otro es efecto del 403 |
+| H5 | Las canchas se llenan rápido y hay demanda insatisfecha | Tiempo de `CREATE_EVENT` a `AUTO_CLOSE_EVENT` <48 h; aparecen `OPEN_COURT` / `REOPEN_EVENT` manuales | Si nunca se llena, se prioriza compartir (lugares por cancha) sobre la espera | **Confirmada en parte**, por poco: 45,9 h sobre el 42% que se auto-cerró; 73 reaperturas en 20 partidos |
+| H6 | Armar equipos hoy son ráfagas de moves | Mediana ≥3 moves por partido, o secuencias OPEN_COURT > MOVE > CLOSE_COURT | Si hay pocos moves, los equipos se arman afuera de la app: 3b va antes que 3a | **No concluyente:** (a) se refuta, 43 de 55 sin moves; (b) no se corrió |
+| H7 | Los partidos se finalizan tarde o nunca, y se pierden votos | Mediana `finalized_at − starts_at` >24 h o eventos colgados >0 | Si ya se finalizan rápido, auto-finalize baja a la iter 4 | **Confirmada en parte:** mediana 37,9 h y 0 colgados; que se pierdan votos no está medido |
+| H8 | Pocos votan por el opt-in, no por el costo | % con opt-in <50% entre participantes | Si el opt-in es alto pero votan poco, el foco es el lote + "No lo vi"; si es bajo, la card inline va arriba | **No concluyente:** 61% por participación (refuta), 45% por jugador (confirmaría) |
+| H9 | Los invitados se repiten y el límite real es menor a 5 | ≥30% de los nombres de invitados se repiten en ≥2 semanas; p95 de invitados por persona ≤5 | Define si hay chips recientes y el valor de `GUEST_LIMIT` | **Refutada:** 9% se repite; p95 3 |
+| H10 | La gente elige cancha a propósito | ≥40% de los jugadores con ≥4 partidos repiten la misma cancha ≥80% de las veces | Se asigna "tu cancha de siempre" en vez de la primera libre, y "elegir cancha" queda más visible | **No evaluable:** por nombre, 0 de 75; por posición no se puede (`sort_order` repetido en 46 de 49) |
+| H11 | Suspender es frecuente | ≥1 aviso de suspensión por mes | Suspender pasa a la iter 2 | **No concluyente:** 0 de 64 avisos, pero el canal casi no se usa |
+| H12 / Q-N | Dónde gasta escrituras el organizador | El top 3 de acciones por partido coincide con a/c/d | Reordena el roadmap | H12 **refutada** con un proxy ("b" entra en el top 3). QN: base provisoria, mediana 8 (ver 9.3) |
 
 Cuidados al leer los resultados:
 
@@ -987,12 +1134,12 @@ Cuidados al leer los resultados:
 
 ---
 
-## 10. Pendientes y próximos pasos
+## 11. Pendientes y próximos pasos
 
 | # | Paso | Quién | Resultado esperado |
 |---|---|---|---|
 | 1 | Correr `docs/ux/consultas-comportamiento.sql` en la consola Postgres de Railway (solo lectura) | Organizador | Resultados de Q0, H1-H12 y Q-N pegados en la conversación |
-| 2 | Actualizar la tabla de hipótesis (sección 9) con confirmada / refutada y el número que lo decidió | Nosotros | Columna nueva "Resultado" en la tabla |
+| 2 | Actualizar la tabla de hipótesis (sección 10) con confirmada / refutada y el número que lo decidió | Nosotros | Columna nueva "Resultado" en la tabla |
 | 3 | Reordenar el roadmap (sección 8.4) según los datos: H11 → Suspender a la iter 2; H6 → orden 3a/3b; H1 → serie sí o no; H7 → auto-finalize en la 2 o la 4 | Nosotros | Roadmap y prototipo alineados |
 | 4 | Resolver Q0 (índice único en `event_registrations`) | Nosotros, con el resultado de Q0 | Decisión: índice parcial nuevo o reemplazo en fase contract |
 | 5 | Escribir el plan de la **iteración 0a** (hotfix de bajas, espera, CSS de raíz y Home al próximo partido) con el mismo formato que `docs/event-access-iteracion-0-1-plan.md` | Nosotros | Plan aprobado antes de tocar código |
