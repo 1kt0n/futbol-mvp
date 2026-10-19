@@ -6,9 +6,8 @@ Prototipo clickeable (privado, se comparte desde su menú *Share*): https://clau
 
 ## Resumen
 
-- **En producción:** 0a (bajas propias, espera, menús), migración 020, 0c (finalizar solo, prendido a 240 min), barra inferior (1b, adelantada) y 0d (Repetir por franja).
-- **Hecho en local, sin push:** 0b (hojas, diálogos, menús y avisos en una sola primitiva). Commit `334e232` en `main`; falta el OK para pushear.
-- **Lo próximo del plan:** push de la 0b → 1a (pantalla del partido) → 2 (ciclo semanal) → 3b-1 (Claro y Oscuro a mano).
+- **En producción:** 0a (bajas propias, espera, menús), migración 020, 0c (finalizar solo, prendido a 240 min), barra inferior (1b, adelantada), 0d (Repetir por franja) y 0b (hojas, diálogos, menús y avisos en una sola primitiva, desde el 18/10).
+- **Lo próximo del plan:** 1a (pantalla del partido) → 2 (ciclo semanal) → 3b-1 (Claro y Oscuro a mano). Antes, probar la 0b en un iPhone real (ver abajo).
 - **Medición:** el **31/10** correr la consulta `SEGUIMIENTO` de [`consultas-comportamiento.sql`](consultas-comportamiento.sql) y comparar contra las metas de abajo.
 
 ## Qué está en producción
@@ -21,17 +20,18 @@ Prototipo clickeable (privado, se comparte desde su menú *Share*): https://clau
 | **1b** · Barra inferior | Partido · Calendario · Avisos · Gestión (admins) · Perfil, con contadores; pantalla Avisos nueva; el header del inicio queda limpio | `295fe82` | — |
 | **0d** · Repetir por franja | En el Panel, "Repetir para el <día>" copia el partido de la misma franja con un mini-formulario (fecha, canchas, cupo) y deja listo el mensaje para WhatsApp. Si ya hay un partido a esa hora en ese lugar, avisa en vez de duplicarlo | `3e53d6d` (merge `a8cc6df`), arreglos de la revisión `5dd4407` | El acceso con link o clave se copia solo con `events.manage` y `EVENT_ACCESS_ENABLED` prendido |
 | Permisos | Quien solo puede desbloquear PINs también entra al Panel y ve Gestión | `87d9c4e` | — |
+| **0b** · Hojas y menús | Todas las hojas, diálogos, menús y avisos salen de una sola pieza (`src/design/ui/overlay`). El botón principal queda siempre a la vista (footer fijo con safe-area, alto en `dvh`, sube con el teclado). Los formularios ya no se borran al tocar el fondo: con cambios, Esc o la cruz preguntan "¿Descartás los cambios?". El fondo no scrollea detrás, Esc cierra solo la de arriba y el foco vuelve al botón que la abrió (también en Safari). Los avisos ("Cancha creada", errores) van encima de la barra inferior, o arriba si hay una hoja abierta. Los `confirm`/`prompt`/`alert` del navegador pasan a diálogos propios | `334e232`, docs `4e82fe3` | — (solo frontend). Rollback: revert del commit |
 | Documentación | Diseño, datos de producción, decisión de 240 min, este estado | `7826950`, `5f90294`, `b1ff17f` | — |
 
-## Hecho en local, sin push
+## Verificación del 18/10 (producción, 0b)
 
-| Iteración | Qué cambia para la gente | Commits en `main` (locales) | Configuración |
-|---|---|---|---|
-| **0b** · Hojas y menús | Todas las hojas, diálogos, menús y avisos salen de una sola pieza (`src/design/ui/overlay`). El botón principal queda siempre a la vista (footer fijo con safe-area, alto en `dvh`, sube con el teclado). Los formularios ya no se borran al tocar el fondo: con cambios, Esc o la cruz preguntan "¿Descartás los cambios?". El fondo no scrollea detrás, Esc cierra solo la de arriba y el foco vuelve al botón que la abrió (también en Safari). Los avisos ("Cancha creada", errores) van encima de la barra inferior, o arriba si hay una hoja abierta. Los `confirm`/`prompt`/`alert` del navegador pasan a diálogos propios | `334e232` + docs | — (solo frontend). Rollback: revert del commit |
+- Push `9e5843b..4e82fe3`; Railway publicó el bundle nuevo (`index-4c4dyxQN.js`) en ~2 min.
+- El bundle trae `#overlay-root`, "¿Descartás los cambios?", el Toaster y `data-tabbar`, y ya no trae `window.confirm`. El CSS trae `.ov-panel` con `100dvh` y `--kb-inset`, y `z-tabbar`.
+- `/config` sin cambios (`autoCloseOnFull:false`, `guestLimitPerUser:5`, `autoFinalizeEnabled:true`, `autoFinalizeAfterMinutes:240`). `/health`, `/`, `/admin`, `/calendar`, `/avisos` y `/profile` responden 200.
+- El login carga sin errores en WebKit (iPhone 14) y Chromium (Pixel 7), con `#overlay-root` y el Toaster montados.
+- Detalle de la iteración (plan, revisión, tests): [`iteracion-0b-plan.md`](iteracion-0b-plan.md).
 
-Plan, desviaciones, revisión independiente (10 hallazgos, 8 arreglados) y verificación: [`iteracion-0b-plan.md`](iteracion-0b-plan.md).
-
-**Después del push, probar en el teléfono:**
+**Probar en el teléfono (organizador):**
 
 1. Gestión › Eventos, scrolleado hasta abajo: "+ Crear Evento" abre la hoja con "Crear Evento" a la vista. Tipear algo y tocar el fondo: no se cierra. La cruz pregunta "¿Descartás los cambios?".
 2. Con el teclado abierto en un campo de la hoja (iPhone), el botón principal tiene que quedar arriba del teclado. **No se pudo probar acá:** Playwright no simula el teclado de iOS.
@@ -72,7 +72,7 @@ Correr `SEGUIMIENTO` (al final de [`consultas-comportamiento.sql`](consultas-com
 
 Detalle de cada iteración en [`rediseno-ux.md` §8.2 y §8.4](rediseno-ux.md).
 
-1. **0b · Hojas y menús**: hecha en local (ver arriba). Falta el push y probarla en un iPhone real.
+1. **0b · Hojas y menús**: en producción desde el 18/10. Falta probarla en un iPhone real (sobre todo con el teclado abierto).
 2. **1a · Pantalla del partido `/p/:id`** (1-1,5 semanas): "Me anoto" en un toque con la cancha asignada sola, la espera visible con el puesto, "No puedo ir" y, a menos de 24 h, "Liberar y avisar al grupo"; compartir con los lugares por cancha. Es lo que abre el link de WhatsApp. **Ojo:** la barra ya existe (1b), así que la 1a se monta adentro del shell. **Suma lo que quedó fuera de la 0b** (decidido el 17/10):
    - `?sheet=` en la URL, para que el atrás de Android cierre la hoja (y pregunte si hay cambios) en vez de salir de la pantalla;
    - deslizar para cerrar;

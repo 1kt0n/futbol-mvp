@@ -1,6 +1,6 @@
 # Plan — Iteración 0b (hojas, diálogos, menús y avisos en una sola primitiva)
 
-> **Estado (18/10/2026):** implementado y verificado en local, **sin push**. Abajo el plan aprobado tal cual; al final,
+> **Estado (18/10/2026):** implementado, verificado en local y **en producción** (push `9e5843b..4e82fe3`, verificación en `estado.md`). Abajo el plan aprobado tal cual; al final,
 > las desviaciones y cómo se verificó.
 
 
