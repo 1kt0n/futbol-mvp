@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { cn, apiFetch } from '../App.jsx'
+import { Dialog } from '../design/ui/overlay/index.js'
 
 // UI de gestion de roles y permisos (RBAC). Solo accesible con permiso 'roles.manage'
 // (en la practica, super_admin). Permite crear/editar/eliminar roles y tildar
@@ -15,6 +16,8 @@ export default function RolesPermisosTab({ setToast, setErr }) {
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(null) // null | 'new' | roleId
   const [form, setForm] = useState(EMPTY_FORM)
+  // Eliminar: confirmación propia (antes, confirm nativo).
+  const [removing, setRemoving] = useState(null)
 
   async function load() {
     setLoading(true)
@@ -93,13 +96,14 @@ export default function RolesPermisosTab({ setToast, setErr }) {
   }
 
   async function remove(role) {
-    if (!window.confirm(`¿Eliminar el rol "${role.name}"? Se quitará a todos los usuarios que lo tengan.`)) return
     setBusy(true)
     try {
       await apiFetch(`/admin/roles/${role.id}`, { method: 'DELETE' })
+      setRemoving(null)
       setToast?.('Rol eliminado')
       await load()
     } catch (err) {
+      setRemoving(null)
       setErr?.(err.message)
     } finally {
       setBusy(false)
@@ -231,8 +235,9 @@ export default function RolesPermisosTab({ setToast, setErr }) {
                       Editar
                     </button>
                     <button
-                      onClick={() => remove(role)}
+                      onClick={() => setRemoving(role)}
                       disabled={busy}
+                      data-testid="role-delete-btn"
                       className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
                     >
                       Eliminar
@@ -255,6 +260,19 @@ export default function RolesPermisosTab({ setToast, setErr }) {
           </div>
         ))}
       </div>
+
+      <Dialog
+        open={!!removing}
+        title={`¿Eliminar el rol "${removing?.name || ''}"?`}
+        tone="danger"
+        confirmLabel="Eliminar"
+        busy={busy}
+        onConfirm={() => remove(removing)}
+        onCancel={() => setRemoving(null)}
+        confirmTestId="role-delete-confirm-btn"
+      >
+        Se quitará a todos los usuarios que lo tengan.
+      </Dialog>
     </div>
   )
 }

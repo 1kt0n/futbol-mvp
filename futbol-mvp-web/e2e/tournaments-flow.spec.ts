@@ -46,9 +46,11 @@ async function createTournament(page: Page, opts: {
   teamsCount: number;
   minutes: number;
 }) {
+  // El formulario vive en una hoja (0b): primero hay que abrirla.
+  await page.getByTestId("tournament-create-btn").click();
   await page.getByTestId("create-tournament-title-input").fill(opts.title);
   await page.getByTestId("create-tournament-location-input").fill(opts.location);
-  await page.getByTestId("create-tournament-starts-at-input").fill("2026-03-13T20:00:00Z");
+  await page.getByTestId("create-tournament-starts-at-input").fill("2026-03-13T20:00");
   await page.getByTestId("create-tournament-format-select").selectOption(opts.format);
   await page.getByTestId("create-tournament-teams-count-input").fill(String(opts.teamsCount));
   await page.getByTestId("create-tournament-minutes-input").fill(String(opts.minutes));

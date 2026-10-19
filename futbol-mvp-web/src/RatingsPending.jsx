@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { handleAuthFailure } from "./authSession.js";
+import { cn } from "./design/cn.js";
+import { toast } from "./design/ui/overlay/index.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -21,9 +23,6 @@ function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
 }
 
-function cn(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
 
 function initials(name = "") {
   const parts = String(name).trim().split(/\s+/).filter(Boolean);
@@ -136,20 +135,6 @@ function AttributeSelector({ selected, onToggle, disabled }) {
   );
 }
 
-function Toast({ toast, onClose }) {
-  if (!toast) return null;
-  const bg = toast.kind === "error" ? "bg-red-500/90" : "bg-emerald-500/90";
-  return (
-    <div className={cn("fixed left-4 right-4 top-4 z-50 rounded-xl px-4 py-3 text-white shadow-lg sm:left-auto sm:right-4", bg)}>
-      <div className="font-semibold">{toast.title}</div>
-      {toast.text && <div className="text-sm opacity-90">{toast.text}</div>}
-      <button onClick={onClose} className="absolute right-2 top-1 text-white/70 hover:text-white">
-        X
-      </button>
-    </div>
-  );
-}
-
 function timeRemaining(finalizedAt, votingWindowDays = 7) {
   const deadline = new Date(finalizedAt).getTime() + votingWindowDays * 24 * 60 * 60 * 1000;
   const now = Date.now();
@@ -183,7 +168,6 @@ export default function RatingsPending() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState(null);
   const [pendingData, setPendingData] = useState(null);
   const [showListView, setShowListView] = useState(false);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
@@ -242,7 +226,7 @@ export default function RatingsPending() {
       }
       setFormState(state);
     } catch (e) {
-      setToast({ kind: "error", title: "Error", text: e.message });
+      toast({ kind: "error", title: "Error", text: e.message });
       if (e.message.includes("No autenticado")) navigate("/");
     } finally {
       if (!silent) setLoading(false);
@@ -268,12 +252,6 @@ export default function RatingsPending() {
     const raf = requestAnimationFrame(() => setIsEntering(false));
     return () => cancelAnimationFrame(raf);
   }, [isEntering, activeCardIndex]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   function updateRating(courtId, targetId, rating) {
     setFormState((prev) => ({
@@ -318,15 +296,15 @@ export default function RatingsPending() {
     const vote = getDraftVote(entry.court_id, entry.target.user_id);
 
     if (entry.is_locked) {
-      setToast({ kind: "error", title: "Ventana cerrada", text: "Esta ventana de feedback ya no acepta cambios." });
+      toast({ kind: "error", title: "Ventana cerrada", text: "Esta ventana de feedback ya no acepta cambios." });
       return;
     }
     if (vote.rating == null) {
-      setToast({ kind: "error", title: "Falta puntaje", text: "Elegi una puntuacion para guardar." });
+      toast({ kind: "error", title: "Falta puntaje", text: "Elegi una puntuacion para guardar." });
       return;
     }
     if ((vote.attributes || []).length !== 2) {
-      setToast({ kind: "error", title: "Faltan atributos", text: "Debes seleccionar exactamente 2 atributos." });
+      toast({ kind: "error", title: "Faltan atributos", text: "Debes seleccionar exactamente 2 atributos." });
       return;
     }
 
@@ -346,10 +324,10 @@ export default function RatingsPending() {
           ],
         },
       });
-      setToast({ kind: "success", title: "Guardado", text: `Voto guardado. Pendientes: ${res.pending_after}` });
+      toast({ kind: "success", title: "Guardado", text: `Voto guardado. Pendientes: ${res.pending_after}` });
       await loadPending({ silent: true });
     } catch (e) {
-      setToast({ kind: "error", title: "Error", text: e.message });
+      toast({ kind: "error", title: "Error", text: e.message });
     } finally {
       setSaving(false);
     }
@@ -389,7 +367,6 @@ export default function RatingsPending() {
   if (pendingData?.locked && pendingData?.reason === "RANKING_OPT_OUT") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-4 py-8">
-        <Toast toast={toast} onClose={() => setToast(null)} />
         <div className="mx-auto max-w-xl rounded-2xl border border-sky-400/20 bg-sky-400/10 p-6 text-sky-100">
           <h1 className="text-xl font-bold">Perfil de Juego desactivado</h1>
           <p className="mt-2 text-sm text-sky-100/80">
@@ -416,7 +393,6 @@ export default function RatingsPending() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-4 py-8">
-      <Toast toast={toast} onClose={() => setToast(null)} />
 
       <div className="mx-auto max-w-2xl">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

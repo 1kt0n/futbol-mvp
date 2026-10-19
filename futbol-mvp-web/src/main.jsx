@@ -14,6 +14,7 @@ import PublicEventPage from './features/events/public/PublicEventPage.jsx'
 import ExternalParticipationPage from './features/events/public/ExternalParticipationPage.jsx'
 import AvisosPage from './features/avisos/AvisosPage.jsx'
 import AppShell from './shell/AppShell.jsx'
+import { Toaster } from './design/ui/overlay/index.js'
 
 function LegacyPublicRedirect() {
   const { id } = useParams()
@@ -49,6 +50,8 @@ createRoot(document.getElementById('root')).render(
         <Route path="/tournaments/:id/live" element={<LegacyPublicRedirect />} />
         <Route path="/tournaments/:id/live/tv" element={<LegacyTvRedirect />} />
       </Routes>
+      {/* Un solo lugar para los toasts de toda la app (también en las páginas públicas) */}
+      <Toaster />
     </BrowserRouter>
   </StrictMode>,
 )

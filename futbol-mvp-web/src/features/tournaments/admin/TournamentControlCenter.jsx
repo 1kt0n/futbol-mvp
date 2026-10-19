@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, cn } from "../../../App.jsx";
 import Card from "../../../design/ui/Card.jsx";
+import { Dialog } from "../../../design/ui/overlay/index.js";
 import TournamentHeaderHero from "./TournamentHeaderHero.jsx";
 import TournamentDraftStepper from "./TournamentDraftStepper.jsx";
 import TournamentTabs from "./TournamentTabs.jsx";
@@ -206,6 +207,7 @@ export default function TournamentControlCenter() {
   }
 
   function openResultModal(match) {
+    setErr("");
     setResultModal({
       match_id: match.id,
       round: match.round,
@@ -392,7 +394,7 @@ export default function TournamentControlCenter() {
           <div className="font-semibold text-white">Torneos</div>
           <div className="flex gap-2">
             <button data-testid="tournaments-reload-btn" className="focus-ring rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs hover:bg-white/10" onClick={() => loadList()} disabled={busy}>Recargar</button>
-            <button className="focus-ring rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-black hover:bg-emerald-400" onClick={() => setCreateModalOpen(true)}>+ Crear torneo</button>
+            <button className="focus-ring rounded-lg bg-emerald-500 px-3 py-1 text-xs font-semibold text-black hover:bg-emerald-400" onClick={() => { setErr(""); setCreateModalOpen(true); }} data-testid="tournament-create-btn">+ Crear torneo</button>
           </div>
         </div>
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
@@ -427,6 +429,7 @@ export default function TournamentControlCenter() {
       <CreateTournamentModal
         open={createModalOpen}
         busy={busy}
+        error={err}
         onClose={() => setCreateModalOpen(false)}
         onCreate={handleCreateTournament}
       />
@@ -446,7 +449,7 @@ export default function TournamentControlCenter() {
             onFinish={handleFinishTournament}
             onArchive={handleArchiveTournament}
             onReopen={handleReopenTournament}
-            onDelete={() => setConfirmDelete(true)}
+            onDelete={() => { setErr(""); setConfirmDelete(true); }}
             onTabChange={setActiveTab}
           />
 
@@ -550,39 +553,25 @@ export default function TournamentControlCenter() {
         </>
       )}
 
-      {/* Confirm delete modal */}
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setConfirmDelete(false)}>
-          <div className="mx-4 w-full max-w-sm rounded-3xl border border-white/10 bg-zinc-900 p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-white">Eliminar torneo</h3>
-            <p className="mt-2 text-sm text-white/70">
-              ¿Eliminar <span className="font-semibold text-white">{tournament?.title}</span>? Esta accion no se puede deshacer.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="focus-ring flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold hover:bg-white/10"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteTournament}
-                disabled={busy}
-                data-testid="tournament-confirm-delete-btn"
-                className="focus-ring flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-40"
-              >
-                Eliminar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog
+        open={confirmDelete}
+        title="Eliminar torneo"
+        tone="danger"
+        confirmLabel="Eliminar"
+        busy={busy}
+        onConfirm={handleDeleteTournament}
+        onCancel={() => setConfirmDelete(false)}
+        confirmTestId="tournament-confirm-delete-btn"
+        cancelTestId="tournament-cancel-delete-btn"
+      >
+        ¿Eliminar <span className="font-semibold text-white">{tournament?.title}</span>? Esta accion no se puede deshacer.
+        {err ? <p role="alert" className="mt-2 text-rose-200">{err}</p> : null}
+      </Dialog>
 
       <MatchResultModal
         open={!!resultModal}
         busy={busy}
+        error={err}
         state={resultModal}
         format={tournament?.format}
         onClose={() => setResultModal(null)}

@@ -6,12 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint .",
+    "lint": "node ./scripts/check-overlays.mjs && eslint .",
+    "check:overlays": "node ./scripts/check-overlays.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "e2e:install": "playwright install chromium",
+    "e2e:install": "playwright install chromium webkit",
     "e2e:a11y": "playwright test e2e/accessibility-smoke.spec.ts --config=playwright.config.ts",
+    "e2e:overlays": "playwright test e2e/overlays.spec.ts --config=playwright.config.ts --project=mobile-chrome --project=iphone-14",
     "e2e:tournaments:screenshots": "node ./scripts/run-tournaments-screenshots.mjs",
     "e2e:events:screenshots": "node ./scripts/run-events-screenshots.mjs"
   },

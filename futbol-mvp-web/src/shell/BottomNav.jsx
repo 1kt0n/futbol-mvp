@@ -1,8 +1,9 @@
 // Barra de navegación inferior (rediseño UX, iteración 1b).
 // Partido · Calendario · Avisos · Gestión (solo con permisos de panel) · Perfil.
-// Va fija abajo, respeta el safe-area del iPhone y queda debajo de hojas y
-// modales (z-40 contra z-50/z-60 de los overlays).
+// Va fija abajo, respeta el safe-area del iPhone y queda debajo de hojas,
+// diálogos y toasts (z-tabbar en la escala de src/design/tokens.css).
 
+import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../design/cn.js";
 
@@ -69,10 +70,16 @@ export default function BottomNav({ isAdmin = false, avisos = 0, gestion = 0 }) 
     { to: "/profile", label: "Perfil", icon: "user", testid: "nav-perfil" },
   ];
 
+  // Con la barra a la vista, los toasts suben para no taparla (--toast-bottom).
+  useEffect(() => {
+    document.documentElement.setAttribute("data-tabbar", "");
+    return () => document.documentElement.removeAttribute("data-tabbar");
+  }, []);
+
   return (
     <nav
       aria-label="Navegación principal"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-zinc-950/95 backdrop-blur"
+      className="fixed inset-x-0 bottom-0 z-tabbar border-t border-white/10 bg-zinc-950/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-lg">

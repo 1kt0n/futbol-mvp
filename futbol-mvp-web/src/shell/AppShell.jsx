@@ -50,8 +50,8 @@ export default function AppShell() {
   // su estado (por ejemplo, el aviso de "Bienvenido").
   return (
     <>
-      {/* El body ya suma el safe-area de abajo; acá solo el alto de la barra. */}
-      <div className={actor ? "pb-[4.25rem]" : undefined}>
+      {/* El body ya suma el safe-area de abajo; acá solo el alto de la barra y un respiro. */}
+      <div className={actor ? "pb-[calc(var(--tabbar-h)+0.75rem)]" : undefined}>
         {mustLogin ? <Navigate to="/" replace /> : <Outlet />}
       </div>
       {/* key: al cambiar de sesión se vuelven a pedir permisos y contadores */}

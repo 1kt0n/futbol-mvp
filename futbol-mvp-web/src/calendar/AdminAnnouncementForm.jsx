@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useId, useState } from "react";
 import { apiFetch, cn } from "./api.js";
+import { Sheet, SheetFooter, useSheetBusy, useSheetClose, useSheetDirty } from "../design/ui/overlay/index.js";
 
 function isoToLocalInput(iso) {
   if (!iso) return "";
@@ -13,40 +14,58 @@ function isoToLocalInput(iso) {
   }
 }
 
+const FIELD =
+  "w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/40 focus:border-white/30 focus:outline-none";
+const LABEL = "mb-1 block text-xs font-medium uppercase tracking-wide text-white/60";
+
+function initialValues(editing) {
+  return {
+    title: editing?.title || "",
+    description: editing?.description || "",
+    startsAt: isoToLocalInput(editing?.starts_at),
+    endsAt: isoToLocalInput(editing?.ends_at),
+    locationName: editing?.location_name || "",
+    actionUrl: editing?.action_url || "",
+    actionLabel: editing?.action_label || "",
+  };
+}
+
 export default function AdminAnnouncementForm({ open, onClose, onSaved, editing }) {
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={editing ? "Editar anuncio" : "Nuevo anuncio"}
+      dismiss="guarded"
+      testId="announcement-sheet"
+    >
+      <AnnouncementFields editing={editing} onClose={onClose} onSaved={onSaved} />
+    </Sheet>
+  );
+}
+
+// Se monta al abrir la hoja: el estado arranca de `editing` y se descarta al cerrar.
+function AnnouncementFields({ editing, onClose, onSaved }) {
   const isEdit = !!editing;
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [startsAt, setStartsAt] = useState("");
-  const [endsAt, setEndsAt] = useState("");
-  const [locationName, setLocationName] = useState("");
-  const [actionUrl, setActionUrl] = useState("");
-  const [actionLabel, setActionLabel] = useState("");
+  const id = useId();
+  const [initial] = useState(() => initialValues(editing));
+  const [values, setValues] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const requestClose = useSheetClose();
+  const set = (key) => (e) => setValues((v) => ({ ...v, [key]: e.target.value }));
 
-  useEffect(() => {
-    if (!open) return;
-    setTitle(editing?.title || "");
-    setDescription(editing?.description || "");
-    setStartsAt(isoToLocalInput(editing?.starts_at));
-    setEndsAt(isoToLocalInput(editing?.ends_at));
-    setLocationName(editing?.location_name || "");
-    setActionUrl(editing?.action_url || "");
-    setActionLabel(editing?.action_label || "");
-    setErr("");
-  }, [open, editing]);
-
-  if (!open) return null;
+  useSheetDirty(Object.keys(initial).some((k) => values[k] !== initial[k]));
+  useSheetBusy(busy);
 
   async function handleSave(e) {
     e.preventDefault();
     setErr("");
-    if (title.trim().length < 3) {
+    if (values.title.trim().length < 3) {
       setErr("El titulo necesita al menos 3 caracteres.");
       return;
     }
-    if (!startsAt) {
+    if (!values.startsAt) {
       setErr("Indica la fecha y hora.");
       return;
     }
@@ -54,13 +73,13 @@ export default function AdminAnnouncementForm({ open, onClose, onSaved, editing 
     setBusy(true);
     try {
       const body = {
-        title: title.trim(),
-        description: description.trim() || null,
-        starts_at: startsAt,
-        ends_at: endsAt || null,
-        location_name: locationName.trim() || null,
-        action_url: actionUrl.trim() || null,
-        action_label: actionLabel.trim() || null,
+        title: values.title.trim(),
+        description: values.description.trim() || null,
+        starts_at: values.startsAt,
+        ends_at: values.endsAt || null,
+        location_name: values.locationName.trim() || null,
+        action_url: values.actionUrl.trim() || null,
+        action_label: values.actionLabel.trim() || null,
       };
       if (isEdit) {
         await apiFetch(`/admin/calendar/announcements/${editing.id}`, {
@@ -73,160 +92,151 @@ export default function AdminAnnouncementForm({ open, onClose, onSaved, editing 
           body,
         });
       }
+      setBusy(false);
       onSaved?.();
       onClose?.();
     } catch (e) {
       setErr(e.message || "No se pudo guardar.");
-    } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={onClose}
-    >
-      <form
-        onSubmit={handleSave}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-2xl border border-white/10 bg-zinc-900 p-6 shadow-2xl"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">
-            {isEdit ? "Editar anuncio" : "Nuevo anuncio"}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-2 py-1 text-sm text-white/50 hover:bg-white/10 hover:text-white"
-          >
-            Cerrar
-          </button>
+    <form id={`${id}-form`} onSubmit={handleSave}>
+      {err && (
+        <div role="alert" className="mb-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+          {err}
+        </div>
+      )}
+
+      <div className="space-y-3">
+        <div>
+          <label htmlFor={`${id}-title`} className={LABEL}>
+            Titulo
+          </label>
+          <input
+            id={`${id}-title`}
+            value={values.title}
+            onChange={set("title")}
+            maxLength={160}
+            required
+            data-testid="announcement-title-input"
+            className={FIELD}
+            placeholder="Cierre de inscripciones Liga A"
+          />
         </div>
 
-        {err && (
-          <div className="mb-3 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
-            {err}
-          </div>
-        )}
+        <div>
+          <label htmlFor={`${id}-description`} className={LABEL}>
+            Descripcion
+          </label>
+          <textarea
+            id={`${id}-description`}
+            value={values.description}
+            onChange={set("description")}
+            maxLength={1200}
+            rows={3}
+            className={FIELD}
+            placeholder="Opcional"
+          />
+        </div>
 
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-white/50">
-              Titulo
+            <label htmlFor={`${id}-starts`} className={LABEL}>
+              Cuando
             </label>
             <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={160}
+              id={`${id}-starts`}
+              type="datetime-local"
+              value={values.startsAt}
+              onChange={set("startsAt")}
               required
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-              placeholder="Cierre de inscripciones Liga A"
+              className={FIELD}
             />
           </div>
-
           <div>
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-white/50">
-              Descripcion
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              maxLength={1200}
-              rows={3}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-              placeholder="Opcional"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-white/50">
-                Cuando
-              </label>
-              <input
-                type="datetime-local"
-                value={startsAt}
-                onChange={(e) => setStartsAt(e.target.value)}
-                required
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white focus:border-white/30 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-white/50">
-                Hasta (opcional)
-              </label>
-              <input
-                type="datetime-local"
-                value={endsAt}
-                onChange={(e) => setEndsAt(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white focus:border-white/30 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-white/50">
-              Donde (opcional)
+            <label htmlFor={`${id}-ends`} className={LABEL}>
+              Hasta (opcional)
             </label>
             <input
-              value={locationName}
-              onChange={(e) => setLocationName(e.target.value)}
-              maxLength={160}
-              className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-              placeholder="Cancha Norte"
+              id={`${id}-ends`}
+              type="datetime-local"
+              value={values.endsAt}
+              onChange={set("endsAt")}
+              className={FIELD}
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-white/50">
-                Link (opcional)
-              </label>
-              <input
-                value={actionUrl}
-                onChange={(e) => setActionUrl(e.target.value)}
-                maxLength={500}
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-                placeholder="https://..."
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-white/50">
-                Texto del boton
-              </label>
-              <input
-                value={actionLabel}
-                onChange={(e) => setActionLabel(e.target.value)}
-                maxLength={40}
-                className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-                placeholder="Inscribirme"
-              />
-            </div>
           </div>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
+        <div>
+          <label htmlFor={`${id}-location`} className={LABEL}>
+            Donde (opcional)
+          </label>
+          <input
+            id={`${id}-location`}
+            value={values.locationName}
+            onChange={set("locationName")}
+            maxLength={160}
+            className={FIELD}
+            placeholder="Cancha Norte"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor={`${id}-url`} className={LABEL}>
+              Link (opcional)
+            </label>
+            <input
+              id={`${id}-url`}
+              value={values.actionUrl}
+              onChange={set("actionUrl")}
+              maxLength={500}
+              className={FIELD}
+              placeholder="https://..."
+            />
+          </div>
+          <div>
+            <label htmlFor={`${id}-label`} className={LABEL}>
+              Texto del boton
+            </label>
+            <input
+              id={`${id}-label`}
+              value={values.actionLabel}
+              onChange={set("actionLabel")}
+              maxLength={40}
+              className={FIELD}
+              placeholder="Inscribirme"
+            />
+          </div>
+        </div>
+      </div>
+
+      <SheetFooter>
+        <div className="flex gap-3">
           <button
             type="button"
-            onClick={onClose}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/70 hover:bg-white/10"
+            onClick={requestClose}
+            disabled={busy}
+            className="min-h-[44px] flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-base font-semibold text-white/80 hover:bg-white/10 disabled:opacity-50"
           >
             Cancelar
           </button>
           <button
             type="submit"
+            form={`${id}-form`}
             disabled={busy}
+            data-testid="announcement-submit-btn"
             className={cn(
-              "rounded-xl bg-emerald-500 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-400",
+              "min-h-[44px] flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-base font-semibold text-black hover:bg-emerald-400",
               busy && "opacity-60",
             )}
           >
             {busy ? "Guardando..." : (isEdit ? "Guardar cambios" : "Crear anuncio")}
           </button>
         </div>
-      </form>
-    </div>
+      </SheetFooter>
+    </form>
   );
 }

@@ -32,7 +32,7 @@ export default function TournamentHeaderHero({ tournament, ready, teamsCount, ma
   const currentIdx = stageIndex(draftStage);
 
   return (
-    <Card className="sticky top-3 z-20 overflow-hidden bg-gradient-to-br from-zinc-900/95 via-zinc-900/80 to-zinc-800/70">
+    <Card className="sticky top-3 z-sticky overflow-hidden bg-gradient-to-br from-zinc-900/95 via-zinc-900/80 to-zinc-800/70">
       <div className="absolute -right-14 -top-14 h-44 w-44 rounded-full bg-emerald-500/10 blur-3xl" aria-hidden="true" />
       <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>

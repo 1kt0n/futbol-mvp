@@ -19,6 +19,27 @@
   --status-finished-text: #7dd3fc;
   --status-archived-bg: rgba(113, 113, 122, 0.25);
   --status-archived-text: #d4d4d8;
+
+  /* Capas (rediseño UX §6.2.10). Tailwind: z-sticky, z-tabbar, z-fab, z-sheet… */
+  --z-sticky: 20;
+  --z-tabbar: 30;
+  --z-fab: 35;
+  --z-sheet: 50;
+  --z-dialog: 60;
+  --z-menu: 65;
+  --z-toast: 70;
+
+  /* Alto de la barra inferior sin el safe-area: ítems de 56px + 1px de borde. */
+  --tabbar-h: 3.5625rem;
+  /* Lo que tapa el teclado virtual con una hoja abierta (useKeyboardInset). */
+  --kb-inset: 0px;
+  /* Sin barra (login, páginas públicas) los toasts van abajo de todo. */
+  --toast-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+}
+
+/* BottomNav marca <html data-tabbar> mientras está montada. */
+:root[data-tabbar] {
+  --toast-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.5rem);
 }
 
 .focus-ring {

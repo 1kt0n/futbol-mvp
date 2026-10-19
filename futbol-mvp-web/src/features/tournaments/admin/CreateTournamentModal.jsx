@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useId, useState } from "react";
+import { Sheet, SheetFooter, useSheetDirty } from "../../../design/ui/overlay/index.js";
 
 const FORMATS = ["ROUND_ROBIN", "KNOCKOUT", "GROUPS_PLAYOFFS"];
 
@@ -28,10 +29,26 @@ const INITIAL = {
   minutes_per_match: 20,
 };
 
-export default function CreateTournamentModal({ open, busy, onClose, onCreate }) {
-  const [form, setForm] = useState({ ...INITIAL });
+export default function CreateTournamentModal({ open, busy, error, onClose, onCreate }) {
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="Crear torneo"
+      dismiss="guarded"
+      busy={busy}
+      testId="create-tournament-sheet"
+    >
+      <CreateTournamentForm busy={busy} error={error} onCreate={onCreate} />
+    </Sheet>
+  );
+}
 
-  if (!open) return null;
+// Se monta al abrir la hoja: cerrar descarta lo cargado y, si la API falla, queda todo como estaba.
+function CreateTournamentForm({ busy, error, onCreate }) {
+  const formId = useId();
+  const [form, setForm] = useState({ ...INITIAL });
+  useSheetDirty(Object.keys(INITIAL).some((k) => String(form[k]) !== String(INITIAL[k])));
 
   function handleFormatChange(e) {
     const fmt = e.target.value;
@@ -50,132 +67,128 @@ export default function CreateTournamentModal({ open, busy, onClose, onCreate })
       teams_count: Number(form.teams_count),
       minutes_per_match: Number(form.minutes_per_match),
     });
-    setForm({ ...INITIAL });
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" onClick={onClose}>
-      <div className="fixed inset-0 bg-black/70" />
-      <div
-        className="relative z-10 w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-white/10 bg-[#111] p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">Crear torneo</h2>
-          <button onClick={onClose} className="rounded-lg p-1 text-white/60 hover:text-white">✕</button>
+    <form id={formId} className="space-y-3" onSubmit={handleSubmit}>
+      {error ? (
+        <div role="alert" className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+          {error}
         </div>
+      ) : null}
 
-        <form className="space-y-3" onSubmit={handleSubmit}>
-          <label className="block text-xs font-semibold text-white/70">
-            Nombre del torneo
-            <input
-              required
-              placeholder="Ej: Torneo Viernes Noche"
-              data-testid="create-tournament-title-input"
-              value={form.title}
-              onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-              className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
-            />
-          </label>
+      <label className="block text-xs font-semibold text-white/70">
+        Nombre del torneo
+        <input
+          required
+          placeholder="Ej: Torneo Viernes Noche"
+          data-testid="create-tournament-title-input"
+          value={form.title}
+          onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+          className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+        />
+      </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-semibold text-white/70">
-              Ubicacion
-              <input
-                placeholder="Ej: El poli"
-                data-testid="create-tournament-location-input"
-                value={form.location_name}
-                onChange={(e) => setForm((p) => ({ ...p, location_name: e.target.value }))}
-                className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
-              />
-            </label>
-            <label className="block text-xs font-semibold text-white/70">
-              Inicio
-              <input
-                type="datetime-local"
-                data-testid="create-tournament-starts-at-input"
-                value={form.starts_at}
-                onChange={(e) => setForm((p) => ({ ...p, starts_at: e.target.value }))}
-                className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
-              />
-            </label>
-          </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-xs font-semibold text-white/70">
+          Ubicacion
+          <input
+            placeholder="Ej: El poli"
+            data-testid="create-tournament-location-input"
+            value={form.location_name}
+            onChange={(e) => setForm((p) => ({ ...p, location_name: e.target.value }))}
+            className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+          />
+        </label>
+        <label className="block text-xs font-semibold text-white/70">
+          Inicio
+          <input
+            type="datetime-local"
+            data-testid="create-tournament-starts-at-input"
+            value={form.starts_at}
+            onChange={(e) => setForm((p) => ({ ...p, starts_at: e.target.value }))}
+            className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+          />
+        </label>
+      </div>
 
-          <label className="block text-xs font-semibold text-white/70">
-            Formato
+      <label className="block text-xs font-semibold text-white/70">
+        Formato
+        <select
+          data-testid="create-tournament-format-select"
+          value={form.format}
+          onChange={handleFormatChange}
+          className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+        >
+          {FORMATS.map((f) => (
+            <option key={f} value={f}>{FORMAT_META[f].label}</option>
+          ))}
+        </select>
+        <span className="mt-1 block text-xs text-white/60">{FORMAT_META[form.format]?.tooltip}</span>
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-xs font-semibold text-white/70">
+          Cantidad de equipos
+          {form.format === "GROUPS_PLAYOFFS" ? (
             <select
-              data-testid="create-tournament-format-select"
-              value={form.format}
-              onChange={handleFormatChange}
+              data-testid="create-tournament-teams-count-input"
+              value={form.teams_count}
+              onChange={(e) => setForm((p) => ({ ...p, teams_count: e.target.value }))}
               className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
             >
-              {FORMATS.map((f) => (
-                <option key={f} value={f}>{FORMAT_META[f].label}</option>
+              {GP_CONFIGS.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
               ))}
             </select>
-            <span className="mt-1 block text-xs text-white/50">{FORMAT_META[form.format]?.tooltip}</span>
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-semibold text-white/70">
-              Cantidad de equipos
-              {form.format === "GROUPS_PLAYOFFS" ? (
-                <select
-                  data-testid="create-tournament-teams-count-input"
-                  value={form.teams_count}
-                  onChange={(e) => setForm((p) => ({ ...p, teams_count: e.target.value }))}
-                  className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
-                >
-                  {GP_CONFIGS.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
-              ) : form.format === "KNOCKOUT" ? (
-                <select
-                  data-testid="create-tournament-teams-count-input"
-                  value={form.teams_count}
-                  onChange={(e) => setForm((p) => ({ ...p, teams_count: e.target.value }))}
-                  className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
-                >
-                  {KNOCKOUT_COUNTS.map((c) => (
-                    <option key={c} value={c}>{c} equipos</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="number"
-                  min={2}
-                  max={16}
-                  data-testid="create-tournament-teams-count-input"
-                  value={form.teams_count}
-                  onChange={(e) => setForm((p) => ({ ...p, teams_count: e.target.value }))}
-                  className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
-                />
-              )}
-            </label>
-            <label className="block text-xs font-semibold text-white/70">
-              Minutos por partido
-              <input
-                type="number"
-                min={5}
-                max={120}
-                data-testid="create-tournament-minutes-input"
-                value={form.minutes_per_match}
-                onChange={(e) => setForm((p) => ({ ...p, minutes_per_match: e.target.value }))}
-                className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
-              />
-            </label>
-          </div>
-
-          <button
-            disabled={busy}
-            data-testid="create-tournament-submit-btn"
-            className="focus-ring w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-black hover:bg-emerald-400 disabled:opacity-40"
-          >
-            Crear torneo
-          </button>
-        </form>
+          ) : form.format === "KNOCKOUT" ? (
+            <select
+              data-testid="create-tournament-teams-count-input"
+              value={form.teams_count}
+              onChange={(e) => setForm((p) => ({ ...p, teams_count: e.target.value }))}
+              className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+            >
+              {KNOCKOUT_COUNTS.map((c) => (
+                <option key={c} value={c}>{c} equipos</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="number"
+              min={2}
+              max={16}
+              data-testid="create-tournament-teams-count-input"
+              value={form.teams_count}
+              onChange={(e) => setForm((p) => ({ ...p, teams_count: e.target.value }))}
+              className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+            />
+          )}
+        </label>
+        <label className="block text-xs font-semibold text-white/70">
+          Minutos por partido
+          <input
+            type="number"
+            min={5}
+            max={120}
+            data-testid="create-tournament-minutes-input"
+            value={form.minutes_per_match}
+            onChange={(e) => setForm((p) => ({ ...p, minutes_per_match: e.target.value }))}
+            className="focus-ring mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+          />
+        </label>
       </div>
-    </div>
+
+      <SheetFooter>
+        <button
+          type="submit"
+          form={formId}
+          disabled={busy}
+          data-testid="create-tournament-submit-btn"
+          className="focus-ring min-h-[44px] w-full rounded-xl bg-emerald-500 px-4 py-3 text-base font-bold text-black hover:bg-emerald-400 disabled:opacity-40"
+        >
+          Crear torneo
+        </button>
+      </SheetFooter>
+    </form>
   );
 }

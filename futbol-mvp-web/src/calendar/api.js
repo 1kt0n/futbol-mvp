@@ -57,6 +57,5 @@ export function fmtTime(iso) {
   }
 }
 
-export function cn(...xs) {
-  return xs.filter(Boolean).join(" ");
-}
+// Un solo cn en toda la app (src/design/cn.js); se re-exporta para los imports existentes.
+export { cn } from "../design/cn.js";

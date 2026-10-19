@@ -1,0 +1,181 @@
+/* Layout de las primitivas de overlay (rediseño UX §6.2.3).
+   Header fijo / cuerpo con scroll / footer siempre visible con el safe-area.
+   El alto usa dvh (con fallback a vh) y descuenta el teclado (--kb-inset). */
+
+.ov-layer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.ov-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: ov-fade 0.2s ease-out backwards;
+}
+
+.ov-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: calc(100vh - var(--kb-inset, 0px) - env(safe-area-inset-top) - 12px);
+  margin-bottom: var(--kb-inset, 0px);
+  border-radius: 1.5rem 1.5rem 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: #18181b;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  outline: none;
+  animation: ov-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+
+@supports (height: 100dvh) {
+  .ov-panel {
+    max-height: calc(100dvh - var(--kb-inset, 0px) - env(safe-area-inset-top) - 12px);
+  }
+}
+
+.ov-panel--full {
+  height: calc(100vh - var(--kb-inset, 0px));
+  max-height: none;
+  border-radius: 0;
+}
+
+@supports (height: 100dvh) {
+  .ov-panel--full {
+    height: calc(100dvh - var(--kb-inset, 0px));
+  }
+}
+
+.ov-grabber {
+  width: 2.5rem;
+  height: 0.25rem;
+  margin: 0 auto 0.75rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.ov-header {
+  flex: none;
+  padding: 0.75rem 1.25rem 0.75rem;
+}
+
+.ov-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 1.25rem 1rem;
+}
+
+.ov-footer {
+  flex: none;
+  padding: 0 1.25rem max(1rem, env(safe-area-inset-bottom));
+}
+
+.ov-footer--filled {
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ov-panel--dialog .ov-footer {
+  padding-top: 0.5rem;
+}
+
+/* Desde 640px: diálogo centrado. */
+@media (min-width: 640px) {
+  .ov-layer {
+    align-items: center;
+    padding: 1rem;
+    /* Centrado arriba del teclado (iPad): el footer no queda tapado. */
+    padding-bottom: calc(1rem + var(--kb-inset, 0px));
+  }
+  .ov-panel {
+    max-width: 32rem;
+    max-height: calc(85vh - var(--kb-inset, 0px));
+    margin-bottom: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1.5rem;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    animation-name: ov-pop;
+  }
+  @supports (height: 100dvh) {
+    .ov-panel {
+      max-height: calc(85dvh - var(--kb-inset, 0px));
+    }
+  }
+  .ov-panel--lg {
+    max-width: 42rem;
+  }
+  .ov-panel--dialog {
+    max-width: 26rem;
+  }
+  .ov-panel--full {
+    max-width: none;
+  }
+  .ov-grabber {
+    display: none;
+  }
+  .ov-footer {
+    padding-bottom: 1.25rem;
+  }
+}
+
+/* ── Toasts ────────────────────────────────────────────────────────────── */
+.ov-toaster {
+  position: fixed;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  pointer-events: none;
+}
+
+.ov-toaster--bottom {
+  bottom: var(--toast-bottom);
+}
+
+.ov-toaster--top {
+  top: calc(env(safe-area-inset-top) + 0.5rem);
+}
+
+.ov-toast {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+  animation: ov-fade 0.2s ease-out backwards;
+}
+
+@keyframes ov-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ov-up {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem);
+  }
+}
+
+@keyframes ov-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ov-panel {
+    animation-name: ov-fade;
+  }
+}

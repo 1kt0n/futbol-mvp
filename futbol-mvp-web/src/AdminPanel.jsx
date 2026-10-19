@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, apiFetch, Banner, StatPill } from './App.jsx'
 import TournamentsAdminTab from './TournamentsAdminTab.jsx'
@@ -8,6 +8,7 @@ import RolesPermisosTab from './admin/RolesPermisosTab.jsx'
 import EventAccessPanel from './features/events/admin/EventAccessPanel.jsx'
 import { buildEventShareMessage, shareUrlFromPath, whatsAppHref } from './features/events/admin/shareMessage.js'
 import { can, canAccessAdmin } from './permissions/can.js'
+import { Dialog, Sheet, SheetFooter, toast, useSheetDirty } from './design/ui/overlay/index.js'
 
 // Tabs del panel: cada una se muestra si el usuario tiene su permiso.
 const ADMIN_TABS = [
@@ -69,33 +70,50 @@ function slotLabel(date) {
   return `${WEEKDAYS_SHORT[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`
 }
 
-// Modal genérico reutilizable. dismissOnBackdrop=false para formularios: tocar el fondo
-// no los cierra (se perdía lo cargado); se cierran con la cruz.
-function Modal({ isOpen, onClose, title, children, dismissOnBackdrop = true }) {
-  if (!isOpen) return null
+// Los avisos de éxito del panel van al Toaster global (encima de la barra inferior).
+// Los hijos siguen recibiendo `setToast(msg)`.
+function notify(msg) {
+  if (msg) toast({ title: msg })
+}
 
+// Formularios del panel: no se cierran con el fondo si hay cambios, y Esc o la cruz
+// preguntan antes de descartar. Mientras hay un request en curso no se cierran.
+function FormSheet({ open, onClose, title, busy, children }) {
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-      onClick={dismissOnBackdrop ? onClose : undefined}
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={title}
+      dismiss="guarded"
+      busy={busy}
+      width="lg"
+      closeTestId="admin-modal-close-btn"
     >
-      <div
-        className="bg-zinc-900 rounded-3xl border border-white/10 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
+      {children}
+    </Sheet>
+  )
+}
+
+// Dirty genérico: el estado del form contra el inicial.
+function useFormDirty(initial, current) {
+  useSheetDirty(JSON.stringify(initial) !== JSON.stringify(current))
+}
+
+// Botón principal de un formulario del panel, fijo en el footer de la hoja.
+// Va fuera del <form> en el DOM: se asocia con form={formId}.
+function SubmitFooter({ formId, busy, label, busyLabel = 'Guardando...', testId }) {
+  return (
+    <SheetFooter>
+      <button
+        type="submit"
+        form={formId}
+        disabled={busy}
+        data-testid={testId}
+        className="min-h-[44px] w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 px-4 py-3 text-base font-semibold text-black disabled:opacity-50"
       >
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">{title}</h2>
-          <button
-            onClick={onClose}
-            data-testid="admin-modal-close-btn"
-            className="text-white/60 hover:text-white text-2xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
+        {busy ? busyLabel : label}
+      </button>
+    </SheetFooter>
   )
 }
 
@@ -103,13 +121,13 @@ export default function AdminPanel() {
   const navigate = useNavigate()
   const [tab, setTab] = useState('eventos')
   const [err, setErr] = useState('')
-  const [toast, setToast] = useState(null)
-  // El toast se cierra solo: queda encima de la barra inferior y no debe taparla.
-  useEffect(() => {
-    if (!toast) return undefined
-    const t = setTimeout(() => setToast(null), 3500)
-    return () => clearTimeout(t)
-  }, [toast])
+  const setToast = notify
+  // Los errores de una hoja o un diálogo abiertos: el Banner de la pantalla queda
+  // debajo (inerte, tapado por el fondo), así que también van en un toast.
+  const showOverlayError = (msg) => {
+    setErr(msg)
+    toast({ kind: 'error', title: 'No se pudo completar', text: msg })
+  }
   const [busy, setBusy] = useState(false)
   const [permissions, setPermissions] = useState(null) // null = cargando, [] = sin permisos
   const has = (code) => can(permissions || [], code)
@@ -268,7 +286,7 @@ export default function AdminPanel() {
       // El evento nuevo queda seleccionado: "+ Crear Cancha" va a él y no al anterior.
       await loadEvents({ preferEventId: created?.event_id })
     } catch (err) {
-      setErr(err.message)
+      showOverlayError(err.message)
     } finally {
       setBusy(false)
     }
@@ -296,7 +314,7 @@ export default function AdminPanel() {
     try {
       const startsAtIso = localDateTimeToIso(formData.starts_at)
       if (!startsAtIso) {
-        setErr('La fecha de inicio no es válida.')
+        showOverlayError('La fecha de inicio no es válida.')
         return
       }
       // Mandamos siempre los 5 campos: null en description/close_at los limpia.
@@ -315,7 +333,7 @@ export default function AdminPanel() {
       setShowEditEvent(false)
       await loadEvents()
     } catch (err) {
-      setErr(err.message)
+      showOverlayError(err.message)
     } finally {
       setBusy(false)
     }
@@ -352,7 +370,7 @@ export default function AdminPanel() {
           setConfirmModal(null)
           await loadEvents()
         } catch (err) {
-          setErr(err.message)
+          showOverlayError(err.message)
         } finally {
           setBusy(false)
         }
@@ -364,6 +382,7 @@ export default function AdminPanel() {
   async function handleReopenEvent(eventId) {
     setConfirmModal({
       title: '¿Reabrir evento?',
+      tone: 'default',
       message: 'El evento volverá a estar disponible para inscripciones.',
       onConfirm: async () => {
         setBusy(true)
@@ -373,7 +392,7 @@ export default function AdminPanel() {
           setConfirmModal(null)
           await loadEvents()
         } catch (err) {
-          setErr(err.message)
+          showOverlayError(err.message)
         } finally {
           setBusy(false)
         }
@@ -394,7 +413,7 @@ export default function AdminPanel() {
           setConfirmModal(null)
           await loadEvents()
         } catch (err) {
-          setErr(err.message)
+          showOverlayError(err.message)
         } finally {
           setBusy(false)
         }
@@ -429,7 +448,7 @@ export default function AdminPanel() {
           setConfirmModal(null)
           await loadEvents()
         } catch (err) {
-          setErr(err.message)
+          showOverlayError(err.message)
         } finally {
           setBusy(false)
         }
@@ -449,7 +468,7 @@ export default function AdminPanel() {
       setShowCreateCourt(false)
       await loadEvents()
     } catch (err) {
-      setErr(err.message)
+      showOverlayError(err.message)
     } finally {
       setBusy(false)
     }
@@ -468,7 +487,7 @@ export default function AdminPanel() {
       setSelectedCourt(null)
       await loadEvents()
     } catch (err) {
-      setErr(err.message)
+      showOverlayError(err.message)
     } finally {
       setBusy(false)
     }
@@ -491,7 +510,7 @@ export default function AdminPanel() {
           }
           await loadEvents()
         } catch (err) {
-          setErr(err.message)
+          showOverlayError(err.message)
         } finally {
           setBusy(false)
         }
@@ -511,7 +530,7 @@ export default function AdminPanel() {
       setShowCreateUser(false)
       await loadUsers()
     } catch (err) {
-      setErr(err.message)
+      showOverlayError(err.message)
     } finally {
       setBusy(false)
     }
@@ -529,7 +548,7 @@ export default function AdminPanel() {
       setShowResetPin(false)
       setSelectedUser(null)
     } catch (err) {
-      setErr(err.message)
+      showOverlayError(err.message)
     } finally {
       setBusy(false)
     }
@@ -565,7 +584,7 @@ export default function AdminPanel() {
       setSelectedUser(null)
       await loadUsers()
     } catch (err) {
-      setErr(err.message)
+      showOverlayError(err.message)
     } finally {
       setBusy(false)
     }
@@ -625,13 +644,6 @@ export default function AdminPanel() {
           <Banner kind="error" title="Error" onClose={() => setErr('')}>
             {err}
           </Banner>
-        )}
-
-        {/* Toast */}
-        {toast && (
-          <div role="status" className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-4 right-4 z-50 rounded-2xl bg-emerald-500 px-6 py-3 text-center text-white shadow-xl sm:left-auto sm:right-6 sm:text-left">
-            {toast}
-          </div>
         )}
 
         {/* Tab Content */}
@@ -722,15 +734,20 @@ export default function AdminPanel() {
           )}
         </div>
 
-        {/* Modals */}
-        <Modal isOpen={showCreateEvent} onClose={() => setShowCreateEvent(false)} title="Crear Evento">
+        {/* Hojas y confirmaciones (src/design/ui/overlay) */}
+        <FormSheet open={showCreateEvent} onClose={() => setShowCreateEvent(false)} title="Crear Evento" busy={busy}>
           <EventForm onSubmit={handleCreateEvent} busy={busy} />
-        </Modal>
+        </FormSheet>
 
-        <Modal
-          isOpen={!!repeat}
+        {/* Repetir: con el form, guarda los cambios; en el paso Compartir, cierra con el fondo. */}
+        <Sheet
+          open={!!repeat}
           onClose={() => setRepeat(null)}
-          dismissOnBackdrop={!!repeat?.created}
+          dismiss={repeat?.created ? 'auto' : 'guarded'}
+          busy={busy}
+          width="lg"
+          closeTestId="admin-modal-close-btn"
+          testId="repeat-sheet"
           title={repeat?.created ? 'Compartí el partido' : 'Repetir partido'}
         >
           {repeat?.created ? (
@@ -744,9 +761,9 @@ export default function AdminPanel() {
               onSubmit={(payload) => handleRepeatEvent(repeat.source.event.id, payload)}
             />
           ) : null}
-        </Modal>
+        </Sheet>
 
-        <Modal isOpen={showEditEvent} onClose={() => setShowEditEvent(false)} title="Editar Evento">
+        <FormSheet open={showEditEvent} onClose={() => setShowEditEvent(false)} title="Editar Evento" busy={busy}>
           <EventForm
             key={activeEvent?.event?.id || 'edit-event'}
             onSubmit={(data) => handleUpdateEvent(activeEvent?.event?.id, data)}
@@ -756,9 +773,9 @@ export default function AdminPanel() {
             busyLabel="Guardando..."
             testIdPrefix="admin-edit-event"
           />
-        </Modal>
+        </FormSheet>
 
-        <Modal isOpen={showCreateCourt} onClose={() => setShowCreateCourt(false)} title="Crear Cancha">
+        <FormSheet open={showCreateCourt} onClose={() => setShowCreateCourt(false)} title="Crear Cancha" busy={busy}>
           <CreateCourtForm
             onSubmit={(data) => handleCreateCourt(selectedEventId, data)}
             busy={busy}
@@ -766,85 +783,76 @@ export default function AdminPanel() {
             testIdPrefix="create-court"
             submitLabel="Crear Cancha"
           />
-        </Modal>
+        </FormSheet>
 
-        <Modal
-          isOpen={showEditCourt}
+        <FormSheet
+          open={showEditCourt}
           onClose={() => {
             setShowEditCourt(false)
             setSelectedCourt(null)
           }}
           title="Editar Cancha"
+          busy={busy}
         >
           <CreateCourtForm
+            key={selectedCourt?.court_id || 'edit-court'}
             onSubmit={(data) => handleUpdateCourt(selectedEventId, selectedCourt?.court_id, data)}
             busy={busy}
             initialData={selectedCourt}
             testIdPrefix="edit-court"
             submitLabel="Guardar cambios"
           />
-        </Modal>
+        </FormSheet>
 
-        <Modal isOpen={showCreateUser} onClose={() => setShowCreateUser(false)} title="Crear Usuario">
+        <FormSheet open={showCreateUser} onClose={() => setShowCreateUser(false)} title="Crear Usuario" busy={busy}>
           <CreateUserForm onSubmit={handleCreateUser} busy={busy} />
-        </Modal>
+        </FormSheet>
 
-        <Modal
-          isOpen={showResetPin}
+        <FormSheet
+          open={showResetPin}
           onClose={() => {
             setShowResetPin(false)
             setSelectedUser(null)
           }}
           title="Reset PIN"
+          busy={busy}
         >
           <ResetPinForm
             user={selectedUser}
             onSubmit={(pin) => handleResetPin(selectedUser?.id, pin)}
             busy={busy}
           />
-        </Modal>
+        </FormSheet>
 
-        <Modal
-          isOpen={showEditRoles}
+        <FormSheet
+          open={showEditRoles}
           onClose={() => {
             setShowEditRoles(false)
             setSelectedUser(null)
           }}
           title="Editar Roles"
+          busy={busy}
         >
           <EditRolesForm
             user={selectedUser}
             onSubmit={(roles) => handleUpdateRoles(selectedUser?.id, roles)}
             busy={busy}
           />
-        </Modal>
+        </FormSheet>
 
-        <Modal
-          isOpen={!!confirmModal}
-          onClose={() => setConfirmModal(null)}
+        <Dialog
+          open={!!confirmModal}
           title={confirmModal?.title || 'Confirmar'}
+          tone={confirmModal?.tone || 'danger'}
+          confirmLabel="Confirmar"
+          busy={busy}
+          onConfirm={confirmModal?.onConfirm}
+          onCancel={() => setConfirmModal(null)}
+          confirmTestId="admin-confirm-modal-confirm-btn"
+          cancelTestId="admin-confirm-modal-cancel-btn"
         >
-          <div className="space-y-4">
-            <p className="text-white/80">{confirmModal?.message}</p>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <button
-                onClick={confirmModal?.onConfirm}
-                disabled={busy}
-                data-testid="admin-confirm-modal-confirm-btn"
-                className="flex-1 rounded-xl bg-rose-500 hover:bg-rose-600 px-4 py-3 font-semibold disabled:opacity-50"
-              >
-                Confirmar
-              </button>
-              <button
-                onClick={() => setConfirmModal(null)}
-                data-testid="admin-confirm-modal-cancel-btn"
-                className="flex-1 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-3 font-semibold"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        </Modal>
+          {confirmModal?.message}
+        </Dialog>
       </div>
     </div>
   )
@@ -1368,6 +1376,10 @@ function AccountRequestsTab({ setToast, setErr }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [actingId, setActingId] = useState(null)
+  // Rechazar: confirmación con el motivo interno opcional (antes, confirm + prompt nativos).
+  const [rejecting, setRejecting] = useState(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const reasonId = useId()
 
   async function load() {
     setLoading(true)
@@ -1396,15 +1408,15 @@ function AccountRequestsTab({ setToast, setErr }) {
     }
   }
 
-  async function reject(userId) {
-    if (!window.confirm('¿Rechazar esta solicitud de cuenta?')) return
-    const reason = window.prompt('Motivo interno (opcional, no se envía al solicitante):') || null
+  async function reject(userId, reason) {
     setActingId(userId)
     try {
       await apiFetch(`/admin/account-requests/${userId}/reject`, { method: 'POST', body: { reason } })
       setToast?.('Solicitud rechazada')
       setItems((prev) => prev.filter((x) => x.user_id !== userId))
+      setRejecting(null)
     } catch (e) {
+      setRejecting(null)
       setErr?.(e.message || 'No se pudo rechazar.')
     } finally {
       setActingId(null)
@@ -1451,7 +1463,10 @@ function AccountRequestsTab({ setToast, setErr }) {
               {actingId === r.user_id ? '...' : 'Aprobar'}
             </button>
             <button
-              onClick={() => reject(r.user_id)}
+              onClick={() => {
+                setRejectReason('')
+                setRejecting(r)
+              }}
               disabled={actingId === r.user_id}
               data-testid="account-reject-btn"
               className="focus-ring rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition-colors hover:bg-rose-500/20 disabled:opacity-40"
@@ -1461,6 +1476,35 @@ function AccountRequestsTab({ setToast, setErr }) {
           </div>
         </div>
       ))}
+
+      <Dialog
+        open={!!rejecting}
+        title="¿Rechazar esta solicitud de cuenta?"
+        tone="danger"
+        confirmLabel="Rechazar"
+        busy={!!rejecting && actingId === rejecting.user_id}
+        onConfirm={() => reject(rejecting.user_id, rejectReason.trim() || null)}
+        onCancel={() => setRejecting(null)}
+        confirmTestId="account-reject-confirm-btn"
+        cancelTestId="account-reject-cancel-btn"
+      >
+        <p>{rejecting?.full_name || 'Sin nombre'}</p>
+        <div className="mt-3 text-left">
+          <label htmlFor={reasonId} className="mb-1 block text-sm font-semibold text-white/80">
+            Motivo interno (opcional)
+          </label>
+          <textarea
+            id={reasonId}
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            rows={2}
+            maxLength={500}
+            data-testid="account-reject-reason-input"
+            className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-base text-white focus:outline-none focus:ring-2 focus:ring-white/20"
+          />
+          <p className="mt-1 text-xs text-white/60">No se le envía a quien pidió la cuenta.</p>
+        </div>
+      </Dialog>
     </div>
   )
 }
@@ -1707,6 +1751,8 @@ function NotificationsTab() {
       await loadNotifications()
     } catch (err) {
       setLocalErr(err.message || 'No se pudo desactivar la notificacion.')
+      // El diálogo sigue abierto (para reintentar): el error también va arriba, a la vista.
+      toast({ kind: 'error', title: 'No se pudo desactivar', text: err.message })
     } finally {
       setDeactivatingId(null)
     }
@@ -1914,36 +1960,23 @@ function NotificationsTab() {
         </div>
       </div>
 
-      <Modal
-        isOpen={!!confirmTarget}
-        onClose={() => setConfirmTarget(null)}
+      <Dialog
+        open={!!confirmTarget}
         title="Desactivar notificacion"
+        tone="danger"
+        confirmLabel="Confirmar"
+        busy={!!deactivatingId}
+        onConfirm={() => handleDeactivate(confirmTarget?.id)}
+        onCancel={() => setConfirmTarget(null)}
+        confirmTestId="notification-deactivate-confirm-btn"
+        cancelTestId="notification-deactivate-cancel-btn"
       >
-        <div className="space-y-4">
-          <p className="text-white/80">
-            ¿Seguro que queres desactivar esta notificacion?
-          </p>
-          <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <div className="text-sm font-semibold text-white">{confirmTarget?.title}</div>
-            <div className="mt-1 whitespace-pre-line text-xs text-white/70">{confirmTarget?.message}</div>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              onClick={() => handleDeactivate(confirmTarget?.id)}
-              disabled={!confirmTarget || !!deactivatingId}
-              className="flex-1 rounded-xl bg-rose-500 px-4 py-3 font-semibold hover:bg-rose-600 disabled:opacity-40"
-            >
-              Confirmar
-            </button>
-            <button
-              onClick={() => setConfirmTarget(null)}
-              className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 font-semibold hover:bg-white/10"
-            >
-              Cancelar
-            </button>
-          </div>
+        <p>¿Seguro que queres desactivar esta notificacion?</p>
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-left">
+          <div className="text-sm font-semibold text-white">{confirmTarget?.title}</div>
+          <div className="mt-1 whitespace-pre-line text-xs text-white/70">{confirmTarget?.message}</div>
         </div>
-      </Modal>
+      </Dialog>
     </div>
   )
 }
@@ -1972,8 +2005,11 @@ function EventForm({
   testIdPrefix = 'admin-create-event',
 }) {
   const isEdit = Boolean(initialData)
-  // El modal desmonta el form al cerrarse, asi que alcanza con inicializar el estado.
-  const [formData, setFormData] = useState(() => eventFormValues(initialData))
+  const formId = useId()
+  // La hoja desmonta el form al cerrarse, asi que alcanza con inicializar el estado.
+  const [initial] = useState(() => eventFormValues(initialData))
+  const [formData, setFormData] = useState(initial)
+  useFormDirty(initial, formData)
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -1981,10 +2017,11 @@ function EventForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id={formId} onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-semibold mb-2">Título</label>
+        <label htmlFor={`${formId}-title`} className="block text-sm font-semibold mb-2">Título</label>
         <input
+          id={`${formId}-title`}
           type="text"
           value={formData.title}
           onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -1996,10 +2033,11 @@ function EventForm({
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">
-          Descripción <span className="font-normal text-white/40">(opcional)</span>
+        <label htmlFor={`${formId}-description`} className="block text-sm font-semibold mb-2">
+          Descripción <span className="font-normal text-white/60">(opcional)</span>
         </label>
         <textarea
+          id={`${formId}-description`}
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
           data-testid={`${testIdPrefix}-description-input`}
@@ -2008,13 +2046,14 @@ function EventForm({
           placeholder="Detalles del partido: qué llevar, cómo se arman los equipos, etc."
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
-        <p className="mt-1 text-xs text-white/40">
+        <p className="mt-1 text-xs text-white/60">
           Se muestra en el detalle del evento y en "Mi Calendario".
         </p>
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">Fecha/Hora de inicio</label>
+        <label htmlFor={`${formId}-starts`} className="block text-sm font-semibold mb-2">Fecha/Hora de inicio</label>
         <input
+          id={`${formId}-starts`}
           type="datetime-local"
           value={formData.starts_at}
           onChange={(e) => setFormData({ ...formData, starts_at: e.target.value })}
@@ -2024,8 +2063,9 @@ function EventForm({
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">Ubicación</label>
+        <label htmlFor={`${formId}-location`} className="block text-sm font-semibold mb-2">Ubicación</label>
         <input
+          id={`${formId}-location`}
           type="text"
           value={formData.location_name}
           onChange={(e) => setFormData({ ...formData, location_name: e.target.value })}
@@ -2037,10 +2077,11 @@ function EventForm({
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">
-          Cierre de inscripciones <span className="font-normal text-white/40">(opcional)</span>
+        <label htmlFor={`${formId}-close`} className="block text-sm font-semibold mb-2">
+          Cierre de inscripciones <span className="font-normal text-white/60">(opcional)</span>
         </label>
         <input
+          id={`${formId}-close`}
           type="datetime-local"
           value={formData.close_at}
           onChange={(e) => setFormData({ ...formData, close_at: e.target.value })}
@@ -2059,20 +2100,13 @@ function EventForm({
           />
           <span className="text-sm text-white/80">
             <span className="font-semibold">Mostrar en el calendario de todos</span>
-            <span className="block text-xs text-white/50 mt-0.5">
+            <span className="block text-xs text-white/60 mt-0.5">
               Aparecera en "Mi Calendario" de todos los jugadores con boton para anotarse.
             </span>
           </span>
         </label>
       )}
-      <button
-        type="submit"
-        disabled={busy}
-        data-testid={`${testIdPrefix}-submit-btn`}
-        className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
-      >
-        {busy ? busyLabel : submitLabel}
-      </button>
+      <SubmitFooter formId={formId} busy={busy} label={submitLabel} busyLabel={busyLabel} testId={`${testIdPrefix}-submit-btn`} />
     </form>
   )
 }
@@ -2100,7 +2134,8 @@ const MAX_REPEAT_COURTS = 12
 function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
   const event = source.event
   const access = source.access
-  const [form, setForm] = useState(() => {
+  const formId = useId()
+  const [initial] = useState(() => {
     const date = nextSlotDate(event.starts_at)
     const courts = (source.courts || []).length > 0
       ? source.courts.slice(0, MAX_REPEAT_COURTS).map((c, i) => ({ key: i, name: c.name, capacity: c.capacity }))
@@ -2114,7 +2149,9 @@ function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
       nextKey: courts.length,
     }
   })
+  const [form, setForm] = useState(initial)
   const [localErr, setLocalErr] = useState('')
+  useFormDirty(initial, form)
 
   const startsLocal = form.date && form.time ? `${form.date}T${form.time}` : ''
   const startsAt = startsLocal ? new Date(startsLocal) : null
@@ -2183,6 +2220,7 @@ function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
 
   return (
     <form
+      id={formId}
       onSubmit={handleSubmit}
       // Enter (o "Ir" en el teclado del celular) en un campo no crea el partido: solo el botón.
       onKeyDown={(e) => {
@@ -2338,7 +2376,7 @@ function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
         />
       </div>
 
-      <div className="space-y-1 text-xs text-white/50">
+      <div className="space-y-1 text-xs text-white/60">
         <p>
           Se copian la descripción, la visibilidad y el acceso
           {access?.access_mode ? ` (${ACCESS_LABELS[access.access_mode] || access.access_mode})` : ''}.
@@ -2355,14 +2393,7 @@ function QuickRepeatForm({ source, locations, activeEvents, busy, onSubmit }) {
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100" role="alert">{localErr}</div>
       )}
 
-      <button
-        type="submit"
-        disabled={busy}
-        data-testid="quick-repeat-submit-btn"
-        className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
-      >
-        {busy ? 'Creando...' : 'Crear y compartir'}
-      </button>
+      <SubmitFooter formId={formId} busy={busy} label="Crear y compartir" busyLabel="Creando..." testId="quick-repeat-submit-btn" />
     </form>
   )
 }
@@ -2408,15 +2439,6 @@ function QuickRepeatShare({ created, onDone }) {
       </div>
 
       <div className="flex flex-col gap-2">
-        <a
-          href={whatsAppHref(message)}
-          target="_blank"
-          rel="noreferrer"
-          data-testid="quick-repeat-whatsapp-link"
-          className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 text-center font-semibold"
-        >
-          Enviar por WhatsApp
-        </a>
         <button
           type="button"
           onClick={copy}
@@ -2438,17 +2460,30 @@ function QuickRepeatShare({ created, onDone }) {
         </p>
       )}
       {!access.share_path && (
-        <p className="text-xs text-white/50">Es solo para miembros: el link abre la app y pide iniciar sesión.</p>
+        <p className="text-xs text-white/60">Es solo para miembros: el link abre la app y pide iniciar sesión.</p>
       )}
 
-      <button
-        type="button"
-        onClick={onDone}
-        data-testid="quick-repeat-done-btn"
-        className="w-full rounded-xl px-4 py-2 text-sm font-semibold text-white/60 hover:text-white"
-      >
-        Listo
-      </button>
+      <SheetFooter>
+        <div className="flex flex-col gap-2">
+          <a
+            href={whatsAppHref(message)}
+            target="_blank"
+            rel="noreferrer"
+            data-testid="quick-repeat-whatsapp-link"
+            className="min-h-[44px] w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 px-4 py-3 text-center text-base font-semibold text-black"
+          >
+            Enviar por WhatsApp
+          </a>
+          <button
+            type="button"
+            onClick={onDone}
+            data-testid="quick-repeat-done-btn"
+            className="min-h-[44px] w-full rounded-xl px-4 py-2 text-base font-semibold text-white/70 hover:text-white"
+          >
+            Listo
+          </button>
+        </div>
+      </SheetFooter>
     </div>
   )
 }
@@ -2459,31 +2494,19 @@ function nextCourtSortOrder(courts) {
 }
 
 function CreateCourtForm({ onSubmit, busy, initialData = null, defaultSortOrder = 1, submitLabel = 'Crear Cancha', testIdPrefix = 'court-form' }) {
-  const [formData, setFormData] = useState({
-    name: '',
-    capacity: 10,
-    sort_order: defaultSortOrder,
-    is_open: true
-  })
-
-  useEffect(() => {
-    if (!initialData) {
-      setFormData({
-        name: '',
-        capacity: 10,
-        sort_order: defaultSortOrder,
-        is_open: true
-      })
-      return
-    }
-
-    setFormData({
-      name: initialData.name || '',
-      capacity: initialData.capacity ?? 10,
-      sort_order: initialData.sort_order ?? 1,
-      is_open: initialData.is_open ?? true
-    })
-  }, [initialData, defaultSortOrder])
+  const formId = useId()
+  // La hoja monta el form al abrirse (y Editar lo re-monta por cancha con `key`), así
+  // que se inicializa una vez: si la lista de canchas se recarga, no pisa lo tipeado.
+  const [initial] = useState(() => (initialData
+    ? {
+        name: initialData.name || '',
+        capacity: initialData.capacity ?? 10,
+        sort_order: initialData.sort_order ?? 1,
+        is_open: initialData.is_open ?? true
+      }
+    : { name: '', capacity: 10, sort_order: defaultSortOrder, is_open: true }))
+  const [formData, setFormData] = useState(initial)
+  useFormDirty(initial, formData)
 
   function handleSubmit(e) {
     e.preventDefault()
@@ -2496,10 +2519,11 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, defaultSortOrder 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id={formId} onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-semibold mb-2">Nombre</label>
+        <label htmlFor={`${formId}-name`} className="block text-sm font-semibold mb-2">Nombre</label>
         <input
+          id={`${formId}-name`}
           type="text"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -2510,8 +2534,9 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, defaultSortOrder 
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">Capacidad</label>
+        <label htmlFor={`${formId}-capacity`} className="block text-sm font-semibold mb-2">Capacidad</label>
         <input
+          id={`${formId}-capacity`}
           type="number"
           value={formData.capacity}
           onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
@@ -2523,8 +2548,9 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, defaultSortOrder 
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">Orden</label>
+        <label htmlFor={`${formId}-order`} className="block text-sm font-semibold mb-2">Orden</label>
         <input
+          id={`${formId}-order`}
           type="number"
           value={formData.sort_order}
           onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
@@ -2546,26 +2572,17 @@ function CreateCourtForm({ onSubmit, busy, initialData = null, defaultSortOrder 
           <span className="text-sm">Cancha abierta</span>
         </label>
       </div>
-      <button
-        type="submit"
-        disabled={busy}
-        data-testid={`${testIdPrefix}-submit-btn`}
-        className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
-      >
-        {busy ? 'Guardando...' : submitLabel}
-      </button>
+      <SubmitFooter formId={formId} busy={busy} label={submitLabel} testId={`${testIdPrefix}-submit-btn`} />
     </form>
   )
 }
 
+const EMPTY_USER = { full_name: '', phone: '', email: '', pin: '', roles: [] }
+
 function CreateUserForm({ onSubmit, busy }) {
-  const [formData, setFormData] = useState({
-    full_name: '',
-    phone: '',
-    email: '',
-    pin: '',
-    roles: []
-  })
+  const formId = useId()
+  const [formData, setFormData] = useState(EMPTY_USER)
+  useFormDirty(EMPTY_USER, formData)
 
   function toggleRole(role) {
     setFormData(prev => ({
@@ -2584,10 +2601,11 @@ function CreateUserForm({ onSubmit, busy }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id={formId} onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-sm font-semibold mb-2">Nombre completo</label>
+        <label htmlFor={`${formId}-name`} className="block text-sm font-semibold mb-2">Nombre completo</label>
         <input
+          id={`${formId}-name`}
           type="text"
           value={formData.full_name}
           onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
@@ -2596,8 +2614,9 @@ function CreateUserForm({ onSubmit, busy }) {
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">Teléfono</label>
+        <label htmlFor={`${formId}-phone`} className="block text-sm font-semibold mb-2">Teléfono</label>
         <input
+          id={`${formId}-phone`}
           type="tel"
           value={formData.phone}
           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -2607,8 +2626,9 @@ function CreateUserForm({ onSubmit, busy }) {
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">Email (opcional)</label>
+        <label htmlFor={`${formId}-email`} className="block text-sm font-semibold mb-2">Email (opcional)</label>
         <input
+          id={`${formId}-email`}
           type="email"
           value={formData.email}
           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -2616,8 +2636,9 @@ function CreateUserForm({ onSubmit, busy }) {
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">PIN (4 o 6 dígitos, opcional)</label>
+        <label htmlFor={`${formId}-pin`} className="block text-sm font-semibold mb-2">PIN (4 o 6 dígitos, opcional)</label>
         <input
+          id={`${formId}-pin`}
           type="text"
           value={formData.pin}
           onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
@@ -2627,8 +2648,8 @@ function CreateUserForm({ onSubmit, busy }) {
         />
       </div>
       <div>
-        <label className="block text-sm font-semibold mb-2">Roles (opcional)</label>
-        <div className="flex gap-3">
+        <div id={`${formId}-roles`} className="block text-sm font-semibold mb-2">Roles (opcional)</div>
+        <div className="flex gap-3" role="group" aria-labelledby={`${formId}-roles`}>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -2648,63 +2669,63 @@ function CreateUserForm({ onSubmit, busy }) {
             <span className="text-sm">Super Admin</span>
           </label>
         </div>
-        <p className="text-xs text-white/40 mt-1">Sin roles = usuario regular (jugador)</p>
+        <p className="text-xs text-white/60 mt-1">Sin roles = usuario regular (jugador)</p>
       </div>
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
-      >
-        {busy ? 'Creando...' : 'Crear Usuario'}
-      </button>
+      <SubmitFooter formId={formId} busy={busy} label="Crear Usuario" busyLabel="Creando..." testId="create-user-submit-btn" />
     </form>
   )
 }
 
 function ResetPinForm({ user, onSubmit, busy }) {
+  const formId = useId()
   const [pin, setPin] = useState('')
+  const [pinErr, setPinErr] = useState('')
+  useSheetDirty(pin !== '')
 
   function handleSubmit(e) {
     e.preventDefault()
     if (!/^\d{4}$|^\d{6}$/.test(pin)) {
-      alert('PIN debe ser de 4 o 6 dígitos')
+      setPinErr('El PIN tiene que tener 4 o 6 dígitos.')
       return
     }
+    setPinErr('')
     onSubmit(pin)
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id={formId} onSubmit={handleSubmit} className="space-y-4">
       <p className="text-white/70">
         Resetear PIN para <strong>{user?.full_name}</strong>
       </p>
       <div>
-        <label className="block text-sm font-semibold mb-2">Nuevo PIN (4 o 6 dígitos)</label>
+        <label htmlFor={`${formId}-pin`} className="block text-sm font-semibold mb-2">Nuevo PIN (4 o 6 dígitos)</label>
         <input
+          id={`${formId}-pin`}
           type="text"
           value={pin}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
           required
           placeholder="1234"
           inputMode="numeric"
+          aria-invalid={pinErr ? true : undefined}
+          aria-describedby={pinErr ? `${formId}-pin-err` : undefined}
+          data-testid="reset-pin-input"
           className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-white/20"
         />
+        {pinErr && (
+          <p id={`${formId}-pin-err`} role="alert" className="mt-2 text-sm text-rose-200">{pinErr}</p>
+        )}
       </div>
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
-      >
-        {busy ? 'Guardando...' : 'Resetear PIN'}
-      </button>
+      <SubmitFooter formId={formId} busy={busy} label="Resetear PIN" testId="reset-pin-submit-btn" />
     </form>
   )
 }
 
 function EditRolesForm({ user, onSubmit, busy }) {
-  const [selectedRoles, setSelectedRoles] = useState(
-    (user?.roles || []).map((r) => r.toLowerCase())
-  )
+  const formId = useId()
+  const [initialRoles] = useState(() => (user?.roles || []).map((r) => r.toLowerCase()))
+  const [selectedRoles, setSelectedRoles] = useState(initialRoles)
+  useFormDirty([...initialRoles].sort(), [...selectedRoles].sort())
   const [roles, setRoles] = useState([])
   const [loadingRoles, setLoadingRoles] = useState(true)
 
@@ -2730,12 +2751,12 @@ function EditRolesForm({ user, onSubmit, busy }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id={formId} onSubmit={handleSubmit} className="space-y-4">
       <p className="text-white/70">
         Editar roles de <strong>{user?.full_name}</strong>
       </p>
       {loadingRoles ? (
-        <p className="text-white/50 text-sm">Cargando roles...</p>
+        <p className="text-white/60 text-sm">Cargando roles...</p>
       ) : (
         <div className="space-y-3">
           {roles.map((role) => (
@@ -2752,21 +2773,15 @@ function EditRolesForm({ user, onSubmit, busy }) {
               <div>
                 <span className="text-sm font-semibold">{role.name}</span>
                 {role.description && (
-                  <p className="text-xs text-white/40">{role.description}</p>
+                  <p className="text-xs text-white/60">{role.description}</p>
                 )}
               </div>
             </label>
           ))}
         </div>
       )}
-      <p className="text-xs text-white/40">Sin roles seleccionados = usuario regular (jugador)</p>
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-600 px-4 py-3 font-semibold disabled:opacity-50"
-      >
-        {busy ? 'Guardando...' : 'Guardar Roles'}
-      </button>
+      <p className="text-xs text-white/60">Sin roles seleccionados = usuario regular (jugador)</p>
+      <SubmitFooter formId={formId} busy={busy} label="Guardar Roles" testId="edit-roles-submit-btn" />
     </form>
   )
 }
@@ -2796,14 +2811,22 @@ function CalendarAdminTab({ setToast, setErr }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includePast])
 
+  // Eliminar: confirmación propia (antes, confirm nativo).
+  const [deleting, setDeleting] = useState(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+
   async function handleDelete(id) {
-    if (!window.confirm('¿Eliminar este anuncio?')) return
+    setDeleteBusy(true)
     try {
       await apiFetch(`/admin/calendar/announcements/${id}`, { method: 'DELETE' })
+      setDeleting(null)
       setToast?.('Anuncio eliminado')
       await load()
     } catch (e) {
+      setDeleting(null)
       setErr?.(e.message || 'No se pudo eliminar.')
+    } finally {
+      setDeleteBusy(false)
     }
   }
 
@@ -2874,7 +2897,8 @@ function CalendarAdminTab({ setToast, setErr }) {
                     Editar
                   </button>
                   <button
-                    onClick={() => handleDelete(it.id)}
+                    onClick={() => setDeleting(it)}
+                    data-testid="announcement-delete-btn"
                     className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20"
                   >
                     Eliminar
@@ -2898,6 +2922,19 @@ function CalendarAdminTab({ setToast, setErr }) {
           load()
         }}
       />
+
+      <Dialog
+        open={!!deleting}
+        title="¿Eliminar este anuncio?"
+        tone="danger"
+        confirmLabel="Eliminar"
+        busy={deleteBusy}
+        onConfirm={() => handleDelete(deleting.id)}
+        onCancel={() => setDeleting(null)}
+        confirmTestId="announcement-delete-confirm-btn"
+      >
+        {deleting?.title}
+      </Dialog>
     </div>
   )
 }

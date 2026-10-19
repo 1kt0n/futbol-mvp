@@ -34,5 +34,14 @@ export default defineConfig({
         ...devices["Pixel 7"],
       },
     },
+    {
+      // iOS Safari (WebKit). Solo los specs de overlays y a11y: los flujos con
+      // capturas (events/tournaments) arman su manifest con los dos de Chromium.
+      name: "iphone-14",
+      testMatch: /(overlays|accessibility-smoke)\.spec\.ts$/,
+      use: {
+        ...devices["iPhone 14"],
+      },
+    },
   ],
 });

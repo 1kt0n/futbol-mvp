@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { cn } from '../../../design/cn.js'
+import { Dialog } from '../../../design/ui/overlay/index.js'
 
 const API_BASE = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || ''
 
@@ -31,6 +32,7 @@ export default function ExternalParticipationPage() {
   const [status, setStatus] = useState('loading') // loading | ok | notfound | error
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const load = useCallback(async () => {
     if (!token) return
@@ -50,7 +52,6 @@ export default function ExternalParticipationPage() {
 
   async function cancel() {
     if (busy) return
-    if (!window.confirm('¿Seguro que querés cancelar tu inscripción?')) return
     setBusy(true)
     setMsg('')
     try {
@@ -65,6 +66,7 @@ export default function ExternalParticipationPage() {
       setMsg('Sin conexión. Reintentá.')
     } finally {
       setBusy(false)
+      setConfirmOpen(false)
     }
   }
 
@@ -111,12 +113,26 @@ export default function ExternalParticipationPage() {
         {msg && <div className="mt-4 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/80">{msg}</div>}
 
         {!cancelled && (
-          <button onClick={cancel} disabled={busy} data-testid="participation-cancel-btn"
+          <button onClick={() => setConfirmOpen(true)} disabled={busy} data-testid="participation-cancel-btn"
             className="mt-5 w-full rounded-xl border border-rose-400/40 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/25 disabled:opacity-40">
             {busy ? 'Cancelando…' : 'Cancelar mi inscripción'}
           </button>
         )}
       </div>
+
+      {/* §7.2: liberar el lugar afecta a la espera, así que se confirma. */}
+      <Dialog
+        open={confirmOpen}
+        title="¿Liberás tu lugar?"
+        confirmLabel="Sí, liberar mi lugar"
+        cancelLabel="Me quedo"
+        busy={busy}
+        onConfirm={cancel}
+        onCancel={() => setConfirmOpen(false)}
+        confirmTestId="participation-cancel-confirm-btn"
+      >
+        Tu lugar queda libre para otro.
+      </Dialog>
     </Shell>
   )
 }

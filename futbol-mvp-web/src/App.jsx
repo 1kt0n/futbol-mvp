@@ -6,7 +6,8 @@ import AuthFlowCard, { InstallPwaButton } from "./features/auth/AuthFlowCard.jsx
 import { can } from "./permissions/can.js";
 import AttributeRadar from "./components/AttributeRadar.jsx";
 import { handleAuthFailure, notifyActorChanged } from "./authSession.js";
-import ConfirmSheet from "./design/ui/ConfirmSheet.jsx";
+import { cn } from "./design/cn.js";
+import { Dialog, Sheet, toast } from "./design/ui/overlay/index.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -60,10 +61,6 @@ function isUuid(v) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     String(v || "").trim()
   );
-}
-
-function cn(...xs) {
-  return xs.filter(Boolean).join(" ");
 }
 
 function fmtStart(startsAt) {
@@ -270,7 +267,18 @@ function FormArrow({ form }) {
 
 function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardData }) {
   if (!open) return null;
+  return (
+    <PlayerCardSheet
+      onClose={onClose}
+      loading={loading}
+      error={error}
+      selectedPlayer={selectedPlayer}
+      cardData={cardData}
+    />
+  );
+}
 
+function PlayerCardSheet({ onClose, loading, error, selectedPlayer, cardData }) {
   const name = cardData?.full_name || cardData?.guest_name || selectedPlayer?.name || "Jugador";
   const avatarUrl = selectedPlayer?.avatar_url || null;
   const isGuest = (cardData?.subject_type || selectedPlayer?.type) === "GUEST";
@@ -289,45 +297,37 @@ function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardDa
     }
   }
 
-  return (
-    <BottomSheet open={open} onClose={onClose}>
-      <div className="mb-4 flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          {avatarUrl ? (
-            <img src={avatarUrl} alt={name} className="h-12 w-12 rounded-full object-cover ring-2 ring-white/10" />
-          ) : (
-            <div className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-sm font-bold text-white">
-              {initials(name)}
-            </div>
-          )}
-          <div>
-            <div className="text-base font-semibold text-white">{name}</div>
-            {isGuest ? (
-              <InvitedByChip
-                name={cardData?.invited_by_name || selectedPlayer?.created_by_name}
-                className="mt-1 text-[11px]"
-                data-testid="player-card-invited-by"
-              />
-            ) : level ? (
-              <span className={cn(
-                "mt-1 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold",
-                level === "COMPETITIVO" ? "border-amber-400/30 bg-amber-400/10 text-amber-200" :
-                level === "RECREATIVO"  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" :
-                                          "border-blue-400/30 bg-blue-400/10 text-blue-200"
-              )}>
-                {PLAYER_LEVEL_LABELS[level] || level}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <button
-          onClick={onClose}
-          className="rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 hover:bg-white/10 hover:text-white"
-        >
-          ✕
-        </button>
-      </div>
+  const title = (
+    <span className="flex items-center gap-3">
+      {avatarUrl ? (
+        <img src={avatarUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover ring-2 ring-white/10" />
+      ) : (
+        <span aria-hidden="true" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/10 text-sm font-bold text-white">
+          {initials(name)}
+        </span>
+      )}
+      <span className="min-w-0 truncate">{name}</span>
+    </span>
+  );
+  const subtitle = isGuest ? (
+    <InvitedByChip
+      name={cardData?.invited_by_name || selectedPlayer?.created_by_name}
+      className="text-[11px]"
+      data-testid="player-card-invited-by"
+    />
+  ) : level ? (
+    <span className={cn(
+      "inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+      level === "COMPETITIVO" ? "border-amber-400/30 bg-amber-400/10 text-amber-200" :
+      level === "RECREATIVO"  ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" :
+                                "border-blue-400/30 bg-blue-400/10 text-blue-200"
+    )}>
+      {PLAYER_LEVEL_LABELS[level] || level}
+    </span>
+  ) : null;
 
+  return (
+    <Sheet open onClose={onClose} title={title} subtitle={subtitle} testId="player-card-sheet">
       {loading ? (
         <div className="space-y-2">
           <div className="skeleton h-4 w-3/4 rounded-lg" />
@@ -388,7 +388,7 @@ function PlayerCardModal({ open, onClose, loading, error, selectedPlayer, cardDa
           {message}
         </div>
       ) : null}
-    </BottomSheet>
+    </Sheet>
   );
 }
 
@@ -500,19 +500,6 @@ function SlotGrid({ court, canRegister, isAdmin, dragRef, onRegisterSelf, onPlay
           />
         );
       })}
-    </div>
-  );
-}
-
-// ── Glassmorphism bottom sheet ─────────────────────────────────────────────
-function BottomSheet({ open, onClose, children }) {
-  if (!open) return null;
-  return (
-    <div className="bottom-sheet-overlay" onClick={onClose}>
-      <div className="bottom-sheet-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
-        {children}
-      </div>
     </div>
   );
 }
@@ -729,7 +716,6 @@ export default function App() {
 
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState(null);
 
   const [selectedCourtId, setSelectedCourtId] = useState("");
   const [guestName, setGuestName] = useState("");
@@ -810,7 +796,7 @@ export default function App() {
 
       // setea estado y carga
       setActorUserId(actor);
-      setToast({ kind: "success", title: "Bienvenido", text: r.me?.full_name || "Login OK" });
+      toast({ kind: "success", title: "Bienvenido", text: r.me?.full_name || "Login OK" });
 
       await load();
     } catch (e) {
@@ -863,7 +849,7 @@ export default function App() {
         body: { phone: phone.trim() },
       });
       setUnlockRequested(true);
-      setToast({ kind: "success", title: "Solicitud enviada", text: "Un administrador la revisará pronto." });
+      toast({ kind: "success", title: "Solicitud enviada", text: "Un administrador la revisará pronto." });
     } catch (e) {
       setErr(e.message || "No se pudo enviar la solicitud.");
     } finally {
@@ -889,7 +875,7 @@ export default function App() {
       setActorUserId(actor);
       setResetPin("");
       setAuthState({ state: "ok" });
-      setToast({ kind: "success", title: "PIN actualizado", text: r.me?.full_name || "Listo" });
+      toast({ kind: "success", title: "PIN actualizado", text: r.me?.full_name || "Listo" });
       await load();
     } catch (e) {
       setErr(e.message || "No se pudo definir el PIN.");
@@ -920,7 +906,7 @@ export default function App() {
         setAuthState({ state: "pending" });
         setPin("");
         setLoginMode("login");
-        setToast({ kind: "success", title: "Solicitud enviada", text: "Tu cuenta quedó en revisión. Te avisamos cuando se apruebe." });
+        toast({ kind: "success", title: "Solicitud enviada", text: "Tu cuenta quedó en revisión. Te avisamos cuando se apruebe." });
         return;
       }
 
@@ -931,7 +917,7 @@ export default function App() {
       localStorage.setItem("actor_me", JSON.stringify(r.me || null));
 
       setActorUserId(actor);
-      setToast({ kind: "success", title: "Cuenta creada", text: r.me?.full_name || "Registro OK" });
+      toast({ kind: "success", title: "Cuenta creada", text: r.me?.full_name || "Registro OK" });
 
       await load();
     } catch (e) {
@@ -1132,7 +1118,7 @@ export default function App() {
         body: { court_id: courtId },
       });
       const courtName = data.courts.find((c) => c.court_id === courtId)?.name;
-      setToast(
+      toast(
         r?.status === "WAITLIST"
           ? { kind: "info", title: "En espera", text: `Te anotamos en espera (puesto ${r.waitlist_position || "?"}).` }
           : { kind: "success", title: "¡Adentro!", text: courtName ? `Estás en ${courtName}.` : "Tu lugar quedó confirmado." }
@@ -1153,7 +1139,7 @@ export default function App() {
         method: "POST",
         body: { court_id: courtId },
       });
-      setToast(
+      toast(
         r?.status === "WAITLIST"
           ? { kind: "info", title: "En espera", text: `Te anotamos en espera (puesto ${r.waitlist_position || "?"}).` }
           : { kind: "success", title: "¡Adentro!", text: "Justo se liberó un lugar y quedaste confirmado." }
@@ -1175,7 +1161,7 @@ export default function App() {
         body: { guest_name: guestName, court_id: selectedCourtId },
       });
       setGuestName("");
-      setToast({ kind: "success", title: "Invitado confirmado", text: "Quedó registrado en la cancha." });
+      toast({ kind: "success", title: "Invitado confirmado", text: "Quedó registrado en la cancha." });
       await load();
     } catch (e) {
       setErr(e.message);
@@ -1189,7 +1175,7 @@ export default function App() {
     setBusy(true);
     try {
       await apiFetch(`/registrations/${registrationId}/cancel`, { method: "POST" });
-      setToast({ kind: "success", title: "Listo", text: successText });
+      toast({ kind: "success", title: "Listo", text: successText });
       await load();
     } catch (e) {
       setErr(e.message);
@@ -1216,7 +1202,7 @@ export default function App() {
         method: "POST",
         body: { to_court_id: toCourtId },
       });
-      setToast({ kind: "success", title: "Movido", text: "La inscripción cambió de cancha." });
+      toast({ kind: "success", title: "Movido", text: "La inscripción cambió de cancha." });
       await load();
     } catch (e) {
       setErr(e.message);
@@ -1272,12 +1258,6 @@ export default function App() {
     setPlayerCardOpen(true);
     await loadPlayerCardsForCourt(courtId);
   }
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2600);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   useEffect(() => {
     setPlayerCardsByCourt({});
@@ -1408,12 +1388,6 @@ export default function App() {
             </button>
           </div>
         </div>
-
-        {toast ? (
-          <Banner kind={toast.kind} title={toast.title} onClose={() => setToast(null)}>
-            {toast.text}
-          </Banner>
-        ) : null}
 
         {err ? (
           <Banner kind="error" title="Error" onClose={() => setErr("")}>
@@ -1669,7 +1643,7 @@ export default function App() {
       </div>
     </div>
 
-    {/* Rendered outside .page-enter so position:fixed works relative to viewport */}
+    {/* Hojas y diálogos: van por portal a #overlay-root (src/design/ui/overlay) */}
     <PlayerCardModal
       open={playerCardOpen}
       onClose={() => setPlayerCardOpen(false)}
@@ -1711,7 +1685,7 @@ export default function App() {
         cancelLabel = "Cancelar";
       }
       return (
-        <ConfirmSheet
+        <Dialog
           open
           title={title}
           confirmLabel={confirmLabel}
@@ -1722,7 +1696,7 @@ export default function App() {
           onCancel={() => setPendingCancel(null)}
         >
           {body}
-        </ConfirmSheet>
+        </Dialog>
       );
     })()}
 
@@ -1730,47 +1704,26 @@ export default function App() {
     {(() => {
       const confirmCourt = confirmCourtId ? courts.find((c) => c.court_id === confirmCourtId) : null;
       return (
-        <BottomSheet open={!!confirmCourt} onClose={() => setConfirmCourtId(null)}>
-          {confirmCourt && (
-            <div className="space-y-4">
-              <div className="text-center">
-                <h3 className="text-lg font-semibold text-white">
-                  ¿Estás seguro de anotarte?
-                </h3>
-                <p className="mt-2 text-sm text-white/60">
-                  Te vas a inscribir en la siguiente cancha:
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-base font-semibold text-white">{confirmCourt.name}</div>
-                <div className="mt-1 flex items-center gap-3 text-sm text-white/60">
-                  <span>{confirmCourt.occupied}/{confirmCourt.capacity} anotados</span>
-                  <span className="text-emerald-400">
-                    {confirmCourt.available} lugar{confirmCourt.available !== 1 ? "es" : ""} libre{confirmCourt.available !== 1 ? "s" : ""}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setConfirmCourtId(null)}
-                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { const id = confirmCourtId; setConfirmCourtId(null); registerSelf(id); }}
-                  className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-emerald-400"
-                >
-                  Confirmar
-                </button>
-              </div>
+        <Dialog
+          open={!!confirmCourt}
+          title="¿Estás seguro de anotarte?"
+          confirmLabel="Confirmar"
+          onConfirm={() => { const id = confirmCourtId; setConfirmCourtId(null); registerSelf(id); }}
+          onCancel={() => setConfirmCourtId(null)}
+          confirmTestId="register-confirm-btn"
+          cancelTestId="register-cancel-btn"
+        >
+          <p>Te vas a inscribir en la siguiente cancha:</p>
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-left">
+            <div className="text-base font-semibold text-white">{confirmCourt?.name}</div>
+            <div className="mt-1 flex items-center gap-3 text-sm text-white/60">
+              <span>{confirmCourt?.occupied}/{confirmCourt?.capacity} anotados</span>
+              <span className="text-emerald-400">
+                {confirmCourt?.available} lugar{confirmCourt?.available !== 1 ? "es" : ""} libre{confirmCourt?.available !== 1 ? "s" : ""}
+              </span>
             </div>
-          )}
-        </BottomSheet>
+          </div>
+        </Dialog>
       );
     })()}
   </>

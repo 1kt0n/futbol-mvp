@@ -6,6 +6,7 @@ import CalendarItemSheet from "./CalendarItemSheet.jsx";
 import AdminCreateMenu from "./AdminCreateMenu.jsx";
 import AdminAnnouncementForm from "./AdminAnnouncementForm.jsx";
 import { usePermissions } from "../permissions/usePermissions.js";
+import Fab from "../shell/Fab.jsx";
 
 function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
@@ -75,7 +76,11 @@ export default function Calendar() {
           ].map((t) => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => {
+                if (t.key === tab) return;
+                setData(null);
+                setTab(t.key);
+              }}
               className={cn(
                 "rounded-lg px-4 py-1.5 text-sm font-semibold transition",
                 tab === t.key
@@ -94,7 +99,9 @@ export default function Calendar() {
           </div>
         )}
 
-        {loading ? (
+        {/* Al refrescar (después de una baja, por ejemplo) la lista queda montada: así el
+            foco puede volver al ítem que abrió la hoja. "Cargando" solo sin datos. */}
+        {loading && !data ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/50">
             Cargando...
           </div>
@@ -124,13 +131,9 @@ export default function Calendar() {
 
       {/* Admin FAB */}
       {canCreate && (
-        <button
-          onClick={() => setAdminMenuOpen(true)}
-          aria-label="Agregar al calendario"
-          className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-5 z-30 grid h-14 w-14 place-items-center rounded-full bg-emerald-500 text-2xl font-bold text-white shadow-2xl shadow-emerald-500/40 hover:bg-emerald-400"
-        >
+        <Fab onClick={() => setAdminMenuOpen(true)} label="Agregar al calendario" testId="calendar-fab">
           +
-        </button>
+        </Fab>
       )}
 
       {/* Sheets / Modals */}

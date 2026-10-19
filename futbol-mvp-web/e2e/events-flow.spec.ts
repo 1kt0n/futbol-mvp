@@ -123,13 +123,8 @@ async function editCourtCapacity(page: Page, courtName: string, capacity: number
   await page.getByTestId("edit-court-sort-order-input").fill(String(sortOrder));
   await page.getByTestId("edit-court-submit-btn").click();
 
-  const modalClose = page.getByTestId("admin-modal-close-btn");
-  if (await modalClose.count()) {
-    const visible = await modalClose.first().isVisible().catch(() => false);
-    if (visible) {
-      await modalClose.first().click();
-    }
-  }
+  // La hoja se cierra sola al guardar (0b). Mientras guarda, la cruz está deshabilitada.
+  await expect(page.getByTestId("edit-court-name-input")).toBeHidden({ timeout: 25_000 });
 }
 
 async function closeCourtByName(page: Page, courtName: string) {

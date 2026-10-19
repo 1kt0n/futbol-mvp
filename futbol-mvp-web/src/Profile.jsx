@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AttributeRadar from "./components/AttributeRadar.jsx";
 import { clearSession, handleAuthFailure } from "./authSession.js";
-import ConfirmSheet from "./design/ui/ConfirmSheet.jsx";
+import { cn } from "./design/cn.js";
+import { Dialog, toast } from "./design/ui/overlay/index.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -24,10 +25,6 @@ const PLAYER_LEVEL_LABELS = Object.fromEntries(
 
 function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
-}
-
-function cn(...xs) {
-  return xs.filter(Boolean).join(" ");
 }
 
 function initials(name = "") {
@@ -91,18 +88,6 @@ async function apiUpload(path, file) {
   return data;
 }
 
-function Toast({ toast, onClose }) {
-  if (!toast) return null;
-  const bg = toast.kind === "error" ? "bg-red-500/90" : "bg-emerald-500/90";
-  return (
-    <div className={cn("fixed left-4 right-4 top-4 z-50 rounded-xl px-4 py-3 text-white shadow-lg sm:left-auto sm:right-4", bg)}>
-      <div className="font-semibold">{toast.title}</div>
-      {toast.text && <div className="text-sm opacity-90">{toast.text}</div>}
-      <button onClick={onClose} className="absolute right-2 top-1 text-white/70 hover:text-white">x</button>
-    </div>
-  );
-}
-
 function RoleBadge({ role }) {
   const colors = {
     super_admin: "bg-purple-500/20 text-purple-300 border-purple-500/30",
@@ -133,7 +118,6 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [toast, setToast] = useState(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   const [user, setUser] = useState(null);
@@ -184,7 +168,7 @@ export default function Profile() {
           // rating endpoints are optional for profile render
         }
       } catch (e) {
-        setToast({ kind: "error", title: "Error", text: e.message });
+        toast({ kind: "error", title: "Error", text: e.message });
         if (e.message.includes("No autenticado")) {
           navigate("/");
         }
@@ -194,13 +178,6 @@ export default function Profile() {
     }
     loadProfile();
   }, [navigate]);
-
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(null), 4000);
-      return () => clearTimeout(t);
-    }
-  }, [toast]);
 
   async function handleSave(e) {
     e.preventDefault();
@@ -219,7 +196,7 @@ export default function Profile() {
       setUser(data.user);
       setRankingOptIn(Boolean(data.user.ranking_opt_in));
       setPlayerLevel(data.user.player_level || "RECREATIVO");
-      setToast({ kind: "success", title: "Guardado", text: "Perfil actualizado." });
+      toast({ kind: "success", title: "Guardado", text: "Perfil actualizado." });
 
       const userId = data.user.id || getActorId();
       const [ratingRes, attrsRes, pendingRes] = await Promise.all([
@@ -237,7 +214,7 @@ export default function Profile() {
           : ratingRes?.message || "No participas del Perfil de Juego. Si lo activas, podras votar y recibir feedback de tus companeros."
       );
     } catch (e) {
-      setToast({ kind: "error", title: "Error", text: e.message });
+      toast({ kind: "error", title: "Error", text: e.message });
     } finally {
       setSaving(false);
     }
@@ -248,11 +225,11 @@ export default function Profile() {
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
-      setToast({ kind: "error", title: "Error", text: "Selecciona una imagen." });
+      toast({ kind: "error", title: "Error", text: "Selecciona una imagen." });
       return;
     }
     if (file.size > AVATAR_MAX_BYTES) {
-      setToast({
+      toast({
         kind: "error",
         title: "Error",
         text: `La imagen no puede superar ${AVATAR_MAX_MB}MB.`,
@@ -264,9 +241,9 @@ export default function Profile() {
     try {
       const data = await apiUpload("/me/avatar", file);
       setUser((u) => ({ ...u, avatar_url: data.avatar_url }));
-      setToast({ kind: "success", title: "Avatar actualizado" });
+      toast({ kind: "success", title: "Avatar actualizado" });
     } catch (e) {
-      setToast({ kind: "error", title: "Error", text: e.message });
+      toast({ kind: "error", title: "Error", text: e.message });
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -279,9 +256,9 @@ export default function Profile() {
     try {
       await apiFetch("/me/avatar", { method: "DELETE" });
       setUser((u) => ({ ...u, avatar_url: null }));
-      setToast({ kind: "success", title: "Avatar eliminado" });
+      toast({ kind: "success", title: "Avatar eliminado" });
     } catch (e) {
-      setToast({ kind: "error", title: "Error", text: e.message });
+      toast({ kind: "error", title: "Error", text: e.message });
     } finally {
       setUploading(false);
     }
@@ -297,7 +274,6 @@ export default function Profile() {
 
   return (
     <div className="page-enter min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 px-4 py-8">
-      <Toast toast={toast} onClose={() => setToast(null)} />
 
       <div className="mx-auto max-w-lg">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -591,7 +567,7 @@ export default function Profile() {
         </button>
       </div>
 
-      <ConfirmSheet
+      <Dialog
         open={confirmLogout}
         title="¿Cerrás sesión en este teléfono?"
         confirmLabel="Cerrar sesión"
