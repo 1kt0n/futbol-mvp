@@ -3,7 +3,8 @@
 // - #root y las capas de abajo quedan inertes (ni foco, ni clics, ni lector de
 //   pantalla) mientras haya una capa abierta. El Toaster nunca entra acá.
 // - Bloqueo de scroll con contador: con hojas anidadas el body se libera recién
-//   cuando se cierra la última, y vuelve a la posición en la que estaba.
+//   cuando se cierra la última, y vuelve a la posición en la que estaba. El menú
+//   de escritorio (popover) no bloquea: se cierra si la página se mueve.
 // - Esc y Tab los atiende solo la capa de arriba. El orden de la pila sigue al
 //   visual: un diálogo (z-dialog) queda arriba de una hoja (z-sheet) aunque se
 //   haya registrado antes (React corre los efectos de los hijos primero).
@@ -181,15 +182,15 @@ function emit() {
   subscribers.forEach((fn) => fn());
 }
 
-const KIND_RANK = { sheet: 0, dialog: 1, menu: 2 };
+const KIND_RANK = { sheet: 0, dialog: 1, menu: 2, popover: 2 };
 
-export function pushLayer(layer) {
+export function pushLayer({ lockScroll: locksScroll = true, ...layer }) {
   seq += 1;
-  const entry = { id: seq, rank: KIND_RANK[layer.kind] ?? 0, ...layer };
+  const entry = { id: seq, rank: KIND_RANK[layer.kind] ?? 0, locksScroll, ...layer };
   layers.push(entry);
   layers.sort((a, b) => a.rank - b.rank || a.id - b.id);
   if (layers.length === 1) window.addEventListener("keydown", onKeyDown, true);
-  lockScroll();
+  if (locksScroll) lockScroll();
   applyInert();
   emit();
   return entry.id;
@@ -198,15 +199,24 @@ export function pushLayer(layer) {
 export function removeLayer(id) {
   const i = layers.findIndex((l) => l.id === id);
   if (i === -1) return;
-  layers.splice(i, 1);
+  const [entry] = layers.splice(i, 1);
   if (layers.length === 0) window.removeEventListener("keydown", onKeyDown, true);
-  unlockScroll();
+  if (entry.locksScroll) unlockScroll();
   applyInert();
   emit();
 }
 
 export function isTopLayer(id) {
   return layers.length > 0 && layers[layers.length - 1].id === id;
+}
+
+// Lo mismo que un Esc sobre la capa de arriba (el atrás de Android con un diálogo
+// encima de la hoja cierra el diálogo, no la hoja). Devuelve si había a quién.
+export function escapeTop() {
+  const onEscape = layers[layers.length - 1]?.getHandlers().onEscape;
+  if (!onEscape) return false;
+  onEscape();
+  return true;
 }
 
 function subscribe(fn) {

@@ -65,6 +65,21 @@
   padding: 0.75rem 1.25rem 0.75rem;
 }
 
+/* El grabber de Dialog y ActionSheet, con lugar para agarrarlo. */
+.ov-grabzone {
+  flex: none;
+  padding-top: 0.75rem;
+}
+
+/* Zona de deslizar para cerrar (useSwipeToDismiss), solo en el celular. */
+@media (max-width: 639px) {
+  .ov-swipe {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
 .ov-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -125,6 +140,43 @@
   .ov-footer {
     padding-bottom: 1.25rem;
   }
+}
+
+/* ── Menú de escritorio (popover, desde 768px) ─────────────────────────── */
+.ov-backdrop--clear {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  animation: none;
+}
+
+/* Lo ubica Menu.jsx (top/left/max-height); hasta medirlo, no se ve. */
+.ov-popover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  min-width: 12rem;
+  max-width: min(20rem, calc(100vw - 16px));
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.375rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  background: #18181b;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  outline: none;
+  animation: ov-fade 0.12s ease-out backwards;
+}
+
+@supports (height: 100dvh) {
+  .ov-popover {
+    max-height: 60dvh;
+  }
+}
+
+.ov-popover:not([data-placement]) {
+  visibility: hidden;
 }
 
 /* ── Toasts ────────────────────────────────────────────────────────────── */

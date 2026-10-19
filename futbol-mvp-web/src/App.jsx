@@ -8,6 +8,8 @@ import AttributeRadar from "./components/AttributeRadar.jsx";
 import { handleAuthFailure, notifyActorChanged } from "./authSession.js";
 import { cn } from "./design/cn.js";
 import { Dialog, Sheet, toast } from "./design/ui/overlay/index.js";
+import { usePullToRefresh } from "./design/usePullToRefresh.js";
+import { pickNextEvent } from "./features/match/pickNextEvent.js";
 
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
@@ -79,23 +81,6 @@ function fmtStart(startsAt) {
   }
 }
 
-// El backend manda "2026-10-21 21:00:00+00:00"; Safari viejo no parsea el espacio.
-function parseTs(value) {
-  const t = new Date(String(value || "").replace(" ", "T")).getTime();
-  return Number.isNaN(t) ? null : t;
-}
-
-// El partido que abre la Home: el próximo (desde hace 3 h en adelante) o, si no
-// hay ninguno, el más reciente.
-function pickNextEvent(evts) {
-  const cutoff = Date.now() - 3 * 60 * 60 * 1000;
-  const withTs = evts.map((e) => ({ e, t: parseTs(e.starts_at) }));
-  const upcoming = withTs.filter((x) => x.t !== null && x.t >= cutoff).sort((a, b) => a.t - b.t);
-  if (upcoming.length > 0) return upcoming[0].e;
-  const past = withTs.filter((x) => x.t !== null).sort((a, b) => b.t - a.t);
-  return (past[0] || withTs[0])?.e || null;
-}
-
 function shortName(name = "") {
   const n = String(name || "").trim();
   return n.length > 20 ? `${n.slice(0, 20)}…` : n;
@@ -118,6 +103,8 @@ async function apiFetch(path, { method = "GET", body, actorOverride } = {}) {
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),
       "X-Actor-User-Id": actor,
+      // Para medir desde qué pantalla se escribe (metadata.ui en el audit, rediseño UX §8.1).
+      ...(method !== "GET" ? { "X-UI-Source": "legacy" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -660,38 +647,6 @@ function CourtCard({
 // EXPORTS FOR ADMIN PANEL
 // =========================
 export { cn, apiFetch, Banner, StatPill };
-
-// ── Pull-to-refresh hook ───────────────────────────────────────────────────
-function usePullToRefresh(onRefresh) {
-  const [pulling, setPulling] = useState(false);
-  const [pullY, setPullY] = useState(0);
-  const startYRef = useRef(0);
-  const activeRef = useRef(false);
-
-  function onTouchStart(e) {
-    if (window.scrollY > 5) return;
-    startYRef.current = e.touches[0].clientY;
-    activeRef.current = true;
-  }
-
-  function onTouchMove(e) {
-    if (!activeRef.current) return;
-    const delta = e.touches[0].clientY - startYRef.current;
-    if (delta <= 0) { setPullY(0); return; }
-    setPulling(true);
-    setPullY(Math.min(delta * 0.45, 80));
-  }
-
-  function onTouchEnd() {
-    if (!activeRef.current) return;
-    activeRef.current = false;
-    if (pullY >= 60) onRefresh();
-    setPulling(false);
-    setPullY(0);
-  }
-
-  return { pulling, pullY, handlers: { onTouchStart, onTouchMove, onTouchEnd } };
-}
 
 // =========================
 // APP

@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useParams } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
-import App from './App.jsx'
 import AdminPanel from './AdminPanel.jsx'
 import Profile from './Profile.jsx'
 import RatingsPending from './RatingsPending.jsx'
@@ -14,6 +13,7 @@ import PublicEventPage from './features/events/public/PublicEventPage.jsx'
 import ExternalParticipationPage from './features/events/public/ExternalParticipationPage.jsx'
 import AvisosPage from './features/avisos/AvisosPage.jsx'
 import AppShell from './shell/AppShell.jsx'
+import { HomeRoute, MatchRoute } from './features/match/routes.jsx'
 import { Toaster } from './design/ui/overlay/index.js'
 
 function LegacyPublicRedirect() {
@@ -36,7 +36,9 @@ createRoot(document.getElementById('root')).render(
       <Routes>
         {/* Pantallas con sesión: comparten la barra inferior */}
         <Route element={<AppShell />}>
-          <Route path="/" element={<App />} />
+          {/* "/" decide entre el login, la pantalla del partido (flag) y la Home de siempre */}
+          <Route path="/" element={<HomeRoute />} />
+          <Route path="/p/:id" element={<MatchRoute />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/calendar" element={<Calendar />} />

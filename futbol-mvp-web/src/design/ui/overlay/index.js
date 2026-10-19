@@ -7,6 +7,8 @@ export { Sheet, SheetFooter } from "./Sheet.jsx";
 export { useSheetDirty, useSheetBusy, useSheetClose } from "./sheetHooks.js";
 export { Dialog } from "./Dialog.jsx";
 export { ActionSheet } from "./ActionSheet.jsx";
+export { Menu } from "./Menu.jsx";
+export { useSheetParam } from "./useSheetParam.js";
 export { toast, dismissToast } from "./toast.js";
 export { default as Toaster } from "./Toaster.jsx";
 export { useOverlayDepth } from "./stack.js";

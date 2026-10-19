@@ -24,7 +24,12 @@ from app.utils.event_access_token import issue_event_grant, verify_event_grant
 from app.utils.security import verify_event_password, gen_management_token, hash_management_token
 from app.utils.contact_crypto import encrypt_contact, decrypt_contact, contact_fingerprint
 from app.utils.ratelimit import rate_limit, client_ip
-from app.routers.events import audit_court_full_if_filled, check_and_auto_close_court, promote_first_waitlist
+from app.routers.events import (
+    audit_court_full_if_filled,
+    check_and_auto_close_court,
+    lock_event_occupancy,
+    promote_first_waitlist,
+)
 
 router = APIRouter()
 
@@ -285,6 +290,8 @@ def register_external(
     mgmt_hash = hash_management_token(mgmt_token)
 
     with engine.begin() as conn:
+        # Antes que cualquier fila: así un alta y una baja del mismo partido no se pisan.
+        lock_event_occupancy(conn, event_id)
         court = conn.execute(text("""
             SELECT id, capacity, is_open FROM public.event_courts
             WHERE id = :court_id AND event_id = :event_id FOR UPDATE
@@ -428,6 +435,12 @@ def cancel_participation(management_token: str):
 
     token_hash = hash_management_token(management_token)
     with engine.begin() as conn:
+        # El lock del partido va antes que el de la fila (mismo orden que el alta).
+        pre = conn.execute(text("""
+            SELECT event_id FROM public.event_registrations WHERE management_token_hash = :h
+        """), {"h": token_hash}).mappings().first()
+        if pre:
+            lock_event_occupancy(conn, pre["event_id"])
         p = conn.execute(text("""
             SELECT id, event_id, status, court_id, management_token_expires_at
             FROM public.event_registrations

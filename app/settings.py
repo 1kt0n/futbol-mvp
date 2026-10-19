@@ -67,6 +67,23 @@ GUEST_LIMIT_PER_USER = _int("GUEST_LIMIT_PER_USER", 5)
 AUTO_FINALIZE_ENABLED = _flag("AUTO_FINALIZE_ENABLED")
 AUTO_FINALIZE_AFTER_MINUTES = _int("AUTO_FINALIZE_AFTER_MINUTES", 150, minimum=60)
 
+
+def _match_screen_mode(raw: str | None) -> str:
+    """off | admins | all. También acepta true (= all) y false (= off); lo demás es off."""
+    value = (raw or "").strip().lower()
+    if value in ("all", "true"):
+        return "all"
+    if value == "admins":
+        return "admins"
+    return "off"
+
+
+# Rediseño UX 1a: la pantalla del partido (/p/:id) como pestaña Partido.
+# "admins" la muestra solo a quien entra al Panel; "all", a todos.
+MATCH_SCREEN_ENABLED = _match_screen_mode(os.getenv("MATCH_SCREEN_ENABLED"))
+# "Me anoto" sin elegir cancha: el servidor asigna la primera con lugar.
+ONE_TAP_REGISTER_ENABLED = _flag("ONE_TAP_REGISTER_ENABLED")
+
 # CORS: configurable via env var (comma-separated) o defaults para desarrollo
 _cors_env = os.getenv("CORS_ORIGINS", "")
 if _cors_env.strip():

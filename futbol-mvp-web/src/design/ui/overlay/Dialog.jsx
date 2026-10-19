@@ -1,10 +1,14 @@
 // Confirmación (role="alertdialog"): título, consecuencia, acción principal y la
 // salida segura, que es la que recibe el foco. Abajo en el celular, centrado
 // desde 640px. children puede traer un campo (por ejemplo, un motivo opcional).
+// Con history={sheets.history} (useSheetParam), el atrás de Android cancela.
+// En el celular, el grabber se desliza para cancelar.
 
-import { useId, useRef } from "react";
+import { useId, useLayoutEffect, useRef } from "react";
 import { cn } from "../../cn.js";
 import Layer from "./Layer.jsx";
+import { escapeTop, isTopLayer } from "./stack.js";
+import { useSwipeToDismiss } from "./useSwipeToDismiss.js";
 
 export function Dialog({ open, ...props }) {
   if (!open) return null;
@@ -21,6 +25,7 @@ function DialogPanel({
   confirmDisabled = false,
   onConfirm,
   onCancel,
+  history,
   testId,
   confirmTestId = "confirm-sheet-confirm",
   cancelTestId = "confirm-sheet-cancel",
@@ -28,9 +33,35 @@ function DialogPanel({
   const titleId = useId();
   const bodyId = useId();
   const cancelRef = useRef(null);
+  const panelRef = useRef(null);
+  const layerIdRef = useRef(null);
+  const busyRef = useRef(busy);
   const cancel = () => {
     if (!busy) onCancel?.();
   };
+
+  useLayoutEffect(() => {
+    busyRef.current = busy;
+  });
+
+  // El atrás del navegador: true = bloquear. Si no bloquea, se cierra por la URL
+  // (no se llama a onCancel, que volvería a navegar).
+  useLayoutEffect(() => {
+    if (!history) return undefined;
+    return history.register(() => {
+      if (layerIdRef.current !== null && !isTopLayer(layerIdRef.current)) {
+        escapeTop();
+        return true;
+      }
+      return busyRef.current;
+    });
+  }, [history]);
+
+  const swipe = useSwipeToDismiss({
+    panelRef,
+    onRelease: () => (busy ? "blocked" : "closed"),
+    onDismiss: () => onCancel?.(),
+  });
 
   // En 390px entran ~16 caracteres por botón si van lado a lado; si no, se apilan (§7.0).
   const stacked = (confirmLabel || "").length > 16 || (cancelLabel || "").length > 16;
@@ -43,12 +74,16 @@ function DialogPanel({
       aria-describedby={children ? bodyId : undefined}
       data-testid={testId}
       initialFocusRef={cancelRef}
+      panelRef={panelRef}
+      layerIdRef={layerIdRef}
       onBackdrop={cancel}
       onEscape={cancel}
       panelClassName="ov-panel--dialog"
     >
-      <div className="ov-body pt-5">
+      <div className="ov-grabzone ov-swipe" {...swipe}>
         <div className="ov-grabber" aria-hidden="true" />
+      </div>
+      <div className="ov-body pt-2">
         <h2 id={titleId} className="text-center text-lg font-semibold text-white">
           {title}
         </h2>

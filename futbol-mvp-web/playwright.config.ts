@@ -35,10 +35,10 @@ export default defineConfig({
       },
     },
     {
-      // iOS Safari (WebKit). Solo los specs de overlays y a11y: los flujos con
+      // iOS Safari (WebKit). Solo los specs de overlays, a11y y la pantalla del partido: los flujos con
       // capturas (events/tournaments) arman su manifest con los dos de Chromium.
       name: "iphone-14",
-      testMatch: /(overlays|accessibility-smoke)\.spec\.ts$/,
+      testMatch: /(overlays|accessibility-smoke|match)\.spec\.ts$/,
       use: {
         ...devices["iPhone 14"],
       },

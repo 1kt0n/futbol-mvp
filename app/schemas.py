@@ -1,15 +1,44 @@
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+def _blank_to_none(value):
+    # La Home vieja manda "" cuando no hay cancha elegida (hoy da 500 en el cast a uuid).
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
 
 
 class RegisterRequest(BaseModel):
-    court_id: str = Field(..., description="UUID de la cancha elegida")
+    # Sin cancha (rediseño UX 1a, ONE_TAP_REGISTER_ENABLED): el servidor asigna la
+    # primera con lugar y, si está todo lleno, anota en la espera.
+    court_id: UUID | None = Field(None, description="UUID de la cancha elegida")
+    # Con cancha y llena: "waitlist" (lo de siempre, lo usa la Home vieja) anota en
+    # la espera; "conflict" (pantalla del partido) responde 409 COURT_FULL.
+    if_full: Literal["waitlist", "conflict"] = "waitlist"
+
+    @field_validator("court_id", mode="before")
+    @classmethod
+    def _blank_court(cls, value):
+        return _blank_to_none(value)
 
 
 class GuestRequest(BaseModel):
     guest_name: str = Field(..., min_length=2, max_length=60)
-    court_id: str = Field(..., description="UUID de la cancha elegida")
+    court_id: UUID | None = Field(None, description="UUID de la cancha elegida")
+
+    @field_validator("court_id", mode="before")
+    @classmethod
+    def _blank_court(cls, value):
+        return _blank_to_none(value)
+
+
+class CancelRequest(BaseModel):
+    # Para medir (metadata.intent): "undo" = Deshacer del toast; "notify_group" =
+    # "Liberar y avisar al grupo" a menos de 24 h.
+    intent: Literal["undo", "notify_group"] | None = None
 
 
 class MoveRequest(BaseModel):

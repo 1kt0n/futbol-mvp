@@ -10,13 +10,18 @@
 // Los formularios hijos avisan que tienen cambios con useSheetDirty(bool) (y que
 // hay un request en curso con useSheetBusy(bool)) y ponen su botón abajo con
 // <SheetFooter> (el botón submit usa form={id}).
+//
+// history={sheets.history} (de useSheetParam): el atrás de Android pasa por las
+// mismas reglas que Esc. En el celular, el header se desliza para cerrar.
 
 import { useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../../cn.js";
 import Layer from "./Layer.jsx";
 import { SheetContext } from "./sheetContext.js";
+import { escapeTop, isTopLayer } from "./stack.js";
 import { revealOnFocus } from "./useKeyboardInset.js";
+import { useSwipeToDismiss } from "./useSwipeToDismiss.js";
 
 export function Sheet({ open, ...props }) {
   if (!open) return null;
@@ -34,12 +39,16 @@ function SheetPanel({
   dismiss = "auto",
   dirty = false,
   busy = false,
+  history,
   testId,
   closeTestId,
   backdropTestId,
 }) {
   const titleId = useId();
   const titleRef = useRef(null);
+  const panelRef = useRef(null);
+  const layerIdRef = useRef(null);
+  const backHandlerRef = useRef(null);
   const keepEditingRef = useRef(null);
   // Dónde estaba el foco antes de "¿Descartás los cambios?", para volver ahí.
   const resumeFocusRef = useRef(null);
@@ -54,22 +63,51 @@ function SheetPanel({
   const locked = busy || reportedBusy || dismiss === "locked";
   const guarded = dismiss === "guarded" && (dirty || reportedDirty);
 
+  // Devuelve "closed", "confirm" (quedó "¿Descartás los cambios?" a la vista) o
+  // "blocked". Con "swipe" y "back" no llama a onClose: el gesto lo llama cuando
+  // termina de salir, y el atrás ya cerró la hoja por la URL.
   function requestClose(source) {
-    if (locked) return;
+    if (locked) return "blocked";
     if (confirming) {
-      // Esc con la pregunta abierta = seguir editando.
-      if (source === "escape") setConfirming(false);
-      return;
+      // Esc (o el atrás) con la pregunta abierta = seguir editando.
+      if (source === "escape" || source === "back") {
+        setConfirming(false);
+        return "blocked";
+      }
+      return "confirm";
     }
     if (guarded) {
-      if (source !== "backdrop") {
-        resumeFocusRef.current = document.activeElement;
-        setConfirming(true);
-      }
-      return;
+      if (source === "backdrop") return "blocked";
+      resumeFocusRef.current = document.activeElement;
+      setConfirming(true);
+      return "confirm";
     }
-    onClose?.();
+    if (source !== "swipe" && source !== "back") onClose?.();
+    return "closed";
   }
+
+  // El atrás del navegador: true = bloquear (la hoja sigue y se vuelve a poner ?sheet=).
+  useLayoutEffect(() => {
+    backHandlerRef.current = () => {
+      // Con un diálogo (o un menú) encima, el atrás cierra ese, no la hoja.
+      if (layerIdRef.current !== null && !isTopLayer(layerIdRef.current)) {
+        escapeTop();
+        return true;
+      }
+      return requestClose("back") !== "closed";
+    };
+  });
+
+  useLayoutEffect(() => {
+    if (!history) return undefined;
+    return history.register(() => backHandlerRef.current?.() ?? false);
+  }, [history]);
+
+  const swipe = useSwipeToDismiss({
+    panelRef,
+    onRelease: () => requestClose("swipe"),
+    onDismiss: () => onClose?.(),
+  });
 
   useEffect(() => {
     if (confirming) {
@@ -106,12 +144,14 @@ function SheetPanel({
       data-testid={testId}
       backdropTestId={backdropTestId}
       initialFocusRef={titleRef}
+      panelRef={panelRef}
+      layerIdRef={layerIdRef}
       onBackdrop={() => requestClose("backdrop")}
       onEscape={() => requestClose("escape")}
       panelClassName={cn(size === "full" && "ov-panel--full", width === "lg" && "ov-panel--lg")}
     >
       <SheetContext.Provider value={ctx}>
-        <div className="ov-header">
+        <div className="ov-header ov-swipe" {...swipe}>
           <div className="ov-grabber" aria-hidden="true" />
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">

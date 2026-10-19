@@ -22,6 +22,8 @@ from app.settings import (
     AUTO_FINALIZE_ENABLED,
     AUTO_FINALIZE_AFTER_MINUTES,
 )
+from app import settings
+from app.utils.audit import reset_ui_source, set_ui_source
 from app.utils.auth_token import verify_token
 from app.utils.ratelimit import client_ip
 from app.routers import (
@@ -65,7 +67,8 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Actor-User-Id", "X-Event-Access", "X-Staff-Token", "X-Draw-Token", "X-Control-Token"],
+    allow_headers=["Content-Type", "X-Actor-User-Id", "X-Event-Access", "X-Staff-Token", "X-Draw-Token", "X-Control-Token",
+                   "X-UI-Source"],
 )
 # El snapshot público de competencias (~100 KB de JSON repetitivo) baja ~10x con gzip.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -95,6 +98,15 @@ async def forensic_access_log(request: Request, call_next):
     except Exception:
         pass
     return response
+
+# Pantalla de origen de cada escritura (X-UI-Source → metadata.ui en el audit).
+@app.middleware("http")
+async def ui_source_context(request: Request, call_next):
+    token = set_ui_source(request.headers.get("X-UI-Source"))
+    try:
+        return await call_next(request)
+    finally:
+        reset_ui_source(token)
 
 # =========================
 # Health Check Endpoints
@@ -133,6 +145,9 @@ def app_config():
         "guestLimitPerUser": GUEST_LIMIT_PER_USER,
         "autoFinalizeEnabled": AUTO_FINALIZE_ENABLED,
         "autoFinalizeAfterMinutes": AUTO_FINALIZE_AFTER_MINUTES,
+        # Rediseño UX 1a. Se leen de settings al momento (los tests los cambian).
+        "matchScreen": settings.MATCH_SCREEN_ENABLED,
+        "oneTapRegisterEnabled": settings.ONE_TAP_REGISTER_ENABLED,
     }
 
 

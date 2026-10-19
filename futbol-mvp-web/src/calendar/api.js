@@ -10,7 +10,9 @@ function getActorId() {
   return localStorage.getItem("actorUserId") || localStorage.getItem("actor_id") || "";
 }
 
-export async function apiFetch(path, { method = "GET", body } = {}) {
+// El error lleva `status` y el `detail` crudo del backend: la pantalla del partido
+// necesita distinguir un 409 COURT_FULL (detail con alternativas) de otro 409.
+export async function apiFetch(path, { method = "GET", body, headers } = {}) {
   const actor = getActorId();
   if (!actor) throw new Error("No autenticado.");
 
@@ -19,6 +21,7 @@ export async function apiFetch(path, { method = "GET", body } = {}) {
     headers: {
       ...(body ? { "Content-Type": "application/json" } : {}),
       "X-Actor-User-Id": actor,
+      ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -39,8 +42,11 @@ export async function apiFetch(path, { method = "GET", body } = {}) {
         ? detail
         : Array.isArray(detail)
           ? detail.map((x) => x?.msg).filter(Boolean).join(" | ") || `HTTP ${res.status}`
-          : `HTTP ${res.status}`;
-    throw new Error(msg);
+          : detail?.message || `HTTP ${res.status}`;
+    const error = new Error(msg);
+    error.status = res.status;
+    error.detail = detail;
+    throw error;
   }
 
   return data;

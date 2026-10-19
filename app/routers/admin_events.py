@@ -24,7 +24,7 @@ from app.schemas import (
 )
 from app.utils.datetime_parser import parse_client_datetime
 from app.utils.permissions import require_permission, get_effective_permissions
-from app.routers.events import fill_from_waitlist
+from app.routers.events import fill_from_waitlist, lock_event_occupancy
 from app.utils.security import (
     gen_share_code,
     gen_salt,
@@ -911,6 +911,8 @@ def create_court(
             raise HTTPException(status_code=404, detail="Evento no encontrado.")
 
     with engine.begin() as conn:
+        # Mismo lock que altas y bajas: un "Me anoto" no queda en la espera con lugar libre.
+        lock_event_occupancy(conn, event_id)
         court = conn.execute(text("""
             INSERT INTO public.event_courts (
                 event_id, name, capacity, is_open, sort_order, created_at, updated_at
@@ -1026,6 +1028,8 @@ def update_court(
     update_sql = f"UPDATE public.event_courts SET {', '.join(updates)} WHERE id = :court_id AND event_id = :event_id"
 
     with engine.begin() as conn:
+        # Mismo lock que altas y bajas: un "Me anoto" no queda en la espera con lugar libre.
+        lock_event_occupancy(conn, event_id)
         conn.execute(text(update_sql), params)
 
         # Audit log
@@ -1115,6 +1119,8 @@ def delete_court(
             )
 
     with engine.begin() as conn:
+        # Mismo lock que altas y bajas: un "Me anoto" no queda en la espera con lugar libre.
+        lock_event_occupancy(conn, event_id)
         conn.execute(text("""
             DELETE FROM public.event_court_captains
             WHERE event_id = :event_id AND court_id = :court_id
@@ -1301,6 +1307,8 @@ def open_court(
             raise HTTPException(status_code=400, detail="La cancha ya está abierta.")
 
     with engine.begin() as conn:
+        # Mismo lock que altas y bajas: un "Me anoto" no queda en la espera con lugar libre.
+        lock_event_occupancy(conn, event_id)
         conn.execute(text("""
             UPDATE public.event_courts
             SET is_open = true, updated_at = now()
@@ -1358,6 +1366,8 @@ def close_court(
             raise HTTPException(status_code=400, detail="La cancha ya está cerrada.")
 
     with engine.begin() as conn:
+        # Mismo lock que altas y bajas: un "Me anoto" no queda en la espera con lugar libre.
+        lock_event_occupancy(conn, event_id)
         conn.execute(text("""
             UPDATE public.event_courts
             SET is_open = false, updated_at = now()

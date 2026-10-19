@@ -4,7 +4,7 @@
 // diálogos y toasts (z-tabbar en la escala de src/design/tokens.css).
 
 import { useEffect } from "react";
-import { NavLink } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { cn } from "../design/cn.js";
 
 const ICONS = {
@@ -60,8 +60,10 @@ function NavIcon({ name, className }) {
 }
 
 export default function BottomNav({ isAdmin = false, avisos = 0, gestion = 0 }) {
+  const { pathname } = useLocation();
   const items = [
-    { to: "/", label: "Partido", icon: "ball", end: true, testid: "nav-partido" },
+    // La pantalla del partido (/p/:id) también es la pestaña Partido.
+    { to: "/", label: "Partido", icon: "ball", end: true, alsoActive: "/p/", testid: "nav-partido" },
     { to: "/calendar", label: "Calendario", icon: "calendar", testid: "open-calendar" },
     { to: "/avisos", label: "Avisos", icon: "bell", badge: avisos, srBadge: "sin leer", testid: "nav-avisos" },
     ...(isAdmin
@@ -83,41 +85,41 @@ export default function BottomNav({ isAdmin = false, avisos = 0, gestion = 0 }) 
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-lg">
-        {items.map((it) => (
-          <li key={it.to} className="flex-1">
-            <NavLink
-              to={it.to}
-              end={it.end}
-              data-testid={it.testid}
-              className={({ isActive }) =>
-                cn(
+        {items.map((it) => {
+          // Mismo criterio que NavLink (end = ruta exacta), más alsoActive.
+          const isActive =
+            (it.end ? pathname === it.to : pathname === it.to || pathname.startsWith(`${it.to}/`)) ||
+            Boolean(it.alsoActive && pathname.startsWith(it.alsoActive));
+          return (
+            <li key={it.to} className="flex-1">
+              <Link
+                to={it.to}
+                data-testid={it.testid}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(
                   "focus-ring flex min-h-[56px] flex-col items-center justify-center gap-0.5 rounded-xl px-1 pb-1 pt-1.5 text-[11px] font-medium transition-colors",
                   isActive ? "text-white" : "text-white/55 hover:text-white/80"
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span className="relative">
-                    <NavIcon name={it.icon} className={cn("h-6 w-6", isActive && "text-emerald-400")} />
-                    {it.badge > 0 && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute -right-2.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-none text-white"
-                      >
-                        {it.badge > 99 ? "99+" : it.badge}
-                      </span>
-                    )}
-                  </span>
-                  <span>
-                    {it.label}
-                    {it.badge > 0 && <span className="sr-only">{`, ${it.badge} ${it.srBadge}`}</span>}
-                  </span>
-                </>
-              )}
-            </NavLink>
-          </li>
-        ))}
+                )}
+              >
+                <span className="relative">
+                  <NavIcon name={it.icon} className={cn("h-6 w-6", isActive && "text-emerald-400")} />
+                  {it.badge > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute -right-2.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-bold leading-none text-white"
+                    >
+                      {it.badge > 99 ? "99+" : it.badge}
+                    </span>
+                  )}
+                </span>
+                <span>
+                  {it.label}
+                  {it.badge > 0 && <span className="sr-only">{`, ${it.badge} ${it.srBadge}`}</span>}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </nav>
   );

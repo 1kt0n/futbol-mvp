@@ -378,7 +378,8 @@ test.describe("Overlays", () => {
   });
 
   test("Partido y Perfil", async ({ page }) => {
-    await page.goto(`/?event_id=${seed.eventId}`, { waitUntil: "domcontentloaded" });
+    // La Home de siempre (con la pantalla del partido prendida, "/" iría a /p/:id).
+    await page.goto(`/?event_id=${seed.eventId}&vista=clasica`, { waitUntil: "domcontentloaded" });
     await checkOverlay(page, {
       name: "Baja propia",
       trigger: (p) => p.getByTestId(`player-cancel-${seed.registrationId}`),
@@ -390,7 +391,7 @@ test.describe("Overlays", () => {
       cta: (p) => p.getByRole("button", { name: "Cerrar", exact: true }),
     });
 
-    await page.goto(`/?event_id=${seed.openEventId}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`/?event_id=${seed.openEventId}&vista=clasica`, { waitUntil: "domcontentloaded" });
     await checkOverlay(page, {
       name: "¿Estás seguro de anotarte?",
       trigger: (p) => p.getByTestId(`court-register-cta-${seed.openCourtId}`),
@@ -403,6 +404,21 @@ test.describe("Overlays", () => {
       trigger: (p) => p.getByTestId("profile-logout-btn"),
       cta: (p) => p.getByTestId("confirm-sheet-confirm"),
     });
+  });
+
+  // Pantalla del partido (1a). Solo con la API en MATCH_SCREEN_ENABLED=all; el
+  // admin está anotado en el evento sembrado y puede compartir.
+  test("Partido nuevo: menú, Compartir, Invitar y ¿Liberás tu lugar?", async ({ page }) => {
+    const config = await (await fetch(`${API_URL}/config`)).json();
+    test.skip(config.matchScreen !== "all", "La API no tiene MATCH_SCREEN_ENABLED=all.");
+    await page.goto(`/p/${seed.eventId}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("match-my-status")).toBeVisible({ timeout: 25_000 });
+    for (const c of [
+      { name: "Menú del partido", trigger: (p: Page) => p.getByTestId("match-menu-btn"), cta: (p: Page) => p.getByRole("menuitem").last() },
+      { name: "Compartir", trigger: (p: Page) => p.getByTestId("match-share-chip"), cta: (p: Page) => p.getByTestId("share-whatsapp-btn") },
+      { name: "Sumar invitado", trigger: (p: Page) => p.getByTestId("match-guest-btn"), cta: (p: Page) => p.getByTestId("guest-submit-btn") },
+      { name: "¿Liberás tu lugar?", trigger: (p: Page) => p.getByTestId("match-leave-btn"), cta: (p: Page) => p.getByTestId("leave-confirm-btn") },
+    ]) await checkOverlay(page, c);
   });
 
   test("Formulario con cambios: el fondo no cierra y Esc pregunta", async ({ page }) => {

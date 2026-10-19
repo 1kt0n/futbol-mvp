@@ -7,11 +7,14 @@ bloqueos, con el PIN hasheado igual que el backend (app/utils/security.py) y con
 roles admin y super_admin (Roles y Permisos pide roles.manage).
 
 También deja una solicitud de cuenta pendiente ("Solicitud E2E", teléfono +5491100000098)
-para que e2e/overlays.spec.ts pueda abrir el diálogo de rechazo (lo abre y lo cancela).
+para que e2e/overlays.spec.ts pueda abrir el diálogo de rechazo (lo abre y lo cancela), y
+un jugador sin permisos ("Jugador E2E") para e2e/match.spec.ts (pantalla del partido, 1a).
 
 Valores de prueba por defecto (no son de nadie, solo existen en la base local):
   E2E_ADMIN_PHONE=1100000099   (se guarda normalizado como +5491100000099)
   E2E_ADMIN_PIN=4826
+  E2E_PLAYER_PHONE=1100000097  (+5491100000097)
+  E2E_PLAYER_PIN=7351
 
 Uso:
   DATABASE_URL=postgresql+psycopg://postgres@127.0.0.1:55432/futbol_test \\
@@ -34,6 +37,8 @@ from app.utils.security import assert_pin, hash_pin  # noqa: E402
 DEFAULT_PHONE = "1100000099"
 DEFAULT_PIN = "4826"
 PENDING_PHONE = "+5491100000098"
+DEFAULT_PLAYER_PHONE = "1100000097"
+DEFAULT_PLAYER_PIN = "7351"
 
 
 def main() -> None:
@@ -53,6 +58,12 @@ def main() -> None:
     pin = assert_pin(os.environ.get("E2E_ADMIN_PIN", DEFAULT_PIN))
     salt = secrets.token_hex(16)
     pin_hash = hash_pin(pin, salt)
+
+    player_phone = normalize_phone(os.environ.get("E2E_PLAYER_PHONE", DEFAULT_PLAYER_PHONE))
+    if not player_phone:
+        sys.exit("E2E_PLAYER_PHONE no es un teléfono válido.")
+    player_pin = assert_pin(os.environ.get("E2E_PLAYER_PIN", DEFAULT_PLAYER_PIN))
+    player_salt = secrets.token_hex(16)
 
     engine = create_engine(url)
     with engine.begin() as conn:
@@ -95,7 +106,29 @@ def main() -> None:
             ),
             {"phone": PENDING_PHONE},
         )
+        player_id = conn.execute(
+            text(
+                """
+                insert into public.users (full_name, phone_e164, phone_login, pin_salt, pin_hash, is_active, status)
+                values ('Jugador E2E', :phone, :phone, :salt, :hash, true, 'ACTIVE')
+                on conflict (phone_login) do update
+                   set pin_salt = excluded.pin_salt,
+                       pin_hash = excluded.pin_hash,
+                       is_active = true,
+                       status = 'ACTIVE',
+                       must_reset_pin = false,
+                       failed_pin_attempts = 0,
+                       locked_until = null,
+                       updated_at = now()
+                returning id
+                """
+            ),
+            {"phone": player_phone, "salt": player_salt, "hash": hash_pin(player_pin, player_salt)},
+        ).scalar_one()
+        # Sin roles: tiene que ver la pantalla como un jugador cualquiera.
+        conn.execute(text("delete from public.user_roles where user_id = :uid"), {"uid": player_id})
     print(f"Admin E2E listo en {url.host}:{url.port}/{url.database} (teléfono {phone}).")
+    print(f"Jugador E2E listo (teléfono {player_phone}).")
 
 
 if __name__ == "__main__":

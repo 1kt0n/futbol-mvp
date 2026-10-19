@@ -1,6 +1,7 @@
 // Shell de las pantallas con sesión: el contenido de la ruta + la barra inferior.
 // Sin sesión solo se muestra "/" (el login), sin barra; cualquier otra pantalla
-// vuelve al login. Las rutas públicas (/e/:code, /g/:token, /tournaments/*)
+// vuelve al login. Un link de partido (/p/:id, el de WhatsApp) vuelve ahí después
+// de entrar (?next=). Las rutas públicas (/e/:code, /g/:token, /tournaments/*)
 // quedan fuera del shell en main.jsx.
 
 import { useEffect, useRef, useState } from "react";
@@ -26,7 +27,7 @@ function readActor() {
 
 export default function AppShell() {
   const [actor, setActor] = useState(readActor);
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
 
   useEffect(() => {
     const sync = () => setActor(readActor());
@@ -44,6 +45,9 @@ export default function AppShell() {
   }, [pathname]);
 
   const mustLogin = !actor && pathname !== "/";
+  // Solo el link de un partido: así, después de cerrar sesión en otra pantalla,
+  // quien entra no cae en la del anterior.
+  const loginPath = pathname.startsWith("/p/") ? `/?next=${encodeURIComponent(pathname + search)}` : "/";
 
   // La estructura es siempre la misma (div + barra opcional): si cambiara al
   // iniciar o cerrar sesión, React volvería a montar la pantalla y se perdería
@@ -52,7 +56,7 @@ export default function AppShell() {
     <>
       {/* El body ya suma el safe-area de abajo; acá solo el alto de la barra y un respiro. */}
       <div className={actor ? "pb-[calc(var(--tabbar-h)+0.75rem)]" : undefined}>
-        {mustLogin ? <Navigate to="/" replace /> : <Outlet />}
+        {mustLogin ? <Navigate to={loginPath} replace /> : <Outlet context={{ actor }} />}
       </div>
       {/* key: al cambiar de sesión se vuelven a pedir permisos y contadores */}
       {actor ? <ShellNav key={actor} /> : null}

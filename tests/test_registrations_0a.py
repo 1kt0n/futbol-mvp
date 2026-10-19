@@ -201,7 +201,9 @@ def db_test_court_captain_and_admin_and_legacy(w: World):
 
     # /events/active le dice a la UI de qué canchas es capitán.
     viewer = w.client.get(f"/events/active?event_id={eid}", headers=w.h("capi")).json()["viewer"]
-    assert viewer == {"captain_court_ids": [c1], "is_event_captain": False}
+    # La 1a suma user_id y registration al viewer: acá solo importa la capitanía.
+    assert {k: viewer[k] for k in ("captain_court_ids", "is_event_captain")} == \
+        {"captain_court_ids": [c1], "is_event_captain": False}
 
 
 def db_test_full_court_stays_open_waitlist_and_promotion(w: World):

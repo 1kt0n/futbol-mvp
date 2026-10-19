@@ -2,6 +2,10 @@
 import { capture } from "./helpers/capture";
 import { datetimeLocalInDays } from "./helpers/dates";
 
+// La Home de siempre: con la pantalla del partido prendida (MATCH_SCREEN_ENABLED,
+// rediseño UX 1a), "/" iría a /p/:id.
+const HOME = "/?vista=clasica";
+
 const ADMIN_PHONE = (process.env.E2E_ADMIN_PHONE || "").trim();
 const ADMIN_PIN = (process.env.E2E_ADMIN_PIN || "").trim();
 const USER_PIN = "1234";
@@ -18,13 +22,13 @@ function randomPhone() {
 }
 
 async function clearSession(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto(HOME, { waitUntil: "domcontentloaded" });
   await page.evaluate(() => {
     localStorage.removeItem("actorUserId");
     localStorage.removeItem("actor_id");
     localStorage.removeItem("actor_me");
   });
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto(HOME, { waitUntil: "domcontentloaded" });
 }
 
 async function loginWithPin(page: Page, phone: string, pin: string, expectAdmin: boolean) {
@@ -143,7 +147,7 @@ async function openCourtByName(page: Page, courtName: string) {
 
 async function selectAppEventByTitle(page: Page, eventTitle: string, eventId?: string) {
   if (eventId) {
-    await page.goto(`/?event_id=${encodeURIComponent(eventId)}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${HOME}&event_id=${encodeURIComponent(eventId)}`, { waitUntil: "domcontentloaded" });
   }
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const selectorButtons = page.locator('[data-testid^="app-event-select-"]');
@@ -305,7 +309,7 @@ test.describe("Events create flow screenshots", () => {
     await openCourtByName(page, courtTwo);
     await capture(page, testInfo, 9, "event-court-two-opened");
 
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto(HOME, { waitUntil: "domcontentloaded" });
     await selectAppEventByTitle(page, eventTitle, eventId);
     await capture(page, testInfo, 10, "event-app-selected");
 
@@ -340,7 +344,7 @@ test.describe("Events create flow screenshots", () => {
     // Se reabre la Sur para poder mover a alguien ahí.
     await openCourtByName(page, courtTwo);
 
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto(HOME, { waitUntil: "domcontentloaded" });
     await selectAppEventByTitle(page, eventTitle, eventId);
     await moveFirstPlayer(page, courtOne, courtTwo);
     await capture(page, testInfo, 17, "event-player-moved");
@@ -353,7 +357,7 @@ test.describe("Events create flow screenshots", () => {
     await closeEvent(page);
     await capture(page, testInfo, 19, "event-closed");
 
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto(HOME, { waitUntil: "domcontentloaded" });
     await selectAppEventByTitle(page, eventTitle, eventId);
     await expect(page.getByTestId("event-closed-banner")).toBeVisible({ timeout: 20_000 });
     await capture(page, testInfo, 20, "event-app-closed-banner");

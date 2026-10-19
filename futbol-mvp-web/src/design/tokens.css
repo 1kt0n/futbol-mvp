@@ -37,9 +37,10 @@
   --toast-bottom: calc(env(safe-area-inset-bottom) + 1rem);
 }
 
-/* BottomNav marca <html data-tabbar> mientras está montada. */
+/* BottomNav marca <html data-tabbar> mientras está montada. Con una barra de
+   acción (shell/ActionBar: "Me anoto"), --actionbar-h suma su alto. */
 :root[data-tabbar] {
-  --toast-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.5rem);
+  --toast-bottom: calc(var(--tabbar-h) + var(--actionbar-h, 0px) + env(safe-area-inset-bottom) + 0.5rem);
 }
 
 .focus-ring {

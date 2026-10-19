@@ -1,4 +1,5 @@
-import json
+
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from app.utils.deps import get_actor_user_id
@@ -7,11 +8,13 @@ from sqlalchemy.exc import IntegrityError
 
 from app import settings
 from app.settings import engine
-from app.schemas import RegisterRequest, GuestRequest, MoveRequest, PlayerCardsResponse
+from app.schemas import RegisterRequest, GuestRequest, MoveRequest, CancelRequest, PlayerCardsResponse
 from app.utils.permissions import get_effective_permissions
 from app.utils.scoring import score_payload, attribute_profile, MIN_DISTINCT_VOTERS, RECENCY_DECAY_PER_DAY
 from app.utils.ratelimit import rate_limit, client_ip
 from app.utils.auto_finalize import auto_finalize_if_due
+from app.utils.audit import write_audit
+from app.utils.courts import alternatives as court_alternatives, eligible_courts, is_pseudo_court, pick_first_free
 
 router = APIRouter()
 
@@ -19,6 +22,79 @@ router = APIRouter()
 # =========================
 # Helper Functions
 # =========================
+
+def lock_event_occupancy(conn, event_id) -> None:
+    """
+    Serializa todo lo que cambia la ocupación de un partido: altas, invitados,
+    bajas, mover, externos y los cambios de canchas del admin (crear, editar,
+    abrir, cerrar, borrar). Va antes que cualquier FOR UPDATE de la transacción.
+    Sin esto, una baja y un alta a la vez podían dejar un lugar libre con alguien
+    en la espera: el alta contaba la cancha sin ver la baja y la promoción corría
+    antes de que existiera la fila en espera.
+    """
+    try:
+        key = str(UUID(str(event_id)))  # mismo lock para "ABC…" que para "abc…"
+    except ValueError:
+        key = str(event_id)
+    conn.execute(text("select pg_advisory_xact_lock(hashtext(:lock_key))"),
+                 {"lock_key": f"occupancy:{key}"})
+
+
+def _event_courts(conn, event_id) -> list:
+    """Canchas del partido en el orden de siempre: (sort_order, created_at, id)."""
+    return conn.execute(text("""
+        select id, name, capacity, is_open
+        from public.event_courts
+        where event_id = :event_id
+        order by sort_order asc, created_at asc, id asc
+    """), {"event_id": event_id}).mappings().all()
+
+
+def _occupied_by_court(conn, event_id) -> dict:
+    rows = conn.execute(text("""
+        select court_id::text as court_id, count(*)::int as cnt
+        from public.event_registrations
+        where event_id = :event_id and status = 'CONFIRMED' and court_id is not null
+        group by court_id
+    """), {"event_id": event_id}).mappings().all()
+    return {r["court_id"]: r["cnt"] for r in rows}
+
+
+def _assert_can_auto_assign(courts: list) -> None:
+    """Sin cancha elegida: el flag tiene que estar prendido y tiene que haber dónde anotar."""
+    if not settings.ONE_TAP_REGISTER_ENABLED:
+        raise HTTPException(status_code=400, detail="Elegí una cancha.")
+    if not courts:
+        raise HTTPException(status_code=400, detail="El partido todavía no tiene canchas.")
+    if not any(c["is_open"] for c in eligible_courts(courts)):
+        raise HTTPException(status_code=400, detail="La inscripción está cerrada.")
+
+
+def _lock_court(conn, event_id, court_id):
+    return conn.execute(text("""
+        select id, name, capacity, is_open
+        from public.event_courts
+        where id = :court_id and event_id = :event_id
+        for update
+    """), {"court_id": court_id, "event_id": event_id}).mappings().first()
+
+
+def _count_confirmed(conn, event_id, court_id) -> int:
+    return conn.execute(text("""
+        select count(*)::int as cnt
+        from public.event_registrations
+        where event_id = :event_id and court_id = :court_id and status = 'CONFIRMED'
+    """), {"event_id": event_id, "court_id": court_id}).mappings().first()["cnt"]
+
+
+def _lock_registration_event(conn, registration_id) -> None:
+    """Toma el lock del partido de una inscripción antes de bloquear la fila."""
+    event_id = conn.execute(text("""
+        select event_id from public.event_registrations where id = :registration_id
+    """), {"registration_id": registration_id}).scalar()
+    if event_id:
+        lock_event_occupancy(conn, event_id)
+
 
 def _has_manage_permission(conn, actor_user_id: str) -> bool:
     perms = get_effective_permissions(conn, actor_user_id)
@@ -104,14 +180,8 @@ def audit_court_full_if_filled(conn, event_id, court_id, occupied_after: int, ca
     """
     if occupied_after != capacity:
         return
-    conn.execute(text("""
-        insert into public.event_audit_log (event_id, actor_user_id, action, metadata)
-        values (:event_id, :actor_user_id, 'COURT_FULL', CAST(:metadata AS jsonb))
-    """), {
-        "event_id": event_id,
-        "actor_user_id": actor_user_id,
-        "metadata": json.dumps({"court_id": str(court_id), "capacity": capacity, "source": source}),
-    })
+    write_audit(conn, event_id=event_id, actor_user_id=actor_user_id, action="COURT_FULL",
+                metadata={"court_id": str(court_id), "capacity": capacity, "source": source})
 
 
 def check_and_auto_close_court(event_id: str, court_id: str, actor_user_id: str):
@@ -232,15 +302,8 @@ def promote_first_waitlist(conn, event_id, freed_court_id, actor_user_id, source
         where id = :wait_id
     """), {"court_id": freed_court_id, "wait_id": wait["id"]})
 
-    conn.execute(text("""
-        insert into public.event_audit_log (event_id, actor_user_id, action, target_registration_id, metadata)
-        values (:event_id, :actor_user_id, 'PROMOTE_WAITLIST', :target_registration_id, CAST(:metadata AS jsonb))
-    """), {
-        "event_id": event_id,
-        "actor_user_id": actor_user_id,
-        "target_registration_id": wait["id"],
-        "metadata": json.dumps({"source": source}),
-    })
+    write_audit(conn, event_id=event_id, actor_user_id=actor_user_id, action="PROMOTE_WAITLIST",
+                target_registration_id=wait["id"], metadata={"source": source})
     return wait["id"]
 
 
@@ -291,14 +354,16 @@ def list_open_events(actor_user_id: str = Depends(get_actor_user_id)):
 @router.get("/events/active")
 def get_active_event(
     actor_user_id: str = Depends(get_actor_user_id),
-    event_id: str | None = None,
+    event_id: UUID | None = None,
+    include_finished: bool = False,
 ):
     """
     Devuelve un evento activo (OPEN o CLOSED), sus canchas, jugadores confirmados y waitlist.
     Si se pasa event_id, devuelve ese evento específico.
     Si no, devuelve el próximo: el primero que empieza desde hace 3 h en adelante
     o, si no hay ninguno, el más reciente.
-    No incluye eventos FINALIZED.
+    No incluye eventos FINALIZED, salvo con event_id + include_finished=1 (la
+    pantalla del partido muestra también los ya jugados).
     """
     auto_finalize_if_due()
     with engine.connect() as conn:
@@ -307,8 +372,8 @@ def get_active_event(
                 select id, title, description, starts_at, location_name, status, close_at
                 from public.events
                 where id = :event_id
-                  and status IN ('OPEN', 'CLOSED')
-            """), {"event_id": event_id}).mappings().first()
+                  and (:include_finished or status IN ('OPEN', 'CLOSED'))
+            """), {"event_id": event_id, "include_finished": include_finished}).mappings().first()
         else:
             event = conn.execute(text("""
                 select id, title, description, starts_at, location_name, status, close_at
@@ -405,6 +470,8 @@ def get_active_event(
                 "occupied": occupied,
                 "available": available,
                 "is_open": c["is_open"],
+                # Lista de espera armada a mano ("Suplentes"): no entra en la primera libre.
+                "is_pseudo": is_pseudo_court(c["name"]),
                 "players": players,
             })
 
@@ -434,10 +501,50 @@ def get_active_event(
             "waitlist": waitlist_payload,
             # Para que la UI muestre Baja/Mover a los capitanes de cada cancha.
             "viewer": {
+                "user_id": str(actor_user_id),
                 "captain_court_ids": sorted(_captain_court_ids(conn, str(event_id), actor_user_id)),
                 "is_event_captain": _is_legacy_event_captain(conn, str(event_id), actor_user_id),
+                "registration": _viewer_registration(conn, event_id, actor_user_id, waitlist_payload),
             },
         }
+
+
+def _viewer_registration(conn, event_id, actor_user_id, waitlist_payload) -> dict | None:
+    """
+    La inscripción propia (no cancelada) para la pantalla del partido, con el
+    puesto en la espera y, si entró desde la espera, cuándo (para el banner
+    "¡Se liberó un lugar y entraste!").
+    """
+    row = conn.execute(text("""
+        select r.id, r.status, r.court_id,
+               case when r.status = 'CONFIRMED' then
+                 (select max(a.created_at)
+                    from public.event_audit_log a
+                   where a.event_id = r.event_id
+                     and a.target_registration_id = r.id
+                     and a.action = 'PROMOTE_WAITLIST'
+                     and a.created_at >= r.created_at)
+               end as promoted_at
+        from public.event_registrations r
+        where r.event_id = :event_id
+          and r.user_id = :actor_user_id
+          and r.registration_type = 'USER'
+          and r.status <> 'CANCELLED'
+        order by r.created_at desc
+        limit 1
+    """), {"event_id": event_id, "actor_user_id": actor_user_id}).mappings().first()
+    if not row:
+        return None
+    registration_id = str(row["id"])
+    position = next((i + 1 for i, w in enumerate(waitlist_payload)
+                     if w["registration_id"] == registration_id), None)
+    return {
+        "registration_id": registration_id,
+        "status": row["status"],
+        "court_id": str(row["court_id"]) if row["court_id"] else None,
+        "waitlist_position": position if row["status"] == "WAITLIST" else None,
+        "promoted_at": str(row["promoted_at"]) if row["promoted_at"] and row["status"] == "CONFIRMED" else None,
+    }
 
 
 @router.get("/events/{event_id}/courts/{court_id}/player-cards", response_model=PlayerCardsResponse)
@@ -623,7 +730,12 @@ def register_user(
 ):
     """
     El actor (header) se auto-anota en el evento.
-    Si hay cupo, se confirma; si no, va a waitlist.
+    - Sin court_id ("Me anoto", ONE_TAP_REGISTER_ENABLED): entra en la primera
+      cancha abierta y con lugar, sin pseudo-canchas, en orden (sort_order,
+      created_at, id). Si está todo lleno, va a la espera.
+    - Con court_id: si hay cupo, se confirma ahí; si está llena, va a la espera
+      (if_full="waitlist", la Home vieja) o responde 409 COURT_FULL con las
+      canchas que tienen lugar (if_full="conflict", la pantalla del partido).
     Si ya tenía una fila cancelada en el evento, la reusa con created_at=now():
     vuelve al final de la espera (el timestamp original queda en el audit).
     """
@@ -639,22 +751,26 @@ def register_user(
         if event["status"] != "OPEN":
             raise HTTPException(status_code=400, detail="El evento no está abierto")
 
-        court = conn.execute(text("""
-            select id, capacity, is_open
-            from public.event_courts
-            where id = :court_id and event_id = :event_id
-            for update
-        """), {"court_id": body.court_id, "event_id": event_id}).mappings().first()
+        # También serializa dos altas del mismo jugador (p. ej. en canchas
+        # distintas): no duplica la fila aunque la base no tenga un índice único.
+        lock_event_occupancy(conn, event["id"])
 
-        if not court:
-            raise HTTPException(status_code=404, detail="Cancha no encontrada para este evento")
-        if not court["is_open"]:
-            raise HTTPException(status_code=400, detail="La cancha está cerrada")
-
-        # Serializa dos altas del mismo jugador (p. ej. en canchas distintas):
-        # no duplica la fila aunque la base no tenga un índice único.
-        conn.execute(text("select pg_advisory_xact_lock(hashtext(:lock_key))"),
-                     {"lock_key": f"register:{event_id}:{actor_user_id}"})
+        if body.court_id is None:
+            courts = _event_courts(conn, event_id)
+            _assert_can_auto_assign(courts)
+            picked = pick_first_free(courts, _occupied_by_court(conn, event_id))
+            court = _lock_court(conn, event_id, picked["id"]) if picked else None
+            if court and not court["is_open"]:
+                court = None  # la cerraron recién: va a la espera
+            source, assigned = "one_tap", "auto"
+        else:
+            court = _lock_court(conn, event_id, body.court_id)
+            if not court:
+                raise HTTPException(status_code=404, detail="Cancha no encontrada para este evento")
+            if not court["is_open"]:
+                raise HTTPException(status_code=400, detail="La cancha está cerrada")
+            source = "slot_pick" if body.if_full == "conflict" else "api"
+            assigned = "chosen"
 
         existing = conn.execute(text("""
             select r.id, r.status, r.created_at, c.name as court_name
@@ -679,18 +795,27 @@ def register_user(
             raise HTTPException(status_code=409, detail=detail)
         cancelled = existing[0] if existing else None
 
-        occupied = conn.execute(text("""
-            select count(*)::int as cnt
-            from public.event_registrations
-            where event_id = :event_id
-              and court_id = :court_id
-              and status = 'CONFIRMED'
-        """), {"event_id": event_id, "court_id": body.court_id}).mappings().first()["cnt"]
+        occupied = _count_confirmed(conn, event_id, court["id"]) if court else 0
+        has_capacity = bool(court) and occupied < court["capacity"]
 
-        has_capacity = occupied < court["capacity"]
+        if court and not has_capacity and body.court_id is not None and body.if_full == "conflict":
+            courts = _event_courts(conn, event_id)
+            raise HTTPException(status_code=409, detail={
+                "code": "COURT_FULL",
+                "message": "Justo se llenó esa cancha.",
+                "court_id": str(court["id"]),
+                "court_name": court["name"],
+                "alternatives": court_alternatives(courts, _occupied_by_court(conn, event_id),
+                                                   exclude_court_id=court["id"]),
+            })
+
         status = "CONFIRMED" if has_capacity else "WAITLIST"
-        court_id_to_set = body.court_id if has_capacity else None
-        audit_metadata = {"source": "api"}
+        court_id_to_set = court["id"] if has_capacity else None
+        audit_metadata = {
+            "source": source,
+            "assigned": assigned,
+            "court_id": str(court_id_to_set) if court_id_to_set else None,
+        }
 
         if cancelled:
             reg = conn.execute(text("""
@@ -730,23 +855,12 @@ def register_user(
             except IntegrityError:
                 raise HTTPException(status_code=409, detail="Ya estás anotado en este partido.")
 
-        conn.execute(text("""
-            insert into public.event_audit_log (
-              event_id, actor_user_id, action, target_registration_id, metadata
-            )
-            values (
-              :event_id, :actor_user_id, 'REGISTER_USER', :target_registration_id, CAST(:metadata AS jsonb)
-            )
-        """), {
-            "event_id": event_id,
-            "actor_user_id": actor_user_id,
-            "target_registration_id": reg["id"],
-            "metadata": json.dumps(audit_metadata),
-        })
+        write_audit(conn, event_id=event_id, actor_user_id=actor_user_id, action="REGISTER_USER",
+                    target_registration_id=reg["id"], metadata=audit_metadata)
 
         waitlist_position = None
         if reg["status"] == "CONFIRMED":
-            audit_court_full_if_filled(conn, event_id, body.court_id, occupied + 1, court["capacity"],
+            audit_court_full_if_filled(conn, event_id, court["id"], occupied + 1, court["capacity"],
                                        actor_user_id, source="register")
         else:
             waitlist_position = conn.execute(text("""
@@ -758,15 +872,18 @@ def register_user(
 
     # Con AUTO_CLOSE_ON_FULL=true, cierra la cancha llena (y el evento si corresponde)
     if reg["status"] == "CONFIRMED":
-        check_and_auto_close_court(event_id, body.court_id, actor_user_id)
+        check_and_auto_close_court(event_id, str(court["id"]), actor_user_id)
 
+    confirmed = reg["status"] == "CONFIRMED"
     return {
         "registration_id": str(reg["id"]),
         "status": reg["status"],
         "court_id": str(reg["court_id"]) if reg["court_id"] else None,
+        "court_name": court["name"] if confirmed else None,
+        "assigned": assigned,
         "created_at": str(reg["created_at"]),
         "waitlist_position": waitlist_position,
-        "message": "Inscripción confirmada" if reg["status"] == "CONFIRMED" else "Agregado a lista de espera",
+        "message": "Inscripción confirmada" if confirmed else "Agregado a lista de espera",
     }
 
 
@@ -778,7 +895,9 @@ def register_guest(
     actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
-    Registra un invitado en una cancha (sin sobrecupo).
+    Registra un invitado en una cancha (sin sobrecupo ni espera).
+    Sin court_id (ONE_TAP_REGISTER_ENABLED): va a la cancha de quien invita si
+    tiene lugar y, si no, a la primera libre (misma regla que "Me anoto").
     Límite: GUEST_LIMIT_PER_USER invitados por actor/evento; quien tiene
     registrations.manage no tiene tope.
     """
@@ -803,17 +922,34 @@ def register_guest(
         if event["status"] != "OPEN":
             raise HTTPException(status_code=400, detail="El evento no está abierto")
 
-        court = conn.execute(text("""
-            select id, capacity, is_open
-            from public.event_courts
-            where id = :court_id and event_id = :event_id
-            for update
-        """), {"court_id": body.court_id, "event_id": event_id}).mappings().first()
+        lock_event_occupancy(conn, event["id"])
 
-        if not court:
-            raise HTTPException(status_code=404, detail="Cancha no encontrada para este evento")
-        if not court["is_open"]:
-            raise HTTPException(status_code=400, detail="La cancha está cerrada")
+        if body.court_id is None:
+            courts = _event_courts(conn, event_id)
+            _assert_can_auto_assign(courts)
+            host_court = conn.execute(text("""
+                select court_id
+                from public.event_registrations
+                where event_id = :event_id and user_id = :actor_user_id
+                  and registration_type = 'USER' and status = 'CONFIRMED'
+                limit 1
+            """), {"event_id": event_id, "actor_user_id": actor_user_id}).scalar()
+            picked = pick_first_free(courts, _occupied_by_court(conn, event_id), prefer_court_id=host_court)
+            if not picked:
+                raise HTTPException(status_code=409,
+                                    detail="El partido está completo: no quedan lugares para invitados.")
+            court = _lock_court(conn, event_id, picked["id"])
+            if not court or not court["is_open"]:
+                raise HTTPException(status_code=409,
+                                    detail="El partido está completo: no quedan lugares para invitados.")
+            source, assigned = "one_tap", "auto"
+        else:
+            court = _lock_court(conn, event_id, body.court_id)
+            if not court:
+                raise HTTPException(status_code=404, detail="Cancha no encontrada para este evento")
+            if not court["is_open"]:
+                raise HTTPException(status_code=400, detail="La cancha está cerrada")
+            source, assigned = "api", "chosen"
 
         # Tope de invitados por actor/evento (no cuenta CANCELLED)
         guest_limit = settings.GUEST_LIMIT_PER_USER
@@ -834,15 +970,11 @@ def register_guest(
                 )
 
         # Cupo (sin sobrecupo)
-        occupied = conn.execute(text("""
-            select count(*)::int as cnt
-            from public.event_registrations
-            where event_id = :event_id
-              and court_id = :court_id
-              and status = 'CONFIRMED'
-        """), {"event_id": event_id, "court_id": body.court_id}).mappings().first()["cnt"]
-
+        occupied = _count_confirmed(conn, event_id, court["id"])
         if occupied >= court["capacity"]:
+            if assigned == "auto":
+                raise HTTPException(status_code=409,
+                                    detail="El partido está completo: no quedan lugares para invitados.")
             raise HTTPException(status_code=409, detail="La cancha está completa. No se permite sobrecupo.")
 
         reg = conn.execute(text("""
@@ -855,37 +987,29 @@ def register_guest(
             returning id, status, court_id, created_at
         """), {
             "event_id": event_id,
-            "court_id": body.court_id,
+            "court_id": court["id"],
             "created_by_user_id": actor_user_id,
             "guest_name": guest_name,
         }).mappings().first()
 
-        conn.execute(text("""
-            insert into public.event_audit_log (
-              event_id, actor_user_id, action, target_registration_id, metadata
-            )
-            values (
-              :event_id, :actor_user_id, 'REGISTER_GUEST', :target_registration_id, CAST(:metadata AS jsonb)
-            )
-        """), {
-            "event_id": event_id,
-            "actor_user_id": actor_user_id,
-            "target_registration_id": reg["id"],
-            "metadata": '{"source":"api"}'
-        })
+        write_audit(conn, event_id=event_id, actor_user_id=actor_user_id, action="REGISTER_GUEST",
+                    target_registration_id=reg["id"],
+                    metadata={"source": source, "assigned": assigned, "court_id": str(court["id"])})
 
-        audit_court_full_if_filled(conn, event_id, body.court_id, occupied + 1, court["capacity"],
+        audit_court_full_if_filled(conn, event_id, court["id"], occupied + 1, court["capacity"],
                                    actor_user_id, source="guest")
 
     # Con AUTO_CLOSE_ON_FULL=true, cierra la cancha llena (y el evento si corresponde)
-    check_and_auto_close_court(event_id, body.court_id, actor_user_id)
+    check_and_auto_close_court(event_id, str(court["id"]), actor_user_id)
 
     return {
         "registration_id": str(reg["id"]),
         "status": reg["status"],
         "court_id": str(reg["court_id"]),
+        "court_name": court["name"],
+        "assigned": assigned,
         "created_at": str(reg["created_at"]),
-        "guest_name": body.guest_name.strip(),
+        "guest_name": guest_name,
         "message": "Invitado confirmado"
     }
 
@@ -903,6 +1027,7 @@ def move_registration(
     Promueve desde waitlist a la cancha liberada si hay cupo.
     """
     with engine.begin() as conn:
+        _lock_registration_event(conn, registration_id)
         reg = conn.execute(text("""
             select id, event_id, court_id, status, registration_type, user_id, created_by_user_id
             from public.event_registrations
@@ -1007,6 +1132,7 @@ def move_registration(
 @router.post("/registrations/{registration_id}/cancel")
 def cancel_registration(
     registration_id: str,
+    body: CancelRequest | None = None,
     actor_user_id: str = Depends(get_actor_user_id)
 ):
     """
@@ -1014,8 +1140,10 @@ def cancel_registration(
     Puede el propio jugador, quien anotó al invitado, quien tiene
     registrations.manage o el capitán de esa cancha (ver can_cancel_registration).
     Promueve desde waitlist si se libera un cupo.
+    El body es opcional: `intent` solo se guarda en el audit (Deshacer, avisar al grupo).
     """
     with engine.begin() as conn:
+        _lock_registration_event(conn, registration_id)
         reg = conn.execute(text("""
             select id, event_id, court_id, status, registration_type, user_id, created_by_user_id
             from public.event_registrations
@@ -1055,23 +1183,11 @@ def cancel_registration(
         """), {"registration_id": registration_id})
 
         # 2) Audit log - cancelación (source: self | guest_owner | admin | captain | legacy_captain)
-        conn.execute(text("""
-            insert into public.event_audit_log (
-                event_id, actor_user_id, action, target_registration_id, metadata
-            )
-            values (
-                :event_id,
-                :actor_user_id,
-                'CANCEL_REGISTRATION',
-                :target_registration_id,
-                CAST(:metadata AS jsonb)
-            )
-        """), {
-            "event_id": event_id,
-            "actor_user_id": actor_user_id,
-            "target_registration_id": registration_id,
-            "metadata": json.dumps({"reason": "manual_cancel", "source": source}),
-        })
+        metadata = {"reason": "manual_cancel", "source": source}
+        if body and body.intent:
+            metadata["intent"] = body.intent
+        write_audit(conn, event_id=event_id, actor_user_id=actor_user_id, action="CANCEL_REGISTRATION",
+                    target_registration_id=registration_id, metadata=metadata)
 
         # 3) Promover primer WAITLIST si se liberó una cancha
         promoted_id = promote_first_waitlist(conn, event_id, freed_court_id, actor_user_id, source="auto_from_cancel")
@@ -1079,5 +1195,27 @@ def cancel_registration(
         return {
             "cancelled_registration_id": registration_id,
             "promoted_registration_id": str(promoted_id) if promoted_id else None,
+            # Para "Lo toma Juan" y el mensaje de WhatsApp aunque la pantalla no lo tuviera cargado.
+            "promoted": _registration_brief(conn, promoted_id) if promoted_id else None,
             "message": "Inscripción cancelada correctamente"
         }
+
+
+def _registration_brief(conn, registration_id) -> dict | None:
+    row = conn.execute(text("""
+        select r.id, r.registration_type,
+               coalesce(u.full_name, r.guest_name) as name,
+               cb.full_name as created_by_name
+        from public.event_registrations r
+        left join public.users u on u.id = r.user_id
+        left join public.users cb on cb.id = r.created_by_user_id
+        where r.id = :registration_id
+    """), {"registration_id": registration_id}).mappings().first()
+    if not row:
+        return None
+    return {
+        "registration_id": str(row["id"]),
+        "type": row["registration_type"],
+        "name": row["name"],
+        "created_by_name": row["created_by_name"],
+    }

@@ -2404,7 +2404,7 @@ function QuickRepeatShare({ created, onDone }) {
   const [copyFailed, setCopyFailed] = useState(false)
   const access = created.access || {}
   // Solo miembros no tiene link público: va el de la app, que pide iniciar sesión.
-  const url = shareUrlFromPath(access.share_path || `/?event_id=${created.event_id}`)
+  const url = shareUrlFromPath(access.share_path || `/p/${created.event_id}`)
   const message = buildEventShareMessage(created, url)
   const date = parseApiDate(created.starts_at)
   const courts = created.courts || []
