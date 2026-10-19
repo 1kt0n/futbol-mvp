@@ -924,6 +924,8 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 > **Reordenado el 17/10/2026** con los datos de producción (sección 9). Las filas con \* están condicionadas: entran solo si se cumple su gate.
 >
 > **Estado al 17/10/2026:** en producción 0a, 0c (auto-finalizar a 240 min) y 0d; la **barra inferior de la 1b se adelantó** a pedido del organizador (sin esperar medición), así que la 1a se monta adentro del shell que ya existe. Detalle y verificación en [`estado.md`](estado.md).
+>
+> **18/10/2026:** la **0b** quedó hecha en local (sin push), con los tests de overlays en verde en WebKit y Chromium. `?sheet=`/atrás de Android, deslizar para cerrar y el `Menu` de escritorio pasan a la 1a. Ver [`iteracion-0b-plan.md`](iteracion-0b-plan.md).
 
 **Métrica norte:**
 
