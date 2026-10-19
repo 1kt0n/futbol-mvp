@@ -1,5 +1,6 @@
 ﻿import { expect, test, type Locator, type Page } from "@playwright/test";
 import { capture } from "./helpers/capture";
+import { datetimeLocalInDays } from "./helpers/dates";
 
 const ADMIN_PHONE = (process.env.E2E_ADMIN_PHONE || "").trim();
 const ADMIN_PIN = (process.env.E2E_ADMIN_PIN || "").trim();
@@ -177,8 +178,17 @@ async function waitForAppIdle(page: Page) {
 
 async function registerSelfInCourt(page: Page, courtName: string) {
   const card = await appCourtCard(page, courtName);
-  await card.locator('[data-testid^="court-register-"]').click();
-  await expect(page.getByText("Anotado")).toBeVisible({ timeout: 20_000 });
+  // El lugar libre de la grilla y el botón de abajo hacen lo mismo; se usa el botón.
+  await card.locator('[data-testid^="court-register-cta-"]').click();
+  await page.getByTestId("register-confirm-btn").click();
+  await expect(page.getByText("¡Adentro!").first()).toBeVisible({ timeout: 20_000 });
+}
+
+// La espera se ofrece solo con el partido completo (todas las canchas abiertas llenas).
+async function joinWaitlist(page: Page) {
+  await waitForAppIdle(page);
+  await page.getByTestId("waitlist-join-btn").click();
+  await expect(page.getByTestId("waitlist-my-position")).toBeVisible({ timeout: 20_000 });
 }
 
 async function registerGuestInCourt(page: Page, guestName: string, courtName: string) {
@@ -222,10 +232,8 @@ async function cancelFirstPlayer(page: Page, courtName: string) {
   await expect(cancelBtn).toBeEnabled({ timeout: 30_000 });
   await cancelBtn.scrollIntoViewIfNeeded();
   await cancelBtn.dispatchEvent("click");
-  await Promise.race([
-    page.getByText("Listo").first().waitFor({ state: "visible", timeout: 6000 }).catch(() => null),
-    waitForAppIdle(page),
-  ]);
+  await page.getByTestId("confirm-sheet-confirm").click();
+  await expect(page.getByText("Listo").first()).toBeVisible({ timeout: 20_000 });
 }
 
 async function closeEvent(page: Page) {
@@ -276,7 +284,7 @@ test.describe("Events create flow screenshots", () => {
 
     const eventId = await createEvent(page, {
       title: eventTitle,
-      startsAt: "2026-03-13T20:00",
+      startsAt: datetimeLocalInDays(7),
       location: "Sede E2E Eventos",
       openModal: false,
     });
@@ -312,15 +320,16 @@ test.describe("Events create flow screenshots", () => {
     await registerSelfInCourt(page, courtOne);
     await capture(page, testInfo, 13, "event-user-two-registered");
 
+    // La Norte quedó llena (2/2). Con la Sur cerrada, el partido queda completo y se abre la espera.
     await loginWithPin(page, ADMIN_PHONE, ADMIN_PIN, true);
     await openAdminEventsTab(page, eventId);
     await selectAdminEventByTitle(page, eventTitle, eventId);
-    await openCourtByName(page, courtOne);
-    await capture(page, testInfo, 14, "event-court-one-reopened-full");
+    await closeCourtByName(page, courtTwo);
+    await capture(page, testInfo, 14, "event-match-full");
 
     await registerUser(page, userThree.fullName, userThree.phone, userThree.pin);
     await selectAppEventByTitle(page, eventTitle, eventId);
-    await registerSelfInCourt(page, courtOne);
+    await joinWaitlist(page);
     await capture(page, testInfo, 15, "event-user-three-waitlist");
 
     await loginWithPin(page, ADMIN_PHONE, ADMIN_PIN, true);
@@ -328,6 +337,8 @@ test.describe("Events create flow screenshots", () => {
     await selectAdminEventByTitle(page, eventTitle, eventId);
     await expect(page.getByTestId("admin-waitlist-section")).toContainText(userThree.fullName, { timeout: 25_000 });
     await capture(page, testInfo, 16, "event-admin-waitlist-visible");
+    // Se reabre la Sur para poder mover a alguien ahí.
+    await openCourtByName(page, courtTwo);
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await selectAppEventByTitle(page, eventTitle, eventId);

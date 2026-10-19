@@ -91,6 +91,9 @@ Condicionadas a los datos: **3a** (mover entre canchas), **5** (partido fijo que
   1. `scripts/e2e_seed_admin.py` (admin de prueba y una solicitud pendiente; solo corre contra una base local);
   2. `E2E_WEB_URL=… E2E_API_URL=… E2E_ADMIN_PHONE=1100000099 E2E_ADMIN_PIN=4826 npm run e2e:overlays` (Pixel 7 + iPhone 14).
   - Cualquier hoja o diálogo nuevo va con las primitivas y se suma a la tabla de casos del spec.
+  - Con el mismo setup pasan `npm run e2e:a11y`, `e2e:events:screenshots` y `e2e:tournaments:screenshots`. Cada
+    corrida de eventos da de alta 2 usuarios por proyecto y la API deja 5 altas por IP por hora (en memoria): para
+    repetirla dentro de la hora hay que reiniciar la API local.
 - Deploy = push a `main` (Railway lo publica en ~1 minuto). Verificar con `/config` y con el bundle publicado.
 - Migraciones: a mano en el SQL Editor de Supabase, aditivas (expand-only), **antes** de deployar código que las use.
 - Variables en Railway: después de cambiarlas hay que tocar **Deploy** en el banner "Apply N changes"; si no, no se aplican.
@@ -104,7 +107,6 @@ Condicionadas a los datos: **3a** (mover entre canchas), **5** (partido fijo que
 - **Lint:** 8 errores anteriores al rediseño (`App.jsx`, `main.jsx`, `TournamentTvPage.jsx`). `npm run lint` corre antes la guarda de overlays (`scripts/check-overlays.mjs`), que tiene que dar OK.
 - **0b, pendientes chicos:**
   - El `busy` compartido del Panel bloquea la hoja mientras recarga (p. ej. al llegar con `?create=1`).
-  - `accessibility-smoke` › Torneos falla por la pantalla de Torneos (tabs sin `tablist`, inputs sin label), no por overlays.
-  - `tournaments-flow` (testid duplicado `tournament-save-config-btn`) y `events-flow` (fecha fija 13/03/2026) no pasan; ya estaban rotos antes de la 0b.
+  - Los seeds de `overlays.spec.ts` y los flujos de eventos/torneos no se borran: quedan en `futbol_test`.
 - **Supabase:** durante el análisis quedaron consultas "Untitled query" guardadas en *PRIVATE*; se pueden borrar.
 - **Consultas que faltan** (sección 9.5 del diseño): H6(b) ráfagas de armado, agrupamiento de `CREATE_EVENT` (decide "Repetir las 3"), % de votos por tramo de demora.

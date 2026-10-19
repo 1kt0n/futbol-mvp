@@ -467,89 +467,91 @@ export default function TournamentControlCenter() {
 
           <TournamentTabs activeTab={activeTab} onChange={setActiveTab} />
 
-          {activeTab === "overview" && (
-            <div className="space-y-4">
-              <Card>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Configuracion</h3>
-                  {tournament.status === "DRAFT" && (
-                    <button data-testid="tournament-save-config-btn" disabled={busy} onClick={handleSaveConfig} className="focus-ring rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-emerald-400 disabled:opacity-40">Guardar</button>
+          <div role="tabpanel" id="tournament-panel" aria-labelledby={`tournament-tab-${activeTab}`}>
+            {activeTab === "overview" && (
+              <div className="space-y-4">
+                <Card>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Configuracion</h3>
+                    {tournament.status === "DRAFT" && (
+                      <button data-testid="tournament-save-config-btn" disabled={busy} onClick={handleSaveConfig} className="focus-ring rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-black hover:bg-emerald-400 disabled:opacity-40">Guardar</button>
+                    )}
+                  </div>
+                  {tournament.status === "DRAFT" ? (
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                      <input data-testid="tournament-config-title-input" aria-label="Título" value={tournament.title || ""} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, title: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Titulo" />
+                      <input data-testid="tournament-config-location-input" aria-label="Ubicación" value={tournament.location_name || ""} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, location_name: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Ubicacion" />
+                      <input type="datetime-local" data-testid="tournament-config-starts-at-input" aria-label="Fecha y hora de inicio" value={toDatetimeLocal(tournament.starts_at)} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, starts_at: e.target.value ? new Date(e.target.value).toISOString() : null } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" />
+                      <select data-testid="tournament-config-format-select" aria-label="Formato" value={tournament.format} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, format: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" title={FORMAT_META[tournament.format]?.tooltip || ""}>
+                        {FORMATS.map((f) => (<option key={f} value={f}>{formatName(f)}</option>))}
+                      </select>
+                      <input type="number" min={2} max={16} data-testid="tournament-config-teams-count-input" aria-label="Cantidad de equipos" value={tournament.teams_count} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, teams_count: Number(e.target.value || 0) } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Equipos" />
+                      <input type="number" min={5} max={120} data-testid="tournament-config-minutes-input" aria-label="Minutos por partido" value={tournament.minutes_per_match} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, minutes_per_match: Number(e.target.value || 0) } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Minutos" />
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
+                      <div><span className="text-white/50">Titulo:</span> <span className="font-semibold text-white">{tournament.title}</span></div>
+                      <div><span className="text-white/50">Ubicacion:</span> <span className="text-white">{tournament.location_name || "—"}</span></div>
+                      <div><span className="text-white/50">Formato:</span> <span className="text-white">{formatName(tournament.format)}</span></div>
+                      <div><span className="text-white/50">Equipos:</span> <span className="text-white">{tournament.teams_count}</span></div>
+                      <div><span className="text-white/50">Minutos:</span> <span className="text-white">{tournament.minutes_per_match}</span></div>
+                    </div>
                   )}
-                </div>
-                {tournament.status === "DRAFT" ? (
-                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-                    <input data-testid="tournament-config-title-input" value={tournament.title || ""} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, title: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Titulo" />
-                    <input data-testid="tournament-config-location-input" value={tournament.location_name || ""} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, location_name: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Ubicacion" />
-                    <input type="datetime-local" data-testid="tournament-config-starts-at-input" value={toDatetimeLocal(tournament.starts_at)} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, starts_at: e.target.value ? new Date(e.target.value).toISOString() : null } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" />
-                    <select data-testid="tournament-config-format-select" value={tournament.format} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, format: e.target.value } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" title={FORMAT_META[tournament.format]?.tooltip || ""}>
-                      {FORMATS.map((f) => (<option key={f} value={f}>{formatName(f)}</option>))}
-                    </select>
-                    <input type="number" min={2} max={16} data-testid="tournament-config-teams-count-input" value={tournament.teams_count} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, teams_count: Number(e.target.value || 0) } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Equipos" />
-                    <input type="number" min={5} max={120} data-testid="tournament-config-minutes-input" value={tournament.minutes_per_match} onChange={(e) => setDetail((p) => ({ ...p, tournament: { ...p.tournament, minutes_per_match: Number(e.target.value || 0) } }))} className="focus-ring rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm" placeholder="Minutos" />
-                  </div>
-                ) : (
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm md:grid-cols-3">
-                    <div><span className="text-white/50">Titulo:</span> <span className="font-semibold text-white">{tournament.title}</span></div>
-                    <div><span className="text-white/50">Ubicacion:</span> <span className="text-white">{tournament.location_name || "—"}</span></div>
-                    <div><span className="text-white/50">Formato:</span> <span className="text-white">{formatName(tournament.format)}</span></div>
-                    <div><span className="text-white/50">Equipos:</span> <span className="text-white">{tournament.teams_count}</span></div>
-                    <div><span className="text-white/50">Minutos:</span> <span className="text-white">{tournament.minutes_per_match}</span></div>
-                  </div>
-                )}
-                <div className="mt-2 text-xs text-white/60">Formato: <span className="font-semibold text-white">{formatName(tournament.format)}</span>. {FORMAT_META[tournament.format]?.tooltip}</div>
-              </Card>
+                  <div className="mt-2 text-xs text-white/60">Formato: <span className="font-semibold text-white">{formatName(tournament.format)}</span>. {FORMAT_META[tournament.format]?.tooltip}</div>
+                </Card>
 
-              <OverviewTab tournament={tournament} teams={teams} matches={matches} standings={standings} groupStandings={groupStandings} nextMatch={nextMatch} />
-            </div>
-          )}
+                <OverviewTab tournament={tournament} teams={teams} matches={matches} standings={standings} groupStandings={groupStandings} nextMatch={nextMatch} />
+              </div>
+            )}
 
-          {activeTab === "teams" && (
-            <TeamsTab
-              tournament={tournament}
-              teams={teams}
-              busy={busy}
-              teamForm={teamForm}
-              setTeamForm={setTeamForm}
-              selectedTeamId={selectedTeamId}
-              setSelectedTeamId={setSelectedTeamId}
-              memberForm={memberForm}
-              setMemberForm={setMemberForm}
-              userQuery={userQuery}
-              setUserQuery={setUserQuery}
-              userSuggestions={userSuggestions}
-              usersBusy={usersBusy}
-              onSelectSuggestion={selectSuggestion}
-              onAddTeam={handleAddTeam}
-              onDeleteTeam={handleDeleteTeam}
-              onAddMember={handleAddMember}
-            />
-          )}
+            {activeTab === "teams" && (
+              <TeamsTab
+                tournament={tournament}
+                teams={teams}
+                busy={busy}
+                teamForm={teamForm}
+                setTeamForm={setTeamForm}
+                selectedTeamId={selectedTeamId}
+                setSelectedTeamId={setSelectedTeamId}
+                memberForm={memberForm}
+                setMemberForm={setMemberForm}
+                userQuery={userQuery}
+                setUserQuery={setUserQuery}
+                userSuggestions={userSuggestions}
+                usersBusy={usersBusy}
+                onSelectSuggestion={selectSuggestion}
+                onAddTeam={handleAddTeam}
+                onDeleteTeam={handleDeleteTeam}
+                onAddMember={handleAddMember}
+              />
+            )}
 
-          {activeTab === "fixture" && (
-            <FixtureTab
-              tournament={tournament}
-              matches={matches}
-              rounds={rounds}
-              busy={busy}
-              onGenerateFixture={handleGenerateFixture}
-              onStartMatch={handleStartMatch}
-              onOpenResult={openResultModal}
-            />
-          )}
+            {activeTab === "fixture" && (
+              <FixtureTab
+                tournament={tournament}
+                matches={matches}
+                rounds={rounds}
+                busy={busy}
+                onGenerateFixture={handleGenerateFixture}
+                onStartMatch={handleStartMatch}
+                onOpenResult={openResultModal}
+              />
+            )}
 
-          {activeTab === "standings" && (
-            <StandingsTab tournament={tournament} standings={standings} groupStandings={groupStandings} rounds={rounds} />
-          )}
+            {activeTab === "standings" && (
+              <StandingsTab tournament={tournament} standings={standings} groupStandings={groupStandings} rounds={rounds} />
+            )}
 
-          {activeTab === "share" && (
-            <ShareTab
-              link={link}
-              onCopy={() => {
-                navigator.clipboard?.writeText(link);
-                setOk("Link publico copiado.");
-              }}
-            />
-          )}
+            {activeTab === "share" && (
+              <ShareTab
+                link={link}
+                onCopy={() => {
+                  navigator.clipboard?.writeText(link);
+                  setOk("Link publico copiado.");
+                }}
+              />
+            )}
+          </div>
         </>
       )}
 

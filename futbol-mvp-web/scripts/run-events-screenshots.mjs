@@ -16,7 +16,7 @@ const REQUIRED_SCREENSHOTS = [
   "011-event-admin-self-registered.png",
   "012-event-admin-guest-registered.png",
   "013-event-user-two-registered.png",
-  "014-event-court-one-reopened-full.png",
+  "014-event-match-full.png",
   "015-event-user-three-waitlist.png",
   "016-event-admin-waitlist-visible.png",
   "017-event-player-moved.png",
