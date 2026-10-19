@@ -7,8 +7,8 @@ Prototipo clickeable (privado, se comparte desde su menú *Share*): https://clau
 ## Resumen
 
 - **En producción:** 0a (bajas propias, espera, menús), migración 020, 0c (finalizar solo, prendido a 240 min), barra inferior (1b, adelantada), 0d (Repetir por franja) y 0b (hojas, diálogos, menús y avisos en una sola primitiva, desde el 18/10).
-- **Hecha en local, sin pushear:** 1a (pantalla del partido `/p/:id`, "Me anoto" de un toque), commit `609e836`, detrás de dos flags apagados. Ver "1a en local" abajo.
-- **Lo próximo del plan:** push de la 1a y prender los flags (primero admins) → 2 (ciclo semanal) → 3b-1 (Claro y Oscuro a mano). Probar la 0b y la 1a en un iPhone real.
+- **Deployada y apagada:** 1a (pantalla del partido `/p/:id`, "Me anoto" de un toque), en producción desde el 19/10 (`609e836`) detrás de dos flags apagados: la gente todavía no la ve. Ver "1a" abajo.
+- **Lo próximo del plan:** prender los flags de la 1a (primero admins, después todos) → 2 (ciclo semanal) → 3b-1 (Claro y Oscuro a mano). Probar la 0b y la 1a en un iPhone real.
 - **Medición:** el **31/10** correr la consulta `SEGUIMIENTO` de [`consultas-comportamiento.sql`](consultas-comportamiento.sql) y comparar contra las metas de abajo.
 
 ## Qué está en producción
@@ -25,7 +25,7 @@ Prototipo clickeable (privado, se comparte desde su menú *Share*): https://clau
 | Torneos accesible + e2e | En la pantalla de Torneos del Panel, el lector de pantalla anuncia las pestañas y el nombre de cada campo. Vuelven a pasar los e2e de a11y, eventos y torneos. `client_ip` documenta que depende de que Railway descarte el `X-Forwarded-For` del cliente | merge `2ca422f` (`734b6a6`, `c6e7b81`), arreglos de la revisión `071ed0d` | — |
 | Documentación | Diseño, datos de producción, decisión de 240 min, este estado | `7826950`, `5f90294`, `b1ff17f` | — |
 
-## 1a en local (19/10, sin pushear)
+## 1a (deployada el 19/10 con los flags apagados)
 
 **Qué cambia para la gente** (con los flags prendidos):
 - La pestaña Partido abre `/p/:id`: el link de WhatsApp lleva ahí y el login vuelve al partido.
@@ -36,7 +36,14 @@ Prototipo clickeable (privado, se comparte desde su menú *Share*): https://clau
 - Quien organiza ve "Compartir · Faltan N" y puede quitar jugadores. Para mover hay que ir a `⋯` › Vista clásica.
 - El atrás de Android cierra la hoja y pregunta si hay algo escrito; se puede deslizar para cerrar. En escritorio, el `⋯` es un menú anclado.
 
-**Commits:** `609e836` (código y tests) más los docs de la iteración.
+**Commits:** `609e836` (código y tests) y `8ee4716` (docs), pusheados el 19/10 (`f85d5cb..8ee4716`).
+
+**Verificación del deploy (19/10):**
+- Railway publicó en ~70 s el bundle `index-DBb7xZ0Y.js` (antes `index-BHU_YMS9.js`). Trae "Me anoto", "Libre · Anotarme acá", "Liberar y avisar al grupo" y `X-UI-Source`.
+- `/config`: `matchScreen:"off"` y `oneTapRegisterEnabled:false`; el resto sin cambios (`autoCloseOnFull:false`, `guestLimitPerUser:5`, `autoFinalizeEnabled:true`, `autoFinalizeAfterMinutes:240`).
+- `/health`, `/`, `/admin`, `/calendar`, `/avisos`, `/profile` y `/p/<id>` responden 200.
+- `/events/active?event_id=abc` da 422 (antes 500).
+- El front llama a la API en el mismo origen, así que el header nuevo no agrega preflight.
 
 **Configuración:**
 - `MATCH_SCREEN_ENABLED=off|admins|all` y `ONE_TAP_REGISTER_ENABLED`, los dos apagados por default.
@@ -51,10 +58,15 @@ Prototipo clickeable (privado, se comparte desde su menú *Share*): https://clau
 - Detalle en [`iteracion-1a-plan.md`](iteracion-1a-plan.md).
 
 **Para prenderla** (detalle en el plan, "Cómo prenderlo"):
-1. Push. `/config` tiene que dar `matchScreen:"off"`.
-2. `MATCH_SCREEN_ENABLED=admins` + `ONE_TAP_REGISTER_ENABLED=true` → Deploy. Probar en el teléfono.
+1. ~~Push.~~ Hecho: `/config` da `matchScreen:"off"`.
+2. En Railway (servicio futbol-mvp): `MATCH_SCREEN_ENABLED=admins` + `ONE_TAP_REGISTER_ENABLED=true` → **Deploy** en el banner "Apply 2 changes". Probar en el teléfono:
+   - "Me anoto" con Deshacer;
+   - "No puedo ir";
+   - Compartir;
+   - el atrás de Android con una hoja;
+   - deslizar para cerrar.
 3. `MATCH_SCREEN_ENABLED=all`.
-4. Medir con la consulta `PARTIDO` de `consultas-comportamiento.sql`.
+4. Una semana después, medir con la consulta `PARTIDO` de `consultas-comportamiento.sql`.
 
 ## Verificación del 18/10 (producción, 0b)
 
@@ -106,7 +118,7 @@ Correr `SEGUIMIENTO` (al final de [`consultas-comportamiento.sql`](consultas-com
 Detalle de cada iteración en [`rediseno-ux.md` §8.2 y §8.4](rediseno-ux.md).
 
 1. **0b · Hojas y menús**: en producción desde el 18/10. Falta probarla en un iPhone real (sobre todo con el teclado abierto).
-2. **1a · Pantalla del partido `/p/:id`**: hecha en local el 19/10 (`609e836`), con lo que quedó de la 0b (`?sheet=`, deslizar, `Menu`). Falta push, prender los flags (admins → todos) y probarla en un teléfono real. Ver "1a en local" arriba.
+2. **1a · Pantalla del partido `/p/:id`**: deployada el 19/10 (`609e836`) con los flags apagados, junto con lo que quedó de la 0b (`?sheet=`, deslizar, `Menu`). Falta prender los flags (admins → todos) y probarla en un teléfono real. Ver "1a" arriba.
 3. **2 · Ciclo semanal** (1-1,5 semanas): Repetir también desde la pantalla del partido, votar en lote con "No lo vi" y la invitación al ranking, avisos dirigidos (incluido el de promoción desde la espera), y Gestión como lista en vez de 9 pestañas.
 4. **3b-1 · Claro y Oscuro a mano** (1 semana): armar los equipos dentro de la cancha y publicarlos. Antes de arrancar, preguntar cómo se arman hoy los equipos.
 

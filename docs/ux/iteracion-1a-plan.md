@@ -1,8 +1,9 @@
 # Plan — Iteración 1a (pantalla del partido `/p/:id`)
 
-> **Estado (19/10/2026):** implementado y verificado en local, **sin pushear** (código en `609e836`), detrás de
-> `MATCH_SCREEN_ENABLED` y `ONE_TAP_REGISTER_ENABLED` (apagados por default). Abajo, el plan aprobado tal cual; al
-> final, los desvíos, la verificación, la revisión independiente y cómo prenderlo.
+> **Estado (19/10/2026):** **en producción con los flags apagados** (push `f85d5cb..8ee4716`; código en `609e836`;
+> verificación del deploy en `estado.md`). `MATCH_SCREEN_ENABLED` y `ONE_TAP_REGISTER_ENABLED` siguen apagados: falta
+> prenderlos. Abajo, el plan aprobado tal cual; al final, los desvíos, la verificación, la revisión independiente y
+> cómo prenderlo.
 
 ## Contexto
 
