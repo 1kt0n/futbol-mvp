@@ -10,7 +10,12 @@ contra un deploy, usando el propio límite de /auth/pin/reset (10 por IP por hor
   2. 1 POST sin el header.
 
 Si el header falso se respeta, el cupo gastado es el de la IP falsa y el paso 2 da 403
-(VULNERABLE). Si se descarta, el cupo es el de tu IP real y el paso 2 da 429 (OK).
+(VULNERABLE). Si se descarta, el paso 2 cae en la misma clave y da 429 (OK).
+
+Un OK solo prueba que el cliente no elige la clave, no que la clave sea SU IP: con un
+proxy adelante que Railway vea como el cliente (p. ej. Cloudflare), la clave es la IP de
+ese proxy, compartida por todos, y también da 429. Para descartarlo, repetir dentro de la
+hora un POST sin el header desde otra red (p. ej. datos del celular): tiene que dar 403.
 
 Usa un teléfono imposible (18 dígitos): siempre da 403 y no escribe nada en la base.
 Efecto secundario: si da OK, tu IP queda limitada en /auth/pin/reset hasta 1 hora
@@ -59,7 +64,9 @@ def main() -> int:
     print(f"2) sin el header: {plain}")
 
     if plain == 429:
-        print("OK: el X-Forwarded-For del cliente se descarta; la clave es tu IP real.")
+        print("OK: el X-Forwarded-For del cliente se descarta (el cliente no elige la clave).")
+        print("   Falta ver que la clave sea por cliente: antes de 1 hora, desde otra red, un POST")
+        print("   sin el header tiene que dar 403. Si da 429, la clave es la IP de un proxy compartido.")
         return 0
     if plain == 403:
         print("VULNERABLE: el X-Forwarded-For del cliente llega a la app y elige la clave del límite.")

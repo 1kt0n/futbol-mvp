@@ -5,6 +5,17 @@ const ADMIN_PHONE = (process.env.E2E_ADMIN_PHONE || "").trim();
 const ADMIN_PIN = (process.env.E2E_ADMIN_PIN || "").trim();
 
 async function expectNoCriticalA11y(page) {
+  // Las pantallas entran con un fundido (.page-enter, 220 ms): a mitad de camino axe mide
+  // colores atenuados y reporta contraste falso. Se espera a que terminen las animaciones
+  // finitas (las infinitas, como el shimmer, no terminan nunca). Igual que en overlays.spec.ts.
+  await page.waitForFunction(
+    () =>
+      document
+        .getAnimations()
+        .every((a) => a.playState !== "running" || a.effect?.getComputedTiming().endTime === Infinity),
+    null,
+    { timeout: 10_000 }
+  );
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
   const critical = (results.violations || []).filter((v) =>
     ["critical", "serious"].includes(String(v.impact || "").toLowerCase())

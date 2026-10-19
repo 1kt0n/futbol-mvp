@@ -41,7 +41,10 @@ def client_ip(request: Request | None) -> str:
     ni en futbol-mvp-production.up.railway.app ni en api.copaproud.com). Si se cambia de
     hosting, se pone otro proxy adelante (p. ej. Cloudflare) o Railway cambia el borde, hay
     que volver a correr ese script: si el header pasa, cualquiera elige su clave y se saltea
-    los límites por IP (login, alta, pin/status).
+    los límites por IP (login, alta, pin/status). Al revés, con un proxy que Railway vea como
+    el cliente (Cloudflare), la primera entrada es la IP del proxy, compartida por todos: los
+    límites saltan para todos juntos y hay que leer el header de ese proxy (CF-Connecting-IP)
+    solo cuando el pedido viene de él. El script no distingue este caso por sí solo.
 
     `request.client.host` sola no sirve en Railway: es la IP del proxy, igual para todos.
     """
