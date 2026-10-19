@@ -55,7 +55,7 @@ export default function TournamentHeaderHero({ tournament, ready, teamsCount, ma
               <button
                 type="button"
                 onClick={onSaveConfig}
-                data-testid="tournament-save-config-btn"
+                data-testid="tournament-hero-save-config-btn"
                 disabled={busy}
                 className="focus-ring rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10 disabled:opacity-40"
               >

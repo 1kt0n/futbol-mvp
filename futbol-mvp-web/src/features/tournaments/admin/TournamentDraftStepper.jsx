@@ -17,7 +17,7 @@ export default function TournamentDraftStepper({ visible, stage }) {
 
   return (
     <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3" data-testid="tournament-draft-stepper">
-      <Stepper steps={steps} activeStep={stage} completedSet={completedSet} />
+      <Stepper steps={steps} activeStep={stage} completedSet={completedSet} label="Pasos para publicar el torneo" />
     </div>
   );
 }

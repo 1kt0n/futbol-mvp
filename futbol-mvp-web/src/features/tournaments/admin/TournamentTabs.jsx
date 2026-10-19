@@ -9,6 +9,15 @@ const ITEMS = [
 ];
 
 export default function TournamentTabs({ activeTab, onChange }) {
-  return <Tabs value={activeTab} onChange={onChange} items={ITEMS} testId="tournament-tabs" />;
+  return (
+    <Tabs
+      value={activeTab}
+      onChange={onChange}
+      items={ITEMS}
+      testId="tournament-tabs"
+      label="Secciones del torneo"
+      idBase="tournament"
+    />
+  );
 }
 

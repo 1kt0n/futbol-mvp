@@ -1,14 +1,15 @@
 ﻿import { cn } from "../cn.js";
 
-export default function Stepper({ steps, activeStep, completedSet = new Set(), testId = "" }) {
+export default function Stepper({ steps, activeStep, completedSet = new Set(), testId = "", label = "Pasos" }) {
+  // Scroller sin hijos enfocables: tabIndex y nombre para poder desplazarlo con el teclado.
   return (
-    <div className="overflow-x-auto" data-testid={testId || undefined}>
+    <div className="focus-ring overflow-x-auto rounded-xl" data-testid={testId || undefined} role="region" aria-label={label} tabIndex={0}>
       <ol className="flex min-w-max items-center gap-3">
         {steps.map((step, idx) => {
           const completed = completedSet.has(step.key);
           const active = step.key === activeStep;
           return (
-            <li key={step.key} className="flex items-center gap-3">
+            <li key={step.key} className="flex items-center gap-3" aria-current={active ? "step" : undefined}>
               <div
                 className={cn(
                   "inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-bold",

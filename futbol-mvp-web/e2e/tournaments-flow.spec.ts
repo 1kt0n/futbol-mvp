@@ -1,5 +1,6 @@
 ﻿import { expect, test, type Page } from "@playwright/test";
 import { capture } from "./helpers/capture";
+import { datetimeLocalInDays } from "./helpers/dates";
 
 const ADMIN_PHONE = (process.env.E2E_ADMIN_PHONE || "").trim();
 const ADMIN_PIN = (process.env.E2E_ADMIN_PIN || "").trim();
@@ -50,9 +51,15 @@ async function createTournament(page: Page, opts: {
   await page.getByTestId("tournament-create-btn").click();
   await page.getByTestId("create-tournament-title-input").fill(opts.title);
   await page.getByTestId("create-tournament-location-input").fill(opts.location);
-  await page.getByTestId("create-tournament-starts-at-input").fill("2026-03-13T20:00");
+  await page.getByTestId("create-tournament-starts-at-input").fill(datetimeLocalInDays(7));
   await page.getByTestId("create-tournament-format-select").selectOption(opts.format);
-  await page.getByTestId("create-tournament-teams-count-input").fill(String(opts.teamsCount));
+  // Para eliminación directa (y grupos) la cantidad de equipos es un select.
+  const teamsCount = page.getByTestId("create-tournament-teams-count-input");
+  if ((await teamsCount.evaluate((el) => el.tagName)) === "SELECT") {
+    await teamsCount.selectOption(String(opts.teamsCount));
+  } else {
+    await teamsCount.fill(String(opts.teamsCount));
+  }
   await page.getByTestId("create-tournament-minutes-input").fill(String(opts.minutes));
   await page.getByTestId("create-tournament-submit-btn").click();
   await page.getByTestId("tournament-tab-overview").click();
