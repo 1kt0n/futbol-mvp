@@ -744,6 +744,71 @@ order by 1 desc, eventos_creados desc, franja;
 
 
 -- ============================================================
+-- PARTIDO · ¿Se usa la pantalla del partido y el "Me anoto" de un toque? (1a)
+-- ============================================================
+-- Pregunta: desde que se prenden MATCH_SCREEN_ENABLED y ONE_TAP_REGISTER_ENABLED,
+--   ¿cuántas altas salen de la pantalla nueva y de un toque, cuántas se deshacen
+--   enseguida y cuántas bajas tardías avisan al grupo?
+-- Cómo leerlo:
+--   - (a) una fila por semana, source y ui. source: 'one_tap' = "Me anoto" sin
+--     cancha; 'slot_pick' = tocó "Libre" en una cancha; 'api' = Home vieja.
+--     ui: 'match' = escrita desde /p/:id; 'legacy' = Home o Panel; sin ui = un
+--     bundle anterior a la 1a u otra pantalla. deshechas_2min = altas con un
+--     "Deshacer" (intent 'undo') del mismo actor en menos de 2 minutos.
+--   - (b) una fila por semana con las bajas de socios: propias, con Deshacer,
+--     con "Liberar y avisar al grupo" (intent 'notify_group') y las propias a
+--     menos de 24 h del partido.
+--   Cambiá la fecha si los flags se prendieron otro día.
+-- Confirma si: one_tap ≥ 60% de las altas con el flag prendido para todos, y
+--   deshechas_2min < 3% de las altas one_tap (altas accidentales).
+-- Si se refuta: con ≥ 3% de Deshacer, reforzar el toast o volver a pedir
+--   confirmación; con poco one_tap, revisar si el CTA se ve y si el flag está
+--   prendido para todos (matchScreen en /config).
+
+-- PARTIDO (a) altas por semana, source y ui
+select date_trunc('week', a.created_at at time zone 'America/Argentina/Buenos_Aires')::date as semana,
+       coalesce(a.metadata->>'source', '(sin source)') as source,
+       coalesce(a.metadata->>'ui', '(sin ui)') as ui,
+       count(*) as altas,
+       count(*) filter (where exists (
+         select 1 from public.event_audit_log c
+         where c.target_registration_id = a.target_registration_id
+           and c.action = 'CANCEL_REGISTRATION'
+           and c.actor_user_id = a.actor_user_id
+           and c.metadata->>'intent' = 'undo'
+           and c.created_at between a.created_at and a.created_at + interval '2 minutes'
+           -- el Deshacer es de esta alta y no de una posterior de la misma fila (re-anotarse)
+           and not exists (select 1 from public.event_audit_log a2
+                           where a2.target_registration_id = a.target_registration_id
+                             and a2.action = 'REGISTER_USER'
+                             and a2.created_at > a.created_at and a2.created_at < c.created_at))) as deshechas_2min
+from public.event_audit_log a
+where a.action = 'REGISTER_USER'
+  and a.created_at >= timestamptz '2026-10-19 00:00-03'
+group by 1, 2, 3
+order by 1 desc, 4 desc;
+
+-- PARTIDO (b) bajas de socios por semana
+select date_trunc('week', a.created_at at time zone 'America/Argentina/Buenos_Aires')::date as semana,
+       count(*) as bajas,
+       count(*) filter (where a.actor_user_id = r.user_id) as propias,
+       count(*) filter (where a.metadata->>'intent' = 'undo') as con_deshacer,
+       count(*) filter (where a.metadata->>'intent' = 'notify_group') as avisando_al_grupo,
+       count(*) filter (where a.actor_user_id = r.user_id
+                          and e.starts_at - a.created_at < interval '24 hours') as propias_menos_24h,
+       count(*) filter (where a.metadata->>'ui' = 'match') as desde_pantalla_nueva
+from public.event_audit_log a
+join public.event_registrations r on r.id = a.target_registration_id
+join public.events e on e.id = a.event_id
+where a.action = 'CANCEL_REGISTRATION'
+  and r.registration_type = 'USER'
+  and a.created_at >= timestamptz '2026-10-19 00:00-03'
+group by 1
+order by 1 desc;
+
+
+
+-- ============================================================
 -- H8 · ¿Pocos votan por el opt-in y no por el costo de votar?
 -- ============================================================
 -- Pregunta: entre los que jugaron partidos finalizados en los últimos 3 meses,

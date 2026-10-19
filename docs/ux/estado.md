@@ -1,13 +1,14 @@
 # Estado del rediseño UX
 
-> Última actualización: **18/10/2026**. Este archivo es el punto de partida para retomar: qué está en producción, cómo se verificó, qué medir y qué sigue. El diseño completo está en [`rediseno-ux.md`](rediseno-ux.md); los datos de producción, en su sección 9.
+> Última actualización: **19/10/2026**. Este archivo es el punto de partida para retomar: qué está en producción, cómo se verificó, qué medir y qué sigue. El diseño completo está en [`rediseno-ux.md`](rediseno-ux.md); los datos de producción, en su sección 9.
 
 Prototipo clickeable (privado, se comparte desde su menú *Share*): https://claude.ai/artifact/RwnySzAF5dwFW1i3vFZDky
 
 ## Resumen
 
 - **En producción:** 0a (bajas propias, espera, menús), migración 020, 0c (finalizar solo, prendido a 240 min), barra inferior (1b, adelantada), 0d (Repetir por franja) y 0b (hojas, diálogos, menús y avisos en una sola primitiva, desde el 18/10).
-- **Lo próximo del plan:** 1a (pantalla del partido) → 2 (ciclo semanal) → 3b-1 (Claro y Oscuro a mano). Antes, probar la 0b en un iPhone real (ver abajo).
+- **Hecha en local, sin pushear:** 1a (pantalla del partido `/p/:id`, "Me anoto" de un toque), commit `609e836`, detrás de dos flags apagados. Ver "1a en local" abajo.
+- **Lo próximo del plan:** push de la 1a y prender los flags (primero admins) → 2 (ciclo semanal) → 3b-1 (Claro y Oscuro a mano). Probar la 0b y la 1a en un iPhone real.
 - **Medición:** el **31/10** correr la consulta `SEGUIMIENTO` de [`consultas-comportamiento.sql`](consultas-comportamiento.sql) y comparar contra las metas de abajo.
 
 ## Qué está en producción
@@ -23,6 +24,37 @@ Prototipo clickeable (privado, se comparte desde su menú *Share*): https://clau
 | **0b** · Hojas y menús | Todas las hojas, diálogos, menús y avisos salen de una sola pieza (`src/design/ui/overlay`). El botón principal queda siempre a la vista (footer fijo con safe-area, alto en `dvh`, sube con el teclado). Los formularios ya no se borran al tocar el fondo: con cambios, Esc o la cruz preguntan "¿Descartás los cambios?". El fondo no scrollea detrás, Esc cierra solo la de arriba y el foco vuelve al botón que la abrió (también en Safari). Los avisos ("Cancha creada", errores) van encima de la barra inferior, o arriba si hay una hoja abierta. Los `confirm`/`prompt`/`alert` del navegador pasan a diálogos propios | `334e232`, docs `4e82fe3` | — (solo frontend). Rollback: revert del commit |
 | Torneos accesible + e2e | En la pantalla de Torneos del Panel, el lector de pantalla anuncia las pestañas y el nombre de cada campo. Vuelven a pasar los e2e de a11y, eventos y torneos. `client_ip` documenta que depende de que Railway descarte el `X-Forwarded-For` del cliente | merge `2ca422f` (`734b6a6`, `c6e7b81`), arreglos de la revisión `071ed0d` | — |
 | Documentación | Diseño, datos de producción, decisión de 240 min, este estado | `7826950`, `5f90294`, `b1ff17f` | — |
+
+## 1a en local (19/10, sin pushear)
+
+**Qué cambia para la gente** (con los flags prendidos):
+- La pestaña Partido abre `/p/:id`: el link de WhatsApp lleva ahí y el login vuelve al partido.
+- **Me anoto** en un toque: la cancha la asigna el servidor (sin pseudo-canchas). Si está lleno, va a la espera con su puesto. El toast trae Deshacer.
+- "Libre · Anotarme acá" elige cancha. Si justo se llenó, ofrece otra o la espera.
+- **No puedo ir** dice quién entra. A menos de 24 h, **Liberar y avisar al grupo** abre WhatsApp con el mensaje.
+- Compartir con los lugares por cancha y la hoja de invitados.
+- Quien organiza ve "Compartir · Faltan N" y puede quitar jugadores. Para mover hay que ir a `⋯` › Vista clásica.
+- El atrás de Android cierra la hoja y pregunta si hay algo escrito; se puede deslizar para cerrar. En escritorio, el `⋯` es un menú anclado.
+
+**Commits:** `609e836` (código y tests) más los docs de la iteración.
+
+**Configuración:**
+- `MATCH_SCREEN_ENABLED=off|admins|all` y `ONE_TAP_REGISTER_ENABLED`, los dos apagados por default.
+- Sin migración. Con los flags apagados la app se ve igual que hoy, y `/p/:id` redirige a `/?event_id=`.
+
+**Verificación:**
+- Backend: 20 tests de la 1a, incluidas las carreras, y la regresión en verde.
+- Front: vitest 51/51.
+- e2e: `e2e:match` 16/16 y `e2e:overlays` 20/20 en Pixel 7 + iPhone 14; `events-flow` también con los flags prendidos.
+- Navegador a 375 px con jugador y admin de prueba.
+- Una revisión independiente: 10 hallazgos, arreglados.
+- Detalle en [`iteracion-1a-plan.md`](iteracion-1a-plan.md).
+
+**Para prenderla** (detalle en el plan, "Cómo prenderlo"):
+1. Push. `/config` tiene que dar `matchScreen:"off"`.
+2. `MATCH_SCREEN_ENABLED=admins` + `ONE_TAP_REGISTER_ENABLED=true` → Deploy. Probar en el teléfono.
+3. `MATCH_SCREEN_ENABLED=all`.
+4. Medir con la consulta `PARTIDO` de `consultas-comportamiento.sql`.
 
 ## Verificación del 18/10 (producción, 0b)
 
@@ -74,11 +106,7 @@ Correr `SEGUIMIENTO` (al final de [`consultas-comportamiento.sql`](consultas-com
 Detalle de cada iteración en [`rediseno-ux.md` §8.2 y §8.4](rediseno-ux.md).
 
 1. **0b · Hojas y menús**: en producción desde el 18/10. Falta probarla en un iPhone real (sobre todo con el teclado abierto).
-2. **1a · Pantalla del partido `/p/:id`** (1-1,5 semanas): "Me anoto" en un toque con la cancha asignada sola, la espera visible con el puesto, "No puedo ir" y, a menos de 24 h, "Liberar y avisar al grupo"; compartir con los lugares por cancha. Es lo que abre el link de WhatsApp. **Ojo:** la barra ya existe (1b), así que la 1a se monta adentro del shell. **Suma lo que quedó fuera de la 0b** (decidido el 17/10):
-   - `?sheet=` en la URL, para que el atrás de Android cierre la hoja (y pregunte si hay cambios) en vez de salir de la pantalla;
-   - deslizar para cerrar;
-   - el `Menu` popover de escritorio (hoy no hay dropdowns propios).
-   - Las hojas de la 1a usan `Sheet`/`Dialog`/`toast` de `src/design/ui/overlay`; `toast` ya acepta `action` para el "Deshacer".
+2. **1a · Pantalla del partido `/p/:id`**: hecha en local el 19/10 (`609e836`), con lo que quedó de la 0b (`?sheet=`, deslizar, `Menu`). Falta push, prender los flags (admins → todos) y probarla en un teléfono real. Ver "1a en local" arriba.
 3. **2 · Ciclo semanal** (1-1,5 semanas): Repetir también desde la pantalla del partido, votar en lote con "No lo vi" y la invitación al ranking, avisos dirigidos (incluido el de promoción desde la espera), y Gestión como lista en vez de 9 pestañas.
 4. **3b-1 · Claro y Oscuro a mano** (1 semana): armar los equipos dentro de la cancha y publicarlos. Antes de arrancar, preguntar cómo se arman hoy los equipos.
 
@@ -92,6 +120,11 @@ Condicionadas a los datos: **3a** (mover entre canchas), **5** (partido fijo que
   1. `scripts/e2e_seed_admin.py` (admin de prueba y una solicitud pendiente; solo corre contra una base local);
   2. `E2E_WEB_URL=… E2E_API_URL=… E2E_ADMIN_PHONE=1100000099 E2E_ADMIN_PIN=4826 npm run e2e:overlays` (Pixel 7 + iPhone 14).
   - Cualquier hoja o diálogo nuevo va con las primitivas y se suma a la tabla de casos del spec.
+- **Pantalla del partido (1a):** API local con `MATCH_SCREEN_ENABLED=all` y `ONE_TAP_REGISTER_ENABLED=true`. En `.claude/launch.json` están `canchas-api-1a` (:8779) y `canchas-web-1a` (:5187).
+  1. `scripts/e2e_seed_admin.py` también deja el "Jugador E2E" (los valores de prueba están en su docstring).
+  2. `E2E_WEB_URL=… E2E_API_URL=… E2E_ADMIN_PHONE=… E2E_ADMIN_PIN=… E2E_PLAYER_PHONE=… E2E_PLAYER_PIN=… npm run e2e:match`. Al terminar, finaliza los partidos que creó.
+  - Con la pantalla nueva prendida, `/` va a `/p/:id`: los specs que usan la Home vieja entran por `/?vista=clasica` (`overlays`, `events-flow`).
+  - `tests/test_match_1a.py` corre con `UX_1A_DB_TEST=1` y `DATABASE_URL` local.
   - Con el mismo setup pasan `npm run e2e:a11y`, `e2e:events:screenshots` y `e2e:tournaments:screenshots`. Cada
     corrida de eventos da de alta 2 usuarios por proyecto y la API deja 5 altas por IP por hora (en memoria): para
     repetirla dentro de la hora hay que reiniciar la API local.
@@ -109,5 +142,11 @@ Condicionadas a los datos: **3a** (mover entre canchas), **5** (partido fijo que
 - **0b, pendientes chicos:**
   - El `busy` compartido del Panel bloquea la hoja mientras recarga (p. ej. al llegar con `?create=1`).
   - Los seeds de `overlays.spec.ts` y los flujos de eventos/torneos no se borran: quedan en `futbol_test`.
+- **1a, pendientes:**
+  - Las fichas de jugador con puntaje siguen solo en la Vista clásica.
+  - Con el `⋯` o un diálogo de respuesta abierto, el atrás sale de la pantalla (no van en la URL).
+  - Falta probar en teléfonos reales el deslizar con el dedo, `window.open` a WhatsApp después de la baja y el atrás del sistema.
+  - Confirmar si en producción existe el índice `event_audit_log(event_id, created_at)` de la 021: lo usa `promoted_at`.
+  - `test_registrations_0a.py › db_test_home_opens_next_match` depende de que `futbol_test` no tenga otros partidos abiertos en las próximas 24 h. El 19/10 falla por "Miércoles 21 hs", un partido de otra sesión.
 - **Supabase:** durante el análisis quedaron consultas "Untitled query" guardadas en *PRIVATE*; se pueden borrar.
 - **Consultas que faltan** (sección 9.5 del diseño): H6(b) ráfagas de armado, agrupamiento de `CREATE_EVENT` (decide "Repetir las 3"), % de votos por tramo de demora.

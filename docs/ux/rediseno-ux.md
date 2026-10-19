@@ -801,6 +801,13 @@ Cada estado vacío dice qué es, por qué está vacío y qué pasa después. El 
 
 Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo lee un middleware que lo guarda en un contextvar, y el helper `write_audit()` lo agrega en los endpoints que se toquen.
 
+> **Cambio en la 1a (19/10/2026):** los valores quedaron `ui` ∈ {`match`, `legacy`}. Desde la 1b la barra está en todas las pantallas, así que "shell" ya no distingue nada.
+> - `match`: lo escribe la pantalla del partido (`/p/:id`).
+> - `legacy`: lo escriben la Home y el Panel.
+> - Sin header no se escribe `ui`: otras pantallas o un bundle viejo de la PWA.
+>
+> También se sumaron `metadata.assigned` (`auto`/`chosen`) y `court_id` en `REGISTER_USER`, y `metadata.intent` (`undo`/`notify_group`) en `CANCEL_REGISTRATION`. Ver la sección `PARTIDO` de `consultas-comportamiento.sql`.
+
 ### 8.2 Cambios por iteración
 
 > **Nota (17/10/2026):** el roadmap se reordenó con los datos de producción (8.4 y sección 9). El detalle técnico de abajo sigue valiendo; cambia en qué iteración entra cada cosa: `finalize_due_events` y sus flags pasan a la **0c**, junto con el desempate `(sort_order, created_at, id)` y `fill_from_waitlist` en `create_court`; el endpoint `duplicate` pasa a la **0d** (sin la columna de la 022); `GET /me/recent-guests` sale; el aviso de promoción pasa de la 4 a la 2; la 1 se parte en 1a/1b y la 3b en 3b-1 (023 sin columnas de resultado) y 3b-2\* (balanceador). La 3a, la 4 y la 5 quedan condicionadas.
@@ -926,6 +933,8 @@ Además, `metadata.ui` ∈ {`legacy`, `shell`} sale del header `X-UI-Source`. Lo
 > **Estado al 17/10/2026:** en producción 0a, 0c (auto-finalizar a 240 min) y 0d; la **barra inferior de la 1b se adelantó** a pedido del organizador (sin esperar medición), así que la 1a se monta adentro del shell que ya existe. Detalle y verificación en [`estado.md`](estado.md).
 >
 > **18/10/2026:** la **0b** está en producción (`334e232`), con los tests de overlays en verde en WebKit y Chromium. `?sheet=`/atrás de Android, deslizar para cerrar y el `Menu` de escritorio pasan a la 1a. Ver [`iteracion-0b-plan.md`](iteracion-0b-plan.md).
+>
+> **19/10/2026:** la **1a** está hecha y verificada en local, sin pushear, detrás de `MATCH_SCREEN_ENABLED` (off/admins/all) y `ONE_TAP_REGISTER_ENABLED`. Incluye la hoja de invitados, y quien organiza puede quitar jugadores. Mover queda en la "Vista clásica". Ver [`iteracion-1a-plan.md`](iteracion-1a-plan.md).
 
 **Métrica norte:**
 
